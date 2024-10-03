@@ -1,0 +1,16 @@
+Non-Breaking Changes:
+- Update add to have the new average 
+- Update STO to be properly calculated as a sell not a buy
+
+
+Breaking Changes:
+
+- Change Size to "Level" (1-6) (mabye only change in the display)
+- Add /buy and /sell to the bot
+    - These are to work with common stock
+- Add /fut (future) command to the bot [Need to discuss with Justin]
+- Format Option commands to be in order of the one liner DATE, SYMBOL, STRIKE, CALL/PUT, COST, LEVEL
+- Change all ephemeral responses to be going to a logging channel with what the command was instead of the message back to the user.
+
+Continuous Integration:
+- Add a .github/workflows/ folder with a workflow for running the bot

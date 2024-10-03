@@ -164,3 +164,8 @@ cython_debug/
 .DS_Store
 .db
 .zip
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
