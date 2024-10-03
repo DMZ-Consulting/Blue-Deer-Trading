@@ -1,0 +1,50 @@
+# Setup Trade Configurations
+/setup_trade_config name:day_trader channel:#day-trades role:@Day-Traders watchlist_channel:#day-watchlist ta_channel:#day-ta
+/setup_trade_config name:swing_trader channel:#swing-trades role:@Swing-Traders watchlist_channel:#swing-watchlist ta_channel:#swing-ta
+/setup_trade_config name:long_term_investor channel:#long-term-trades role:@Long-Term-Investors watchlist_channel:#long-term-watchlist ta_channel:#long-term-ta
+
+# List Trade Configurations
+/list_trade_configs
+
+# Buy to Open (BTO) Commands
+/bto symbol:SPY trade_type:long entry_price:400.50 size:100 trade_group:day_trader
+/bto symbol:AAPL trade_type:long entry_price:150.25 size:50 trade_group:swing_trader
+/bto symbol:SPY trade_type:long entry_price:5.50 size:1 trade_group:day_trader expiration_date:2023-07-21 strike:405 option_type:CALL
+
+# Sell to Open (STO) Commands
+/sto symbol:TSLA trade_type:short entry_price:700.75 size:25 trade_group:swing_trader
+/sto symbol:AAPL trade_type:short entry_price:3.25 size:2 trade_group:day_trader expiration_date:2023-07-21 strike:160 option_type:PUT
+
+# List Open Trades
+/list
+
+# Now, use the trade IDs from the /list command output for the following commands:
+
+# Add to Existing Trades
+/add trade_id:<SPY_DAY_TRADE_ID> add_price:402.00 add_size:50
+/add trade_id:<AAPL_SWING_TRADE_ID> add_price:152.00 add_size:25
+
+# Trim Existing Trades
+/trim trade_id:<SPY_DAY_TRADE_ID> trim_price:405.00 trim_size:25
+/trim trade_id:<AAPL_SWING_TRADE_ID> trim_price:155.00 trim_size:10
+
+# Exit Trades
+/exit trade_id:<SPY_DAY_TRADE_ID> exit_price:410.00
+/exit trade_id:<AAPL_SWING_TRADE_ID> exit_price:145.00
+
+# Options Strategy
+/options_strategy strategy_name:Iron_Condor underlying_symbol:SPY trade_group:day_trader legs:BTO/400/2023-07-21/PUT/1/5.50,STO/405/2023-07-21/PUT/1/3.50,STO/415/2023-07-21/CALL/1/3.00,BTO/420/2023-07-21/CALL/1/1.50
+
+# Watchlist
+/wl trade_group:swing_trader symbol:NVDA reason:Potential breakout on earnings
+/wl trade_group:long_term_investor symbol:AMD reason:Strong fundamentals for long-term growth
+
+# Technical Analysis
+/ta trade_group:day_trader symbol:AMZN analysis:Bullish trend on 5-minute chart, watching for breakout above $3500 image_url:https://example.com/amzn_chart.png
+/ta trade_group:swing_trader symbol:QQQ analysis:Potential swing trade opportunity, support at $350 image_url:https://example.com/qqq_chart.png
+
+# Remove Trade Configuration
+/remove_trade_config name:long_term_investor
+
+# List Trade Configurations (after removal)
+/list_trade_configs
