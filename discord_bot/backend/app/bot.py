@@ -1,3 +1,4 @@
+from enum import Enum
 import os
 from datetime import datetime, timedelta
 import discord
@@ -23,8 +24,6 @@ from .database import SQLALCHEMY_DATABASE_URL
 
 load_dotenv()
 
-TEST_MODE = os.getenv('TEST_MODE')
-
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,6 +34,11 @@ intents.members = True
 
 bot = commands.Bot(command_prefix='/', intents=intents)
 
+class TradeGroupEnum(Enum):
+    DAY = "day_trader"
+    SWING = "swing_trader"
+    LT = "long_term_trader"
+
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
@@ -42,7 +46,11 @@ async def on_ready():
     #check_and_update_roles.start()
     
     # Sync commands for specific servers
-    guild_ids = [os.getenv('PROD_GUILD_ID'), os.getenv('TEST_GUILD_ID')]
+    guild_ids = []
+    if os.getenv("LOCAL_TEST", "false").lower() == "true":
+        guild_ids = [os.getenv('TEST_GUILD_ID')]
+    else:
+        guild_ids = [os.getenv('PROD_GUILD_ID')]
     
     for guild_id in guild_ids:
         if guild_id:
@@ -341,9 +349,9 @@ def convert_to_two_digit_year(date_string):
         # If it's already in MM/DD/YY format, return as is
         return date_string
 
-def determine_trade_group(expiration_date: str) -> str:
-    if not expiration_date:
-        return "long_term_trader"
+def determine_trade_group(expiration_date: str, trade_type: str) -> str:
+    if not expiration_date and trade_type == "sto" or trade_type == "bto":
+        return TradeGroupEnum.SWING_TRADER
     
     try:
         # Try parsing with 2-digit year first
@@ -354,16 +362,14 @@ def determine_trade_group(expiration_date: str) -> str:
             exp_date = datetime.strptime(expiration_date, "%m/%d/%Y").date()
         except ValueError:
             # If both fail, return default
-            return "long_term_trader"
+            return TradeGroupEnum.SWING_TRADER
     
     days_to_expiration = (exp_date - datetime.now().date()).days
     
     if days_to_expiration < 7:
-        return "day_trader"
-    elif 8 <= days_to_expiration <= 90:
-        return "swing_trader"
+        return TradeGroupEnum.DAY_TRADER
     else:
-        return "long_term_trader"
+        return TradeGroupEnum.SWING_TRADER
 
 def get_configuration(db: Session, trade_group: str) -> models.TradeConfiguration:
     """
@@ -432,10 +438,12 @@ async def bto(
             trade_type="Buy to Open",
             status=models.TradeStatusEnum.OPEN,
             entry_price=entry_price,
+            average_price=entry_price,
             current_size=size,
             created_at=datetime.utcnow(),
             closed_at=None,
             exit_price=None,
+            average_exit_price=None,
             profit_loss=None,
             risk_reward_ratio=None,
             win_loss=None,
@@ -466,10 +474,7 @@ async def bto(
         if strike:
             strike_display = f"${strike:,.2f}" if strike >= 0 else f"(${abs(strike):,.2f})"
             embed.add_field(name="Strike Price", value=strike_display, inline=True)
-        #if is_contract:
-        #    embed.add_field(name="Contract Trade", value="Yes", inline=True)
-        #if is_day_trade:
-        #    embed.add_field(name="Day Trade", value="Yes", inline=True)
+
         embed.set_footer(text=f"Trade ID: {new_trade.trade_id}")
 
         # Instead of sending an ephemeral message, log the command
@@ -522,7 +527,7 @@ async def sto(
             expiration_date = convert_to_two_digit_year(expiration_date)
         
         # Determine trade group based on expiration date
-        trade_group = determine_trade_group(expiration_date)
+        trade_group = determine_trade_group(expiration_date, "sto")
         
         config = get_configuration(db, trade_group)
         if not config:
@@ -544,10 +549,12 @@ async def sto(
             trade_type="Sell to Open",
             status=models.TradeStatusEnum.OPEN,
             entry_price=entry_price,
+            average_price=entry_price,
             current_size=size,
             created_at=datetime.utcnow(),
             closed_at=None,
             exit_price=None,
+            average_exit_price=None,
             profit_loss=None,
             risk_reward_ratio=None,
             win_loss=None,
@@ -572,16 +579,12 @@ async def sto(
         entry_price_display = f"${entry_price:,.2f}" if entry_price >= 0 else f"(${abs(entry_price):,.2f})"
         embed.add_field(name="Entry Price", value=entry_price_display, inline=True)
         embed.add_field(name="Risk Level (1-6)", value=size, inline=True)
-        #embed.add_field(name="Trade Group", value=trade_group, inline=True)
+
         if expiration_date:
             embed.add_field(name="Exp. Date", value=expiration_date, inline=True)
         if strike:
             strike_display = f"${strike:,.2f}" if strike >= 0 else f"(${abs(strike):,.2f})"
             embed.add_field(name="Strike Price", value=strike_display, inline=True)
-        #if is_contract:
-        #    embed.add_field(name="Contract Trade", value="Yes", inline=True)
-        #if is_day_trade:
-        #    embed.add_field(name="Day Trade", value="Yes", inline=True)
         embed.set_footer(text=f"Trade ID: {new_trade.trade_id}")
 
         # Send an ephemeral reply to the user
@@ -615,6 +618,108 @@ async def sto(
 
     # Instead of sending a generic response to the user, we'll defer the response and then do nothing
     await interaction.response.defer(ephemeral=True)
+
+@bot.slash_command(name="fut", description="Buy to open a new trade")
+async def future_trade(
+    interaction: discord.Interaction,
+    symbol: discord.Option(str, description="The symbol of the security"),
+    entry_price: discord.Option(float, description="The price at which the trade was opened"),
+    size: discord.Option(str, description="The size of the trade"),
+    note: discord.Option(str, description="Optional note from the trader") = None,
+):
+    trade_group = TradeGroupEnum.DAY_TRADER
+    await interaction.response.defer(ephemeral=True)
+    try:
+        await common_stock_trade(interaction.guild, trade_group, symbol, entry_price, size, note)
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed FUT command: Trade has been opened successfully.")
+    except Exception as e:
+        await log_to_channel(interaction.guild, f"Error in future trade (FUT) command by {interaction.user.name}: {str(e)}")
+
+@bot.slash_command(name="lt", description="Buy to open a new trade")
+async def long_term_trade(
+    interaction: discord.Interaction,
+    symbol: discord.Option(str, description="The symbol of the security"),
+    entry_price: discord.Option(float, description="The price at which the trade was opened"),
+    size: discord.Option(str, description="The size of the trade"),
+    note: discord.Option(str, description="Optional note from the trader") = None,
+):
+    trade_group = TradeGroupEnum.LONG_TERM_TRADER
+    await interaction.response.defer(ephemeral=True)
+    try:
+        await common_stock_trade(interaction.guild, trade_group, symbol, entry_price, size, note)
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed LT command: Trade has been opened successfully.")
+    except Exception as e:
+        await log_to_channel(interaction.guild, f"Error in long term trade (LT) command by {interaction.user.name}: {str(e)}")
+
+
+async def common_stock_trade(
+        guild: discord.Guild,
+        trade_group: TradeGroupEnum,
+        symbol: str,
+        entry_price: float,
+        size: str,
+        note: str = None,
+):
+    db = next(get_db())
+    config = get_configuration(db, trade_group)
+    if not config:
+        raise Exception(f"No configuration found for trade group: {trade_group}")
+
+    is_day_trade = False
+
+    new_trade = models.Trade(
+        symbol=symbol,
+        trade_type="Buy to Open",
+        status=models.TradeStatusEnum.OPEN,
+        entry_price=entry_price,
+        average_price=entry_price,
+        current_size=size,
+        created_at=datetime.utcnow(),
+        closed_at=None,
+        exit_price=None,
+        average_exit_price=None,
+        profit_loss=None,
+        risk_reward_ratio=None,
+        win_loss=None,
+        configuration_id=config.id,
+        is_contract=False,
+        is_day_trade=is_day_trade,
+        strike=None,
+        expiration_date=None,
+    )
+    db.add(new_trade)
+    db.commit()
+    db.refresh(new_trade)
+
+    embed = discord.Embed(title="New Trade Opened", color=discord.Color.green())
+    
+    embed.description = create_trade_oneliner(new_trade)
+    
+    embed.add_field(name="Symbol", value=symbol, inline=True)
+    embed.add_field(name="Trade Type", value="Buy to Open", inline=True)
+    entry_price_display = f"${entry_price:,.2f}" if entry_price >= 0 else f"(${abs(entry_price):,.2f})"
+    embed.add_field(name="Entry Price", value=entry_price_display, inline=True)
+    embed.add_field(name="Risk Level (1-6)", value=size, inline=True)
+
+    embed.set_footer(text=f"Trade ID: {new_trade.trade_id}")
+
+    channel = guild.get_channel(int(config.channel_id))
+    role = guild.get_role(int(config.role_id))
+    await channel.send(content=f"{role.mention}", embed=embed)
+
+    if note:
+        note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey())
+        await channel.send(embed=note_embed)
+
+    new_transaction = models.Transaction(
+        trade_id=new_trade.trade_id,
+        transaction_type=models.TransactionTypeEnum.OPEN,
+        amount=entry_price,
+        size=size,
+        created_at=datetime.utcnow()
+    )
+    db.add(new_transaction)
+    db.commit()
 
 @bot.slash_command(name="setup_conditional_role_grant", description="Set up a conditional role grant configuration")
 async def setup_conditional_role_grant(
@@ -1199,6 +1304,9 @@ async def add_to_trade(
         new_size = float(trade.current_size) + float(add_size)
         trade.current_size = str(new_size)
 
+        # Update the average price of the trade
+        trade.average_price = ((trade.average_price * trade.current_size) + (add_price * add_size)) / new_size
+
         db.commit()
 
         # Create an embed with the transaction information
@@ -1214,10 +1322,8 @@ async def add_to_trade(
         embed.add_field(name="Add Size", value=add_size, inline=True)
         embed.add_field(name="Previous Size", value=trade.current_size, inline=True)
         embed.add_field(name="New Total Size", value=f"{new_size:.2f}", inline=True)
-        #if trade.is_contract:
-        #    embed.add_field(name="Contract", value="Yes", inline=True)
-        #if trade.is_day_trade:
-        #    embed.add_field(name="Day Trade", value="Yes", inline=True)
+
+        embed.add_field(name="Avg Price", value=f"${trade.average_price:.2f}", inline=True)
 
         embed.set_footer(text=f"Trade ID: {trade.trade_id}")
 
@@ -1286,6 +1392,13 @@ async def trim_trade(
         # Update the current size of the trade
         new_size = current_size - trim_size
         trade.current_size = str(new_size)
+        # for all trim transactions, get the average trim price of that transaction * size of the trim
+        # Then multiply the trim_size by the average trim price of that transaction
+    
+        trim_transactions = crud.get_transactions_for_trade(db, trade_id, [models.TransactionTypeEnum.TRIM])
+        trim_transactions.append(new_transaction)
+        average_trim_price = sum(Decimal(t.amount) * Decimal(t.size) for t in trim_transactions) / sum(Decimal(t.size) for t in trim_transactions)
+        trade.average_exit_price = average_trim_price
 
         db.commit()
 
@@ -1374,7 +1487,7 @@ async def options_strategy(
                 await interaction.response.defer(ephemeral=True)
                 return
 
-        # Determine trade group based on expiration date
+        # Determine trade group based on expiration date of leg 1 (should this be different?)
         trade_group = determine_trade_group(parsed_legs[0][2].strftime('%m/%d/%y'))
         
         config = get_configuration(db, trade_group)
@@ -1400,10 +1513,12 @@ async def options_strategy(
                 trade_type=trade_type,
                 status=models.TradeStatusEnum.OPEN,
                 entry_price=price,
+                average_price=price,
                 current_size=size,
                 created_at=datetime.utcnow(),
                 closed_at=None,
                 exit_price=None,
+                average_exit_price=None,
                 profit_loss=None,
                 risk_reward_ratio=None,
                 win_loss=None,
@@ -1460,11 +1575,11 @@ async def options_strategy(
         db.close()
 
 async def run_bot():
-    #if TEST_MODE:
-    #    token = os.getenv('TEST_TOKEN')
-    #else:   
-    token = os.getenv('DISCORD_TOKEN')
-    print("token", token)
+    if os.getenv("LOCAL_TEST", "false").lower() == "true":
+        token = os.getenv('TEST_TOKEN')
+    else:   
+        token = os.getenv('DISCORD_TOKEN')
+    
     if not token:
         logger.error("DISCORD_TOKEN environment variable is not set.")
         raise ValueError("DISCORD_TOKEN environment variable is not set.")
