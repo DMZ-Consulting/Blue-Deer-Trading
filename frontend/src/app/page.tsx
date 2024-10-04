@@ -1,45 +1,44 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { getTrades } from '@/utils/api';
+import { useState } from 'react'
+import { TradesTableComponent } from '../components/TradesTable'
+import { ReportAreaComponent } from '../components/ReportArea'
 
-interface Trade {
-  trade_id: string;
-  symbol: string;
-  trade_type: string;
-  entry_price: number;
-  current_size: string;
-}
-
-export default function Home() {
-  const [trades, setTrades] = useState<Trade[]>([]);
-
-  useEffect(() => {
-    const fetchTrades = async () => {
-      try {
-        const tradesData = await getTrades();
-        setTrades(tradesData);
-      } catch (error) {
-        console.error('Error fetching trades:', error);
-      }
-    };
-
-    fetchTrades();
-  }, []);
+export default function Page() {
+  const [dateFilter, setDateFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <h1 className="text-4xl font-bold mb-8">Trades</h1>
-      <ul className="space-y-4">
-        {trades.map((trade) => (
-          <li key={trade.trade_id} className="bg-gray-100 p-4 rounded-lg">
-            <h2 className="text-xl font-semibold">{trade.symbol}</h2>
-            <p>Type: {trade.trade_type}</p>
-            <p>Entry Price: ${trade.entry_price.toFixed(2)}</p>
-            <p>Current Size: {trade.current_size}</p>
-          </li>
-        ))}
-      </ul>
-    </main>
-  );
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-8">Blue Deer Trading Dashboard</h1>
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="lg:w-2/3">
+          <div className="mb-4 flex flex-wrap gap-4">
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="border p-2 rounded"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="border p-2 rounded"
+            >
+              <option value="">All Statuses</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <TradesTableComponent
+            dateFilter={dateFilter}
+            statusFilter={statusFilter}
+          />
+        </div>
+        <div className="lg:w-1/3">
+          <ReportAreaComponent />
+        </div>
+      </div>
+    </div>
+  )
 }
