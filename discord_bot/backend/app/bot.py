@@ -1,26 +1,24 @@
-from enum import Enum
+import io
+import logging
 import os
-from datetime import datetime, timedelta
+import traceback
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
+from enum import Enum
+from operator import attrgetter
+from typing import List, Tuple
+
 import discord
+from discord import AutocompleteContext, ButtonStyle, OptionChoice
 from discord.ext import commands, tasks
 from discord.ui import Button, View
-from sqlalchemy.orm import Session
-from . import crud, models, schemas
-from .database import SessionLocal
-from discord import AutocompleteContext, OptionChoice, ButtonStyle
-from decimal import Decimal
-from typing import List, Tuple
-from operator import attrgetter
-import traceback
-import logging
-import asyncio
-import io
-from .models import create_tables  # Add this import
 from dotenv import load_dotenv
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from .database import SQLALCHEMY_DATABASE_URL
+from sqlalchemy.orm import Session, sessionmaker
+
+from . import crud, models, schemas
+from .database import SessionLocal, get_db
+from .models import create_tables  # Add this import
 
 load_dotenv()
 
@@ -43,7 +41,8 @@ class TradeGroupEnum(Enum):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     create_tables()  # Add this line to create tables
-    #check_and_update_roles.start()
+    check_and_update_roles.start()
+    check_and_exit_expired_trades.start()  # Start the new task
     
     # Sync commands for specific servers
     guild_ids = []
@@ -129,13 +128,6 @@ class TradePaginator(View):
         self.current_page += 1
         await self.send_page()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 @tasks.loop(minutes=2)
 async def check_and_update_roles():
     """
@@ -184,7 +176,7 @@ async def log_action(guild, message):
     finally:
         db.close()
 
-def update_expiration_dates():
+'''def update_expiration_dates():
     """
     Update all trade expiration dates in the database to use 2-digit years.
     """
@@ -201,9 +193,91 @@ def update_expiration_dates():
     except Exception as e:
         print(f"Error updating expiration dates: {str(e)}")
     finally:
+        db.close()'''
+
+@tasks.loop(time=time(hour=23, minute=45))
+async def check_and_exit_expired_trades():
+    db = next(get_db())
+    try:
+        today = date.today()
+        open_trades = crud.get_trades(db, status=models.TradeStatusEnum.OPEN)
+        
+        for trade in open_trades:
+            if trade.expiration_date and trade.expiration_date.date() == today:
+                await exit_expired_trade(trade)
+        
+    except Exception as e:
+        logger.error(f"Error in check_and_exit_expired_trades: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
         db.close()
 
+async def exit_expired_trade(trade):
+    db = next(get_db())
+    try:
+        config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.id == trade.configuration_id).first()
+        if not config:
+            logger.error(f"Configuration for trade {trade.trade_id} not found.")
+            return
 
+        # Set exit price to max loss
+        exit_price = 0 if trade.trade_type.lower() in ["long", "buy to open"] else trade.strike * 2
+
+        trade.status = models.TradeStatusEnum.CLOSED
+        trade.exit_price = exit_price
+        trade.closed_at = datetime.utcnow()
+        
+        current_size = Decimal(trade.current_size)
+        
+        new_transaction = models.Transaction(
+            trade_id=trade.trade_id,
+            transaction_type=models.TransactionTypeEnum.CLOSE,
+            amount=exit_price,
+            size=str(current_size),
+            created_at=datetime.utcnow()
+        )
+        db.add(new_transaction)
+
+        # Calculate profit/loss
+        open_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.OPEN, models.TransactionTypeEnum.ADD])
+        trim_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.TRIM])
+        
+        total_cost = sum(Decimal(t.amount) * Decimal(t.size) for t in open_transactions)
+        total_open_size = sum(Decimal(t.size) for t in open_transactions)
+        total_trimmed_size = sum(Decimal(t.size) for t in trim_transactions)
+        
+        average_cost = total_cost / total_open_size if total_open_size > 0 else 0
+        
+        trim_profit_loss = sum((Decimal(t.amount) - average_cost) * Decimal(t.size) for t in trim_transactions)
+        exit_profit_loss = (Decimal(exit_price) - average_cost) * current_size
+        
+        total_profit_loss = trim_profit_loss + exit_profit_loss
+        trade.profit_loss = float(total_profit_loss)
+
+        # Determine win/loss
+        trade.win_loss = models.WinLossEnum.LOSS
+
+        db.commit()
+
+        # Create an embed with the closed trade information
+        embed = discord.Embed(title="Trade Expired and Closed", color=discord.Color.red())
+        embed.description = create_trade_oneliner(trade)
+        embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
+        embed.add_field(name="Final Size", value=current_size, inline=True)
+        embed.add_field(name="Total Profit/Loss", value=f"${total_profit_loss:.2f}", inline=True)
+        embed.add_field(name="Result", value="Loss (Expired)", inline=True)
+        embed.set_footer(text=f"Trade ID: {trade.trade_id}")
+
+        # Send the embed to the configured channel with role ping
+        channel = bot.get_channel(int(config.channel_id))
+        role = channel.guild.get_role(int(config.role_id))
+        await channel.send(content=f"{role.mention}", embed=embed)
+
+    except Exception as e:
+        logger.error(f"Error exiting expired trade {trade.trade_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        db.close()
 
 @bot.slash_command(name="setup_verification", description="Set up a verification message with terms and conditions")
 async def setup_verification(
@@ -439,7 +513,7 @@ async def bto(
             status=models.TradeStatusEnum.OPEN,
             entry_price=entry_price,
             average_price=entry_price,
-            current_size=size,
+            size=size,
             created_at=datetime.utcnow(),
             closed_at=None,
             exit_price=None,
@@ -550,7 +624,7 @@ async def sto(
             status=models.TradeStatusEnum.OPEN,
             entry_price=entry_price,
             average_price=entry_price,
-            current_size=size,
+            size=size,
             created_at=datetime.utcnow(),
             closed_at=None,
             exit_price=None,
@@ -673,7 +747,7 @@ async def common_stock_trade(
         status=models.TradeStatusEnum.OPEN,
         entry_price=entry_price,
         average_price=entry_price,
-        current_size=size,
+        size=size,
         created_at=datetime.utcnow(),
         closed_at=None,
         exit_price=None,
@@ -917,7 +991,6 @@ async def post_update(
         channel = interaction.guild.get_channel(int(config.update_channel_id))
         await channel.send(embed=embed)
 
-        #await interaction.response.send_message("Update message posted successfully.", ephemeral=True)
         await log_to_channel(interaction.guild, f"User {interaction.user.name} executed U command: Update message posted successfully.")
     except Exception as e:
         logger.error(f"Error posting update message: {str(e)}")
@@ -1514,7 +1587,7 @@ async def options_strategy(
                 status=models.TradeStatusEnum.OPEN,
                 entry_price=price,
                 average_price=price,
-                current_size=size,
+                size=size,
                 created_at=datetime.utcnow(),
                 closed_at=None,
                 exit_price=None,
@@ -1585,7 +1658,7 @@ async def run_bot():
         raise ValueError("DISCORD_TOKEN environment variable is not set.")
     try:
         # Run the update_expiration_dates function before starting the bot
-        update_expiration_dates()
+        #update_expiration_dates()
         
         await bot.start(token)
     except Exception as e:

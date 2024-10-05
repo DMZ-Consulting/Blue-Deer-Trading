@@ -1,11 +1,20 @@
 import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Float, DateTime, Integer, ForeignKey, Table, Boolean, Enum
+
+import shortuuid
+from sqlalchemy import (Boolean, Column, DateTime, Enum, Float, ForeignKey,
+                        Integer, String, Table, TypeDecorator)
 from sqlalchemy.orm import relationship
+
 from .database import Base, engine
 from .enum_type import EnumType
-import shortuuid
+
+# Add this import at the top
+from sqlalchemy import Column, ForeignKey, String, Table
+
+import logging
+
 
 # Define a named ENUM type
 class TradeStatusEnum(enum.Enum):
@@ -14,7 +23,7 @@ class TradeStatusEnum(enum.Enum):
     CANCELLED = "cancelled"
 
 # Add this new enum
-class OptionsStrategyStatusEnum(enum.Enum):
+class OptionsStrategyStatusEnum(str, enum.Enum):
     OPEN = "open"
     CLOSED = "closed"
     CANCELLED = "cancelled"
@@ -40,6 +49,7 @@ class Trade(Base):
     entry_price = Column(Float, nullable=False)
     average_price = Column(Float, nullable=True)
     current_size = Column(String, nullable=False)
+    size = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     closed_at = Column(DateTime, nullable=True)
     exit_price = Column(Float, nullable=True)
@@ -70,8 +80,6 @@ class Transaction(Base):
 
     trade = relationship("Trade", back_populates="transactions")
 
-# Add this import at the top
-from sqlalchemy import Table, Column, ForeignKey, String
 
 # Add this new model
 class TradeConfiguration(Base):
@@ -122,9 +130,11 @@ class Verification(Base):
     configuration_id = Column(Integer, ForeignKey("verification_configs.id"))
     timestamp = Column(DateTime)
 
-from sqlalchemy import Column, Integer, String, ForeignKey, Table
+from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import relationship
+
 from .database import Base
+
 
 class RoleRequirement(Base):
     __tablename__ = "role_requirements"
@@ -167,5 +177,26 @@ class BotConfiguration(Base):
     ta_channel_id = Column(String)
 
 # Add this function at the end of the file
-def create_tables():
+def create_tables(engine):
     Base.metadata.create_all(bind=engine)
+
+# After all your model definitions
+logging.info(f"Models defined: {', '.join(Base.metadata.tables.keys())}")
+
+
+class EnumType(TypeDecorator):
+    impl = String
+    cache_ok = True
+
+    def __init__(self, enum_class):
+        super().__init__()
+        self.enum_class = enum_class
+
+    def process_bind_param(self, value, dialect):
+        if isinstance(value, str):
+            return value
+        return value.value if value else None
+
+    def process_result_value(self, value, dialect):
+        return self.enum_class(value) if value else None
+
