@@ -14,6 +14,7 @@ from .enum_type import EnumType
 from sqlalchemy import Column, ForeignKey, String, Table
 
 import logging
+from pydantic import field_validator
 
 
 # Define a named ENUM type
@@ -48,7 +49,7 @@ class Trade(Base):
     status = Column(EnumType(TradeStatusEnum), nullable=False)
     entry_price = Column(Float, nullable=False)
     average_price = Column(Float, nullable=True)
-    current_size = Column(String, nullable=False)
+    current_size = Column(String, nullable=True)
     size = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     closed_at = Column(DateTime, nullable=True)
@@ -67,6 +68,13 @@ class Trade(Base):
     strike = Column(Float, nullable=True)
     expiration_date = Column(DateTime, nullable=True)
     option_type = Column(String, nullable=True)
+
+    @field_validator('current_size', mode='before')
+    @classmethod
+    def validate_current_size(cls, v):
+        if isinstance(v, float):
+            return str(v)
+        return v
 
 class Transaction(Base):
     __tablename__ = "transactions"
