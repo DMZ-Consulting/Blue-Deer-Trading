@@ -1,14 +1,15 @@
 # Makefile for Blue Deer Trading Discord Bot
 
 # Variables
-PYTHON := python3
+PYTHON := python
 UVICORN := uvicorn
 APP := app.main:app
 PORT := 8000
 TEST_CMD := pytest
+REQUIREMENTS := app/requirements.txt
 
 # Phony targets
-.PHONY: run run_local test init_db clean
+.PHONY: run run_local test init_db clean update_trade_metrics install_deps
 
 # Default target
 all: run
@@ -45,6 +46,12 @@ help:
 	@echo "  test        - Run the tests"
 	@echo "  init_db     - Initialize the database"
 	@echo "  clean       - Clean up generated files"
+	@echo "  db-upgrade  - Upgrade the database"
+	@echo "  prod-db-upgrade - Upgrade the production database"
+	@echo "  db-upgrade-plan - Show the migration plan without executing"
+	@echo "  db-check    - Check if the database is up to date"
+	@echo "  update_trade_metrics - Update trade metrics in the database"
+	@echo "  install_deps - Install required dependencies"
 	@echo "  help        - Show this help message"
 
 # Database migration command with check
@@ -80,3 +87,41 @@ db-check:
 		echo "Database needs to be upgraded."; \
 		exit 1; \
 	fi
+
+# Define the path to the script (use quotes to handle spaces in path)
+MIGRATION_SCRIPT := "$(CURDIR)/alembic/run_specific_migration.py"
+
+# Run a specific migration, handling errors
+db-upgrade-specific:
+	@read -p "Enter the revision ID: " rev_id; \
+	python "$(MIGRATION_SCRIPT)" "$$rev_id"
+
+# Run a specific migration in production
+prod-db-upgrade-specific:
+	@read -p "Enter the revision ID: " rev_id; \
+	echo "Are you sure you want to run migration $$rev_id on the production database? (y/n)"; \
+	read answer; \
+	if [ "$$answer" = "y" ]; then \
+		echo "Running migration $$rev_id..."; \
+		alembic upgrade $$rev_id; \
+	else \
+		echo "Migration cancelled."; \
+	fi
+
+# List all revisions with dates
+db-revisions:
+	@alembic history --verbose
+
+# Stamp the database with the current head revision
+db-stamp-head:
+	alembic stamp head
+
+# New target to run the update trade metrics script
+update_trade_metrics: install_deps
+	@echo "Updating trade metrics..."
+	cd backend && $(PYTHON) ../scripts/update_trade_metrics.py
+
+# Install dependencies
+install_deps:
+	@echo "Installing dependencies..."
+	cd backend && pip install -r $(REQUIREMENTS)
