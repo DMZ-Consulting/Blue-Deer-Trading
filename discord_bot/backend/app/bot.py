@@ -15,6 +15,9 @@ from discord.ui import Button, View
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from .database import SQLALCHEMY_DATABASE_URL
+import aiofiles
+from discord.errors import HTTPException
 
 from . import crud, models, schemas
 from .database import SessionLocal, get_db, engine
@@ -881,12 +884,61 @@ async def common_stock_trade(
         db.close()
 
 
+@bot.slash_command(name="scrape_channel", description="Scrape all messages from a channel and save to a file")
+async def scrape_channel(
+    interaction: discord.Interaction,
+    channel: discord.Option(discord.TextChannel, description="The channel to scrape"),
+    filename: discord.Option(str, description="The filename to save the scraped data (e.g., 'output.txt')")
+):
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        message_count = 0
+        async with aiofiles.open(filename, mode='w', encoding='utf-8') as file:
+            async for message in channel.history(limit=None):
+                content = message.content.strip()
+                
+                # Handle embeds
+                for embed in message.embeds:
+                    if embed.description:
+                        content += f" {embed.description.strip()}"
+                    for field in embed.fields:
+                        content += f" {field.name}: {field.value}"
+                
+                if content:
+                    # Format the date and time
+                    date_time = message.created_at.strftime("%m/%d/%y %H:%M:%S")
+                    author = message.author.name
+                    
+                    # Write the formatted message
+                    await file.write(f"{date_time} - {author} - {content}\n")
+                    message_count += 1
+                
+                if message_count % 1000 == 0:
+                    await interaction.followup.send(f"Processed {message_count} messages...", ephemeral=True)
+        
+        await interaction.followup.send(f"Scraping complete. {message_count} messages saved to {filename}", ephemeral=True)
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed SCRAPE_CHANNEL command: {message_count} messages scraped from {channel.name} and saved to {filename}")
+    
+    except HTTPException as e:
+        error_message = f"Discord API error: {str(e)}"
+        await interaction.followup.send(error_message, ephemeral=True)
+        await log_to_channel(interaction.guild, f"Error in SCRAPE_CHANNEL command by {interaction.user.name}: {error_message}")
+    
+    except Exception as e:
+        error_message = f"An error occurred while scraping the channel: {str(e)}"
+        await interaction.followup.send(error_message, ephemeral=True)
+        await log_to_channel(interaction.guild, f"Error in SCRAPE_CHANNEL command by {interaction.user.name}: {error_message}")
+        logger.error(f"Error in scrape_channel: {str(e)}")
+        logger.error(traceback.format_exc())
+
 async def run_bot():
+
     if os.getenv("LOCAL_TEST", "false").lower() == "true":
         token = os.getenv('TEST_TOKEN')
     else:   
         token = os.getenv('DISCORD_TOKEN')
-    
+
     if not token:
         logger.error("DISCORD_TOKEN environment variable is not set.")
         raise ValueError("DISCORD_TOKEN environment variable is not set.")
@@ -912,3 +964,4 @@ async def log_to_channel(guild, message):
         await log_channel.send(message)
     else:
         print(f"Warning: Verification log channel not found. Message: {message}")
+
