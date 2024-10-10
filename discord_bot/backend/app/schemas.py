@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, validator, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
 from typing import List, Optional
 from .models import TradeStatusEnum, WinLossEnum, TransactionTypeEnum, OptionsStrategyStatusEnum

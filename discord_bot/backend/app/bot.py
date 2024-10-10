@@ -1,26 +1,20 @@
-import io
 import logging
 import os
 import traceback
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from enum import Enum
-from operator import attrgetter
-from typing import List, Tuple
 
+import aiofiles
 import discord
-from discord import AutocompleteContext, ButtonStyle, OptionChoice
+from discord import ButtonStyle
+from discord.errors import HTTPException
 from discord.ext import commands, tasks
 from discord.ui import Button, View
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from .database import SQLALCHEMY_DATABASE_URL
-import aiofiles
-from discord.errors import HTTPException
+from sqlalchemy.orm import Session
 
-from . import crud, models, schemas
-from .database import SessionLocal, get_db, engine
+from . import crud, models
+from .database import engine, get_db
 from .models import create_tables  # Add this import
 
 load_dotenv()

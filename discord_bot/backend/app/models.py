@@ -1,13 +1,12 @@
 import enum
-import uuid
 from datetime import datetime
 
 import shortuuid
-from sqlalchemy import (Boolean, Column, DateTime, Enum, Float, ForeignKey,
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
                         Integer, String, Table, TypeDecorator)
 from sqlalchemy.orm import relationship
 
-from .database import Base, engine
+from .database import Base
 from .enum_type import EnumType
 
 # Add this import at the top
