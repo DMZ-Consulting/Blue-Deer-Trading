@@ -1,24 +1,44 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-from . import crud, models, schemas
-from .database import SessionLocal, engine
 import asyncio
-from .bot import run_bot
-from typing import List
 import logging
-from fastapi.middleware.cors import CORSMiddleware
-from .models import create_tables
-import shutil
 import os
+import shutil
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from typing import List
 
-models.Base.metadata.create_all(bind=engine)
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
-app = FastAPI()
+from . import crud, models, schemas
+from .bot import run_bot
+from .database import get_db, engine, SessionLocal
+from .models import create_tables
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Check if we're in a test environment
+IS_TEST = os.getenv('FASTAPI_TEST') == 'true'
+
+models.Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_tables(engine)
+    try:
+        asyncio.create_task(run_bot())
+        if not IS_TEST:
+            asyncio.create_task(backup_database())
+    except Exception as e:
+        logger.error(f"Failed to start the bot or backup task: {str(e)}")
+    yield
+    # Shutdown code here (if any)
+
+app = FastAPI(lifespan=lifespan)
+
+
 
 # Add CORS middleware
 app.add_middleware(
@@ -66,6 +86,8 @@ async def read_root():
 
 # Modify the backup_database function
 async def backup_database():
+    if IS_TEST:
+        return  # Skip backups during tests
     while True:
         try:
             # Get the current date for the backup file name
@@ -107,12 +129,76 @@ def cleanup_old_backups(backup_dir):
     except Exception as e:
         logger.error(f"Failed to clean up old backups: {str(e)}")
 
-# Modify the startup event to include the backup task
-@app.on_event("startup")
-async def startup_event():
-    create_tables()
+@app.post("/trades/bto", response_model=schemas.Trade)
+def create_bto_trade(trade_input: crud.TradeInput, db: Session = Depends(get_db)):
     try:
-        asyncio.create_task(run_bot())
-        asyncio.create_task(backup_database())
+        return crud.bto_trade(db, trade_input)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/trades/sto", response_model=schemas.Trade)
+def create_sto_trade(trade: schemas.TradeCreate, db: Session = Depends(get_db)):
+    try:
+        return crud.create_trade(db, trade)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.post("/trades/options-strategy", response_model=schemas.StrategyTrade)
+def create_options_strategy(strategy: schemas.StrategyTradeCreate, db: Session = Depends(get_db)):
+    return crud.create_options_strategy(db, strategy)
+
+@app.post("/trades/{trade_id}/add", response_model=schemas.Trade)
+def add_to_trade(trade_id: str, action_input: crud.TradeActionInput, db: Session = Depends(get_db)):
+    return crud.add_to_trade(db, action_input)
+
+@app.post("/trades/{trade_id}/trim", response_model=schemas.Trade)
+def trim_trade(trade_id: str, action_input: crud.TradeActionInput, db: Session = Depends(get_db)):
+    return crud.trim_trade(db, action_input)
+
+@app.post("/trades/{trade_id}/exit", response_model=schemas.Trade)
+def exit_trade(trade_id: str, action_input: crud.TradeActionInput, db: Session = Depends(get_db)):
+    return crud.exit_trade(db, action_input)
+
+@app.post("/trades/{trade_id}/exit-expired", response_model=schemas.Trade)
+def exit_expired_trade(trade_id: str, db: Session = Depends(get_db)):
+    try:
+        return crud.exit_expired_trade(db, trade_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/trades/fut", response_model=schemas.Trade)
+def create_future_trade(trade_input: schemas.TradeCreate, db: Session = Depends(get_db)):
+    try:
+        return crud.future_trade(db, trade_input)
+    except ValueError as e:
+        logger.error(f"Failed to create future trade: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/trades/lt", response_model=schemas.Trade)
+def create_long_term_trade(trade_input: schemas.TradeCreate, db: Session = Depends(get_db)):
+    try:
+        return crud.long_term_trade(db, trade_input)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Add this endpoint to test the expired trades functionality
+@app.post("/trades/check-and-exit-expired")
+async def check_and_exit_expired_trades(db: Session = Depends(get_db)):
+    try:
+        today = datetime.now().date()
+        open_trades = crud.get_trades(db, status=models.TradeStatusEnum.OPEN)
+        
+        exited_trades = []
+        for trade in open_trades:
+            if trade.expiration_date and trade.expiration_date.date() <= today:
+                exited_trade = crud.exit_expired_trade(db, trade.trade_id)
+                exited_trades.append(exited_trade)
+        
+        return {"message": f"Exited {len(exited_trades)} expired trades", "exited_trades": exited_trades}
     except Exception as e:
-        logger.error(f"Failed to start the bot or backup task: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Ignore DeprecationWarning for discord.player
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="discord.player")
