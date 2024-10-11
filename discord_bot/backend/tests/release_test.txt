@@ -1,0 +1,270 @@
+Discord Bot Trade Command Tests
+
+1. BTO (Buy to Open)
+Command: /bto symbol:AAPL entry_price:150.50 size:100 expiration_date:06/16/23 strike:155 option_type:C note:Testing BTO command
+
+Expected Embed Fields:
+- Symbol: AAPL
+- Trade Type: BTO
+- Entry Price: $150.50
+- Size: 100
+- Expiration Date: 06/16/23
+- Strike: $155.00
+- Option Type: CALL
+- Note: Testing BTO command
+
+2. STO (Sell to Open)
+Command: /sto symbol:TSLA entry_price:800.75 size:50 expiration_date:07/21/23 strike:825 option_type:P note:Testing STO command
+
+Expected Embed Fields:
+- Symbol: TSLA
+- Trade Type: STO
+- Entry Price: $800.75
+- Size: 50
+- Expiration Date: 07/21/23
+- Strike: $825.00
+- Option Type: PUT
+- Note: Testing STO command
+
+3. FUT (Futures Trade)
+Command: /fut symbol:ES entry_price:4200.50 size:2 note:Testing FUT command
+
+Expected Embed Fields:
+- Symbol: ES
+- Trade Type: BTO
+- Entry Price: $4,200.50
+- Size: 2
+- Note: Testing FUT command
+
+4. LT (Long-Term Trade)
+Command: /lt symbol:MSFT entry_price:280.25 size:75 note:Testing LT command
+
+Expected Embed Fields:
+- Symbol: MSFT
+- Trade Type: BTO
+- Entry Price: $280.25
+- Size: 75
+- Note: Testing LT command
+
+5. OS (Options Strategy)
+Command: /os strategy_name:Iron Condor size:1 net_cost:2.00 legs:-TSLA230721P825+TSLA230721P830-TSLA230721C850+TSLA230721C855 note:Testing OS command
+
+Expected Embed Fields:
+- Strategy Name: Iron Condor
+- Underlying Symbol: TSLA
+- Net Cost: $2.00
+- Size: 1
+- Leg 1: STO TSLA 825 PUT 07/21/23
+- Leg 2: BTO TSLA 830 PUT 07/21/23
+- Leg 3: STO TSLA 850 CALL 07/21/23
+- Leg 4: BTO TSLA 855 CALL 07/21/23
+- Note: Testing OS command
+
+6. OS_ADD (Add to Options Strategy)
+Command: /os_add trade_id:[ID from previous OS command] net_cost:2.10 size:1 note:Testing OS_ADD command
+
+Expected Embed Fields:
+- Strategy Name: Iron Condor
+- Net Cost: $2.10
+- Added Size: 1
+- New Total Size: 2
+- Average Net Cost: $2.05
+- Note: Testing OS_ADD command
+
+7. OS_TRIM (Trim Options Strategy)
+Command: /os_trim trade_id:[ID from previous OS command] net_cost:2.20 size:1 note:Testing OS_TRIM command
+
+Expected Embed Fields:
+- Strategy Name: Iron Condor
+- Net Cost: $2.20
+- Trimmed Size: 1
+- Remaining Size: 1
+- Note: Testing OS_TRIM command
+
+8. OS_EXIT (Exit Options Strategy)
+Command: /os_exit trade_id:[ID from previous OS command] net_cost:1.80 note:Testing OS_EXIT command
+
+Expected Embed Fields:
+- Strategy Name: Iron Condor
+- Net Cost: $1.80
+- Exited Size: 1
+- Avg Entry Cost: $2.05
+- Avg Exit Cost: $1.80
+- P/L per Contract: -$0.25
+- Note: Testing OS_EXIT command
+
+9. ADD (Add to Existing Trade)
+Command: /add trade_id:12345 add_price:152.75 add_size:50 note:Testing ADD command
+
+Expected Embed Fields:
+- Symbol: AAPL (assuming the trade_id 12345 corresponds to the AAPL trade from the BTO command)
+- Trade Type: BTO
+- Add Price: $152.75
+- Add Size: 50
+- Previous Size: 100
+- New Total Size: 150
+- Note: Testing ADD command
+
+10. TRIM (Trim Existing Trade)
+Command: /trim trade_id:12345 trim_price:155.00 trim_size:25 note:Testing TRIM command
+
+Expected Embed Fields:
+- Symbol: AAPL (assuming the trade_id 12345 corresponds to the AAPL trade from the BTO command)
+- Trade Type: BTO
+- Trim Price: $155.00
+- Trim Size: 25
+- Previous Size: 150
+- Remaining Size: 125
+- P/L per: $4.50 (assuming the average entry price is now $150.50)
+- Note: Testing TRIM command
+
+12. OPEN (Open a trade from clipboard)
+Command: /open trade_string:+AAPL230616C155 price:150.50 size:100 note:Testing OPEN command
+
+Expected Embed Fields:
+- Symbol: AAPL
+- Trade Type: BTO
+- Entry Price: $150.50
+- Size: 100
+- Expiration Date: 06/16/23
+- Strike: $155.00
+- Option Type: CALL
+- Note: Testing OPEN command
+
+Additional OPEN tests:
+a. STO PUT:
+Command: /open trade_string:-TSLA230721P825 price:800.75 size:50 note:Testing OPEN STO PUT
+
+b. Stock trade:
+Command: /open trade_string:MSFT price:280.25 size:75 note:Testing OPEN stock trade
+
+c. Invalid trade string:
+Command: /open trade_string:INVALID price:100 size:10 note:Testing invalid trade string
+
+d. Missing price:
+Command: /open trade_string:+AAPL230616C155 size:100 note:Testing missing price
+
+e. Missing size:
+Command: /open trade_string:+AAPL230616C155 price:150.50 note:Testing missing size
+
+f. Complex option symbol:
+Command: /open trade_string:+.SPXW230630C4300 price:25.50 size:1 note:Testing complex option symbol
+
+Additional Test Commands:
+
+9. Test autocomplete for trade_id:
+Start typing: /add trade_id:
+or
+Start typing: /trim trade_id:
+
+10. Test error handling:
+/bto symbol:INVALID entry_price:-100 size:0
+
+11. Test without optional parameters:
+/bto symbol:NFLX entry_price:400.00 size:25
+
+12. Test different trade groups:
+/bto symbol:AMZN entry_price:3300.00 size:10 expiration_date:12/15/23
+/bto symbol:GOOGL entry_price:2800.00 size:15 expiration_date:01/19/24
+
+13. Verify channel and role pings:
+Run any of the above commands and check if the correct channel receives the message and the correct role is pinged.
+
+14. Verify trade ID in embed footer:
+Check the footer of the embed for all trade-related commands to ensure the trade ID is displayed.
+
+15. Test multi-leg strategies:
+Command: /os strategy_name:Bull Call Spread underlying_symbol:QQQ leg1:+QQQ230818C350,5.50,1 leg2:-QQQ230818C355,3.50,1
+
+Expected Embed Fields:
+- Strategy Name: Bull Call Spread
+- Underlying Symbol: QQQ
+- Leg 1: BTO 1 QQQ 350 CALL 08/18/23 @ $5.50
+- Leg 2: STO 1 QQQ 355 CALL 08/18/23 @ $3.50
+
+16. Verify P/L calculation:
+Run the TRIM command with different prices and check if the P/L per contract is calculated correctly.
+
+17. Test large numbers:
+/bto symbol:BRK.A entry_price:500000.00 size:1
+
+18. Test small numbers:
+/bto symbol:SNDL entry_price:0.50 size:1000
+
+19. Test overtrading:
+First run: /bto symbol:XYZ entry_price:100.00 size:100
+Then run: /trim trade_id:[ID from previous trade] trim_price:110.00 trim_size:150
+
+20. Test date formatting:
+/bto symbol:SPY entry_price:420.00 size:10 expiration_date:12/31/2023
+
+21. Test note in separate embed:
+Run any command with a long note and verify it appears in a separate embed.
+
+22. Test watchlist update:
+/wl message:AAPL looking bullish, potential breakout above $150
+
+23. Test technical analysis update:
+/ta message:SPY showing a bearish divergence on the daily chart, approach with caution
+
+24. Test setting channels:
+/set_watchlist_channel channel:#watchlist-updates
+/set_ta_channel channel:#technical-analysis
+
+25. Test multi-leg strategies with new format:
+Command: /os strategy_name:Bull Call Spread size:1 net_cost:2.00 legs:+QQQ230818C350-QQQ230818C355 note:Testing multi-leg strategy
+
+Expected Embed Fields:
+- Strategy Name: Bull Call Spread
+- Underlying Symbol: QQQ
+- Net Cost: $2.00
+- Size: 1
+- Leg 1: BTO QQQ 350 CALL 08/18/23
+- Leg 2: STO QQQ 355 CALL 08/18/23
+- Note: Testing multi-leg strategy
+
+26. Test options strategy with multiple contracts:
+Command: /os strategy_name:Straddle size:5 net_cost:10.00 legs:+SPY230630C430+SPY230630P430 note:Testing multiple contracts
+
+Expected Embed Fields:
+- Strategy Name: Straddle
+- Underlying Symbol: SPY
+- Net Cost: $10.00
+- Size: 5
+- Leg 1: BTO SPY 430 CALL 06/30/23
+- Leg 2: BTO SPY 430 PUT 06/30/23
+- Note: Testing multiple contracts
+
+27. Test options strategy error handling:
+a. Invalid legs format:
+Command: /os strategy_name:Invalid size:1 net_cost:1.00 legs:INVALID note:Testing invalid legs
+
+b. Mismatched underlying symbols:
+Command: /os strategy_name:Mismatch size:1 net_cost:1.00 legs:+SPY230630C430+QQQ230630P430 note:Testing mismatched symbols
+
+28. Test options strategy modifications:
+a. Add to strategy:
+Command: /os_add trade_id:[ID from previous OS command] net_cost:11.00 size:2 note:Testing add to strategy
+
+b. Trim strategy:
+Command: /os_trim trade_id:[ID from previous OS command] net_cost:10.50 size:3 note:Testing trim strategy
+
+c. Exit strategy:
+Command: /os_exit trade_id:[ID from previous OS command] net_cost:9.50 note:Testing exit strategy
+
+29. Verify options strategy ID in embed footer:
+Check the footer of the embed for all options strategy-related commands to ensure the strategy ID is displayed.
+
+30. Test options strategy with weekly options:
+Command: /os strategy_name:Weekly Iron Condor size:1 net_cost:1.50 legs:-SPXW230630C4400+SPXW230630C4405-SPXW230630P4300+SPXW230630P4295 note:Testing weekly options
+
+Expected Embed Fields:
+- Strategy Name: Weekly Iron Condor
+- Underlying Symbol: SPX
+- Net Cost: $1.50
+- Size: 1
+- Leg 1: STO SPX 4400 CALL 06/30/23
+- Leg 2: BTO SPX 4405 CALL 06/30/23
+- Leg 3: STO SPX 4300 PUT 06/30/23
+- Leg 4: BTO SPX 4295 PUT 06/30/23
+- Note: Testing weekly options

@@ -6,6 +6,7 @@ Base = declarative_base()
 
 class EnumType(TypeDecorator):
     impl = types.String
+    cache_ok = True
 
     def __init__(self, enum_class):
         super().__init__()
