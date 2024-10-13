@@ -9,7 +9,9 @@ from backend.app.database import Base
 from decimal import Decimal, InvalidOperation
 
 # Create engine and session
-engine = create_engine('sqlite:///.././backend/app/sql_app.db')
+# make sure the directory is always the same no matter where the script is run from
+db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'db', 'sql_app.db')
+engine = create_engine('sqlite:///' + db_path)
 Session = sessionmaker(bind=engine)
 session = Session()
 
