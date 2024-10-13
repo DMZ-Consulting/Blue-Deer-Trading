@@ -5,6 +5,8 @@ import io
 import logging
 import os
 import traceback
+import re
+import json
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
@@ -441,6 +443,30 @@ async def get_open_trade_ids(ctx: discord.AutocompleteContext):
     finally:
         db.close()
 
+async def get_open_os_trade_ids(ctx: discord.AutocompleteContext):
+    db = next(get_db())
+    try:
+        open_trades = crud.get_os_trades(db, status=models.OptionsStrategyStatusEnum.OPEN)
+        
+        # Format trade information
+        trade_info = []
+        for trade in open_trades:
+            symbol = trade.underlying_symbol
+            name = trade.name
+
+            display = f"{symbol} - {name}"
+            sort_key = (symbol, name)
+            
+            trade_info.append((trade.trade_id, display, sort_key))
+        
+        # Sort the trades
+        sorted_trades = sorted(trade_info, key=lambda x: x[2])
+        
+        # Create OptionChoice objects
+        return [discord.OptionChoice(name=f"{display} (ID: {trade_id})", value=trade_id) for trade_id, display, _ in sorted_trades]
+    finally:
+        db.close()
+
 async def get_trade_groups(ctx: discord.AutocompleteContext):
     db = next(get_db())
     try:
@@ -562,6 +588,7 @@ async def create_trade(
             entry_price=entry_price,
             average_price=entry_price,
             size=size,
+            current_size=size,
             created_at=datetime.utcnow(),
             closed_at=None,
             exit_price=None,
@@ -806,6 +833,7 @@ async def options_strategy(
         leg_symbols = re.findall(r'[+-]?\.?[A-Z]+\d+[CP]\d+', legs)
         for symbol in leg_symbols:
             parsed = parse_option_symbol(symbol)
+            parsed['size'] = size
             parsed_legs.append(parsed)
 
             if not underlying_symbol:
@@ -827,7 +855,7 @@ async def options_strategy(
             status=models.OptionsStrategyStatusEnum.OPEN,
             configuration_id=config.id,
             trade_group=trade_group,
-            legs=json.dumps(parsed_legs),
+            legs=json.dumps([{**leg, 'expiration_date': leg['expiration_date'].strftime('%Y-%m-%d')} for leg in parsed_legs]),
             net_cost=net_cost,
             average_net_cost=net_cost,
             size=size,
@@ -855,7 +883,7 @@ async def options_strategy(
         embed.add_field(name="Size", value=size, inline=True)
 
         for i, leg in enumerate(parsed_legs, 1):
-            leg_info = f"{leg['trade_type']} {leg['size']} {leg['symbol']} {leg['strike']} {leg['option_type']} {leg['expiration_date'].strftime('%m/%d/%y')} @ ${leg['price']:.2f}"
+            leg_info = f"{leg['trade_type']} {leg['size']} {leg['symbol']} {leg['strike']} {leg['option_type']} {leg['expiration_date'].strftime('%m/%d/%y')}"
             embed.add_field(name=f"Leg {i}", value=leg_info, inline=False)
 
         if note:
@@ -879,7 +907,7 @@ async def options_strategy(
 @bot.slash_command(name="os_add", description="Add to an existing options strategy trade")
 async def os_add(
     interaction: discord.Interaction,
-    trade_id: discord.Option(str, description="The ID of the options strategy trade to add to"),
+    trade_id: discord.Option(str, description="The ID of the options strategy trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
     net_cost: discord.Option(float, description="The net cost of the addition"),
     size: discord.Option(str, description="The size to add"),
     note: discord.Option(str, description="Optional note from the trader") = None,
@@ -931,7 +959,7 @@ async def os_add(
 @bot.slash_command(name="os_trim", description="Trim an existing options strategy trade")
 async def os_trim(
     interaction: discord.Interaction,
-    trade_id: discord.Option(str, description="The ID of the options strategy trade to trim"),
+    trade_id: discord.Option(str, description="The ID of the options strategy trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
     net_cost: discord.Option(float, description="The net cost of the trim"),
     size: discord.Option(str, description="The size to trim"),
     note: discord.Option(str, description="Optional note from the trader") = None,
@@ -985,7 +1013,7 @@ async def os_trim(
 @bot.slash_command(name="os_exit", description="Exit an existing options strategy trade")
 async def os_exit(
     interaction: discord.Interaction,
-    trade_id: discord.Option(str, description="The ID of the options strategy trade to exit"),
+    trade_id: discord.Option(str, description="The ID of the options strategy trade to exit", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
     net_cost: discord.Option(float, description="The net cost of the exit"),
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
@@ -1430,6 +1458,7 @@ async def trim_trade(
             await kill_interaction(interaction)
             return
 
+
         current_size = Decimal(trade.current_size)
         trim_size = Decimal(trim_size)
 
@@ -1459,7 +1488,9 @@ async def trim_trade(
         total_size = sum(Decimal(t.size) for t in open_transactions)
         average_cost = total_cost / total_size if total_size > 0 else Decimal('0')
         
-        trim_profit_loss = (Decimal(trim_price) - average_cost) * trim_size
+        trim_profit_loss = (Decimal(trim_price) - average_cost)
+
+        unit = "contract" if trade.is_contract else "share"
 
         # Create an embed with the transaction information
         embed = discord.Embed(title="Trimmed Trade", color=discord.Color.orange())
@@ -1474,11 +1505,7 @@ async def trim_trade(
         embed.add_field(name="Trim Size", value=str(trim_size), inline=True)
         embed.add_field(name="Previous Size", value=str(current_size), inline=True)
         embed.add_field(name="Remaining Size", value=f"{new_size:.2f}", inline=True)
-        embed.add_field(name="P/L for this trim", value=f"${trim_profit_loss:.2f}", inline=True)
-        if trade.is_contract:
-            embed.add_field(name="Contract", value="Yes", inline=True)
-        if trade.is_day_trade:
-            embed.add_field(name="Day Trade", value="Yes", inline=True)
+        embed.add_field(name=f"P/L per {unit}", value=f"${trim_profit_loss:.2f}", inline=True)
 
         embed.set_footer(text=f"Trade ID: {trade.trade_id}")
 

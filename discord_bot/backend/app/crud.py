@@ -42,6 +42,21 @@ def get_trades(db: Session, status: models.TradeStatusEnum = None, skip: int = 0
     
     return trades
 
+def get_os_trades(db: Session, status: models.TradeStatusEnum = None, skip: int = 0, limit: int = 100):
+    query = db.query(models.OptionsStrategyTrade)
+    if status is not None:
+        query = query.filter(models.OptionsStrategyTrade.status == status)
+    
+    trades = query.offset(skip).limit(limit).all()
+
+    # ensure enum values are properly converted
+    for trade in trades:
+        trade.status = models.OptionsStrategyStatusEnum(trade.status)
+        for transaction in trade.transactions:
+            transaction.transaction_type = models.TransactionTypeEnum(transaction.transaction_type)
+
+    return trades
+
 def get_trade(db: Session, trade_id: str):
     logging.info(f"Attempting to retrieve trade with ID: {trade_id}")
     trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()

@@ -4,7 +4,7 @@ from datetime import datetime
 import shortuuid
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
                         Integer, String, Table, TypeDecorator)
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from .database import Base
 from .enum_type import EnumType
@@ -66,13 +66,6 @@ class Trade(Base):
     expiration_date = Column(DateTime, nullable=True)
     option_type = Column(String, nullable=True)
 
-    @field_validator('current_size', mode='before')
-    @classmethod
-    def validate_current_size(cls, v):
-        if isinstance(v, float):
-            return str(v)
-        return v
-
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -116,7 +109,7 @@ class OptionsStrategyTrade(Base):
     average_net_cost = Column(Float, nullable=False)
     size = Column(String, nullable=False)
     current_size = Column(String, nullable=False)
-    
+    transactions = relationship("OptionsStrategyTransaction", back_populates="strategy")
     configuration = relationship("TradeConfiguration")
 
 class OptionsStrategyTransaction(Base):

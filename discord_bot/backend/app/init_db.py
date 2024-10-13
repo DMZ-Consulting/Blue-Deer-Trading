@@ -2,10 +2,11 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base, engine, get_database_url
-from app.models import TradeConfiguration
+from app.models import TradeConfiguration, VerificationConfig
 
 def init_db():
     db_url = get_database_url()
+    print(f"Database URL: {db_url}")
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     
     Base.metadata.create_all(bind=engine)
@@ -45,6 +46,14 @@ def init_db():
             )
         ]
 
+        default_verification_config = VerificationConfig(
+            message_id="1294025725699166249",
+            role_to_remove_id="1258466163722158173",
+            role_to_add_id="1258466163722158173",
+            channel_id="1108449289790824481",
+            log_channel_id="1222627917511655607"
+        )
+
         # Check if configurations already exist
         existing_configs = db.query(TradeConfiguration).all()
         existing_names = set(config.name for config in existing_configs)
@@ -53,6 +62,8 @@ def init_db():
         for config in default_configs:
             if config.name not in existing_names:
                 db.add(config)
+
+        db.add(default_verification_config)
 
         db.commit()
 
