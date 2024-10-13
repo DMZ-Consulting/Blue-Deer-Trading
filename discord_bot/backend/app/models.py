@@ -1,13 +1,12 @@
 import enum
-import uuid
 from datetime import datetime
 
 import shortuuid
-from sqlalchemy import (Boolean, Column, DateTime, Enum, Float, ForeignKey,
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
                         Integer, String, Table, TypeDecorator)
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
-from .database import Base, engine
+from .database import Base
 from .enum_type import EnumType
 
 # Add this import at the top
@@ -61,20 +60,11 @@ class Trade(Base):
     transactions = relationship("Transaction", back_populates="trade")
     configuration_id = Column(String, ForeignKey("trade_configurations.id"), nullable=True)
     configuration = relationship("TradeConfiguration")
-    strategy_trade_id = Column(Integer, ForeignKey("options_strategy_trades.id"), nullable=True)
-    strategy = relationship("OptionsStrategyTrade", back_populates="legs")
     is_contract = Column(Boolean, default=False)
     is_day_trade = Column(Boolean, default=False)
     strike = Column(Float, nullable=True)
     expiration_date = Column(DateTime, nullable=True)
     option_type = Column(String, nullable=True)
-
-    @field_validator('current_size', mode='before')
-    @classmethod
-    def validate_current_size(cls, v):
-        if isinstance(v, float):
-            return str(v)
-        return v
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -106,17 +96,34 @@ class OptionsStrategyTrade(Base):
     __tablename__ = "options_strategy_trades"
 
     id = Column(Integer, primary_key=True, index=True)
+    trade_id = Column(String, unique=True, index=True, nullable=False, default=lambda: shortuuid.uuid()[:8])
     name = Column(String, index=True)
     underlying_symbol = Column(String, index=True)
     status = Column(EnumType(OptionsStrategyStatusEnum))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     closed_at = Column(DateTime, nullable=True)
     configuration_id = Column(Integer, ForeignKey("trade_configurations.id"))
-    trade_group = Column(String, nullable=True)  # Added this line
-    
-    # Relationship to individual trades (legs)
-    legs = relationship("Trade", back_populates="strategy")
+    trade_group = Column(String, nullable=True)
+    legs = Column(String, nullable=False)  # Store legs as a JSON string
+    net_cost = Column(Float, nullable=False)
+    average_net_cost = Column(Float, nullable=False)
+    size = Column(String, nullable=False)
+    current_size = Column(String, nullable=False)
+    transactions = relationship("OptionsStrategyTransaction", back_populates="strategy")
     configuration = relationship("TradeConfiguration")
+
+class OptionsStrategyTransaction(Base):
+    __tablename__ = "options_strategy_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_id = Column(Integer, ForeignKey("options_strategy_trades.id"))
+    transaction_type = Column(EnumType(TransactionTypeEnum))
+    net_cost = Column(Float, nullable=False)
+    size = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    strategy = relationship("OptionsStrategyTrade")
+
 
 # Add this to your existing models.py file
 class VerificationConfig(Base):

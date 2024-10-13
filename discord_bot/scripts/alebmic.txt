@@ -1,0 +1,8 @@
+alembic -x environment=production current
+alembic history
+alembic -x environment=production stamp 7ea347927615
+alembic -x environment=production current
+alembic -x environment=production upgrade head
+
+
+alembic revision --autogenerate -m "Your message describing the changes"

@@ -1,12 +1,12 @@
-from sqlalchemy.types import TypeDecorator, String
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import declarative_base
-from enum import Enum
 from sqlalchemy import types
 
 Base = declarative_base()
 
 class EnumType(TypeDecorator):
     impl = types.String
+    cache_ok = True
 
     def __init__(self, enum_class):
         super().__init__()

@@ -9,7 +9,7 @@ TEST_CMD := pytest
 REQUIREMENTS := app/requirements.txt
 
 # Phony targets
-.PHONY: run run_local test init_db clean update_trade_metrics install_deps
+.PHONY: run run_local test init_db clean update_trade_metrics install_deps migrate
 
 # Default target
 all: run
@@ -125,3 +125,58 @@ update_trade_metrics: install_deps
 install_deps:
 	@echo "Installing dependencies..."
 	cd backend && pip install -r $(REQUIREMENTS)
+
+# Run the migration script
+migrate:
+	python manage_migrations.py
+
+# Development database upgrade
+dev-db-upgrade:
+	@echo "Upgrading development database..."
+	alembic -x environment=development upgrade head
+
+# Production database upgrade (with confirmation)
+prod-db-upgrade:
+	@echo "Are you sure you want to upgrade the production database? (y/n)"
+	@read answer; \
+	if [ "$$answer" = "y" ]; then \
+		echo "Upgrading production database..."; \
+		alembic -x environment=production upgrade head; \
+	else \
+		echo "Production database upgrade cancelled."; \
+	fi
+
+# Development database check
+dev-db-check:
+	@if alembic -x environment=development current | grep -q "(head)"; then \
+		echo "Development database is up to date."; \
+		exit 0; \
+	else \
+		echo "Development database needs to be upgraded."; \
+		exit 1; \
+	fi
+
+# Production database check
+prod-db-check:
+	@if alembic -x environment=production current | grep -q "(head)"; then \
+		echo "Production database is up to date."; \
+		exit 0; \
+	else \
+		echo "Production database needs to be upgraded."; \
+		exit 1; \
+	fi
+
+# Development migration
+dev-migrate:
+	python scripts/manage_migrations.py development
+
+# Production migration
+prod-migrate:
+	@echo "Are you sure you want to run migrations on the production database? (y/n)"
+	@read answer; \
+	if [ "$$answer" = "y" ]; then \
+		python scripts/manage_migrations.py production; \
+	else \
+		echo "Production migration cancelled."; \
+	fi
+
