@@ -1673,6 +1673,61 @@ async def remove_trade_config(
     finally:
         db.close()
 
+bot.slash_command(name="wl", description="Send a watchlist update")
+async def watchlist_update(
+    interaction: discord.Interaction,
+    message: discord.Option(str, description="The watchlist update message")
+):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    try:
+        config = db.query(models.BotConfiguration).first()
+        if not config or not config.watchlist_channel_id:
+            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed WL command: Watchlist channel not configured. Use /set_watchlist_channel first.")
+            return
+        channel = interaction.guild.get_channel(int(config.watchlist_channel_id))
+        if not channel:
+            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed WL command: Configured watchlist channel not found.")
+            return
+        embed = discord.Embed(title="Watchlist Update", description=message, color=discord.Color.blue())
+        embed.set_footer(text=f"Posted by {interaction.user.name}")
+        await channel.send(embed=embed)
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed WL command: Watchlist update sent successfully.")
+    except Exception as e:
+        logger.error(f"Error sending watchlist update: {str(e)}")
+        logger.error(traceback.format_exc())
+        await log_to_channel(interaction.guild, f"Error in WL command by {interaction.user.name}: {str(e)}")
+    finally:
+        db.close()
+
+@bot.slash_command(name="ta", description="Send a technical analysis update")
+async def ta_update(
+    interaction: discord.Interaction,
+    message: discord.Option(str, description="The technical analysis update message")
+):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    try:
+        config = db.query(models.BotConfiguration).first()
+        if not config or not config.ta_channel_id:
+            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed TA command: Technical analysis channel not configured. Use /set_ta_channel first.")
+            return
+        channel = interaction.guild.get_channel(int(config.ta_channel_id))
+        if not channel:
+            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed TA command: Configured technical analysis channel not found.")
+            return
+        embed = discord.Embed(title="Technical Analysis Update", description=message, color=discord.Color.green())
+        embed.set_footer(text=f"Posted by {interaction.user.name}")
+        await channel.send(embed=embed)
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed TA command: Technical analysis update sent successfully.")
+    except Exception as e:
+        logger.error(f"Error sending technical analysis update: {str(e)}")
+        logger.error(traceback.format_exc())
+        await log_to_channel(interaction.guild, f"Error in TA command by {interaction.user.name}: {str(e)}")
+        await interaction.response.defer(ephemeral=True)
+    finally:
+        db.close()
+
 @bot.slash_command(name="r", description="Post a roadmap message")
 async def post_roadmap(
     interaction: discord.Interaction,
