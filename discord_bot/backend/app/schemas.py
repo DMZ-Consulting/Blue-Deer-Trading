@@ -40,7 +40,7 @@ class TradeBase(BaseModel):
         return v
 
 class TradeCreate(TradeBase):
-    is_contract: Optional[bool] = False
+    pass
 
 class Trade(TradeBase):
     trade_id: str
@@ -55,28 +55,30 @@ class Trade(TradeBase):
     win_loss: Optional[WinLossEnum]
     transactions: List[Transaction]
     configuration_id: Optional[str]
-    strategy_trade_id: Optional[int]
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = model_config
 
-class StrategyTradeBase(BaseModel):
+class OptionsStrategyTradeBase(BaseModel):
     name: str
     underlying_symbol: str
     status: OptionsStrategyStatusEnum
     trade_group: Optional[str] = None
+    net_cost: float
+    average_net_cost: float
+    size: str
+    current_size: str
+    legs: str  # This will be a JSON string
 
-class StrategyTradeCreate(StrategyTradeBase):
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+class OptionsStrategyTradeCreate(OptionsStrategyTradeBase):
+    pass
 
-class StrategyTrade(StrategyTradeBase):
+class OptionsStrategyTrade(OptionsStrategyTradeBase):
     id: int
+    trade_id: str
     created_at: datetime
     closed_at: Optional[datetime]
     configuration_id: Optional[int]
-    legs: List[Trade]
+    transactions: List[Transaction]
 
     model_config = model_config
 

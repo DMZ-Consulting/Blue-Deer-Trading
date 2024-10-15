@@ -4,9 +4,10 @@ import os
 import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import List
+from typing import List, Optional
+from enum import Enum
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -56,10 +57,53 @@ def get_db():
     finally:
         db.close()
 
+class SortOrder(str, Enum):
+    asc = "asc"
+    desc = "desc"
 @app.get("/trades", response_model=List[schemas.Trade])
-def read_trades(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    trades = crud.get_trades(db, skip=skip, limit=limit)
-    return trades
+def read_trades(
+    skip: int = Query(0, ge=0, description="Number of trades to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of trades to return"),
+    status: Optional[models.TradeStatusEnum] = Query(None, description="Filter trades by status"),
+    symbol: Optional[str] = Query(None, description="Filter trades by symbol"),
+    trade_type: Optional[str] = Query(None, description="Filter trades by trade type"),
+    sort_by: Optional[str] = Query(None, description="Field to sort trades by"),
+    sort_order: Optional[str] = Query("desc", regex="^(asc|desc)$", description="Sort order (ascending or descending)"),
+    config: Optional[str] = Query(None, description="Filter trades by configuration name"),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve a list of trades with optional filtering and sorting.
+
+    Parameters:
+    - skip: Number of trades to skip (for pagination)
+    - limit: Maximum number of trades to return (for pagination)
+    - status: Filter trades by their status (open, closed, etc.)
+    - symbol: Filter trades by the trading symbol
+    - trade_type: Filter trades by the type of trade
+    - sort_by: Field to sort the trades by
+    - sort_order: Order to sort the trades (ascending or descending)
+    - config: Filter trades by the configuration name
+    - db: Database session (automatically injected)
+
+    Returns:
+    - List[schemas.Trade]: A list of trade objects
+    """
+    try:
+        trades = crud.get_trades(
+            db,
+            skip=skip,
+            limit=limit,
+            status=status,
+            symbol=symbol,
+            trade_type=trade_type,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            config=config
+        )
+        return trades
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/trades/{trade_id}", response_model=schemas.Trade)
 def read_trade(trade_id: str, db: Session = Depends(get_db)):
@@ -143,8 +187,8 @@ def create_sto_trade(trade: schemas.TradeCreate, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-@app.post("/trades/options-strategy", response_model=schemas.StrategyTrade)
-def create_options_strategy(strategy: schemas.StrategyTradeCreate, db: Session = Depends(get_db)):
+@app.post("/trades/options-strategy", response_model=schemas.OptionsStrategyTrade)
+def create_options_strategy(strategy: schemas.OptionsStrategyTradeCreate, db: Session = Depends(get_db)):
     return crud.create_options_strategy(db, strategy)
 
 @app.post("/trades/{trade_id}/add", response_model=schemas.Trade)
@@ -202,3 +246,24 @@ async def check_and_exit_expired_trades(db: Session = Depends(get_db)):
 # Ignore DeprecationWarning for discord.player
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="discord.player")
+
+@app.post("/trades/os/{strategy_id}/add", response_model=schemas.OptionsStrategyTrade)
+def add_to_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActionInput, db: Session = Depends(get_db)):
+    try:
+        return crud.os_add(db, strategy_id, action_input.net_cost, action_input.size)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/trades/os/{strategy_id}/trim", response_model=schemas.OptionsStrategyTrade)
+def trim_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActionInput, db: Session = Depends(get_db)):
+    try:
+        return crud.os_trim(db, strategy_id, action_input.net_cost, action_input.size)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/trades/os/{strategy_id}/exit", response_model=schemas.OptionsStrategyTrade)
+def exit_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActionInput, db: Session = Depends(get_db)):
+    try:
+        return crud.os_exit(db, strategy_id, action_input.net_cost)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

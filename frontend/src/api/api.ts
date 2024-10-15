@@ -25,5 +25,17 @@ export const getTrade = async (tradeId: string) => {
     throw error;
   }
 };
+export const getTradesByConfiguration = async (configName: string, status?: string) => {
+  try {
+    const params = new URLSearchParams();
+    params.append('config', configName);
+    if (status) params.append('status', status);
+    const response = await api.get(`/trades?${params.toString()}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching trades for configuration ${configName}:`, error);
+    throw error;
+  }
+};
 
 // Add more API functions as needed

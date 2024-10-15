@@ -6,7 +6,8 @@ import { ReportAreaComponent } from '../components/ReportArea'
 
 export default function Page() {
   const [dateFilter, setDateFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('closed')
+  const [configName, setConfigName] = useState('day_trader')
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -29,10 +30,21 @@ export default function Page() {
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
+            <select
+              value={configName}
+              onChange={(e) => setConfigName(e.target.value)}
+              className="border p-2 rounded"
+            >
+              <option value="day_trader">Day Trader</option>
+              <option value="swing_trader">Swing Trader</option>
+              <option value="long_term_trader">Long Term Trader</option>
+              {/* Add other configuration options as needed */}
+            </select>
           </div>
           <TradesTableComponent
             dateFilter={dateFilter}
             statusFilter={statusFilter}
+            configName={configName}
           />
         </div>
         <div className="lg:w-1/3">
