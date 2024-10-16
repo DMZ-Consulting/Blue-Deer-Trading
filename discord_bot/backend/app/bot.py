@@ -1872,3 +1872,19 @@ async def send_embed(
         logger.error(traceback.format_exc())
         await log_to_channel(interaction.guild, f"Error in SEND_EMBED command by {interaction.user.name}: {str(e)}")
         await kill_interaction(interaction)
+
+
+@bot.slash_command(name="unsync_resync", description="Unsync and resync commands")
+async def unsync_resync(ctx, guild_id: int = None):
+    if guild_id:
+        guild = discord.Object(id=guild_id)
+    else:
+        guild = ctx.guild
+
+    await ctx.respond("Unsyncing commands...", ephemeral=True)
+    await bot.sync_commands(commands=[], guild_ids=[guild.id])
+    await ctx.send("Commands unsynced.", ephemeral=True)
+
+    await ctx.send("Resyncing commands...", ephemeral=True)
+    synced = await bot.sync_commands(guild=guild)
+    await ctx.send(f"Resynced {len(synced)} commands.", ephemeral=True)
