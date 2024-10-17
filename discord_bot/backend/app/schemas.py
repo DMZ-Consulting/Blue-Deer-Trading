@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from .models import TradeStatusEnum, WinLossEnum, TransactionTypeEnum, OptionsStrategyStatusEnum
 
 model_config = ConfigDict(from_attributes=True)
@@ -57,6 +57,14 @@ class Trade(TradeBase):
     configuration_id: Optional[str]
 
     model_config = model_config
+
+class PortfolioTrade(BaseModel):
+    trade: Trade
+    realized_pl: float
+    realized_size: float
+    avg_entry_price: float
+    avg_exit_price: float
+    pct_change: float
 
 class OptionsStrategyTradeBase(BaseModel):
     name: str

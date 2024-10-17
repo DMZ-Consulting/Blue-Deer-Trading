@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { Trade } from '../utils/types';
+import { Portfolio } from '../utils/types';
 
 const API_BASE_URL = 'http://localhost:8000'; // Update this with your API URL
 
@@ -25,17 +27,52 @@ export const getTrade = async (tradeId: string) => {
     throw error;
   }
 };
-export const getTradesByConfiguration = async (configName: string, status?: string) => {
+
+interface FilterOptions {
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  //timeFrame?: string;
+  weekFilter?: string;
+  monthFilter?: string;
+  yearFilter?: string;
+}
+
+export async function getTradesByConfiguration(configName: string, filterOptions: FilterOptions): Promise<Trade[]> {
+  const queryParams = new URLSearchParams();
+  
+  queryParams.append('configName', configName);
+  
+  Object.entries(filterOptions).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      queryParams.append(key, value);
+    }
+  });
+
   try {
-    const params = new URLSearchParams();
-    params.append('config', configName);
-    if (status) params.append('status', status);
-    const response = await api.get(`/trades?${params.toString()}`);
+    const response = await api.get(`/trades?${queryParams.toString()}`);
     return response.data;
   } catch (error) {
-    console.error(`Error fetching trades for configuration ${configName}:`, error);
-    throw error;
+    console.error('Error fetching trades:', error);
+    throw new Error('Failed to fetch trades');
   }
-};
+}
+
+export async function getPortfolio(configName: string, filterOptions: FilterOptions): Promise<Portfolio[]> {
+  const queryParams = new URLSearchParams();
+  
+  queryParams.append('configName', configName);
+  Object.entries(filterOptions).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      queryParams.append(key, value);
+    }
+  });
+
+  const response = await api.get(`/portfolio?${queryParams.toString()}`);
+  if (response.status !== 200) {
+    throw new Error('Failed to fetch portfolio');
+  }
+  return response.data;
+}
 
 // Add more API functions as needed

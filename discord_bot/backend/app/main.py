@@ -1,3 +1,5 @@
+print("Starting application...")
+
 import asyncio
 import logging
 import os
@@ -17,8 +19,15 @@ from .database import get_db, engine, SessionLocal
 from .models import create_tables
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Add a console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 # Check if we're in a test environment
 IS_TEST = os.getenv('FASTAPI_TEST') == 'true'
@@ -66,29 +75,16 @@ def read_trades(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of trades to return"),
     status: Optional[models.TradeStatusEnum] = Query(None, description="Filter trades by status"),
     symbol: Optional[str] = Query(None, description="Filter trades by symbol"),
-    trade_type: Optional[str] = Query(None, description="Filter trades by trade type"),
-    sort_by: Optional[str] = Query(None, description="Field to sort trades by"),
-    sort_order: Optional[str] = Query("desc", regex="^(asc|desc)$", description="Sort order (ascending or descending)"),
-    config: Optional[str] = Query(None, description="Filter trades by configuration name"),
-    db: Session = Depends(get_db)
+    tradeType: Optional[str] = Query(None, description="Filter trades by trade type"),
+    sortBy: Optional[str] = Query(None, description="Field to sort trades by"),
+    sortOrder: Optional[str] = Query("desc", regex="^(asc|desc)$", description="Sort order (ascending or descending)"),
+    configName: Optional[str] = Query(None, description="Filter trades by configuration name"),
+    weekFilter: Optional[str] = Query(None, description="Filter trades by week"),
+    monthFilter: Optional[str] = Query(None, description="Filter trades by month"),
+    yearFilter: Optional[str] = Query(None, description="Filter trades by year"),
+    db: Session = Depends(get_db)   
 ):
-    """
-    Retrieve a list of trades with optional filtering and sorting.
-
-    Parameters:
-    - skip: Number of trades to skip (for pagination)
-    - limit: Maximum number of trades to return (for pagination)
-    - status: Filter trades by their status (open, closed, etc.)
-    - symbol: Filter trades by the trading symbol
-    - trade_type: Filter trades by the type of trade
-    - sort_by: Field to sort the trades by
-    - sort_order: Order to sort the trades (ascending or descending)
-    - config: Filter trades by the configuration name
-    - db: Database session (automatically injected)
-
-    Returns:
-    - List[schemas.Trade]: A list of trade objects
-    """
+    print("Entering read_trades function")
     try:
         trades = crud.get_trades(
             db,
@@ -96,14 +92,51 @@ def read_trades(
             limit=limit,
             status=status,
             symbol=symbol,
-            trade_type=trade_type,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            config=config
+            trade_type=tradeType,
+            sort_by=sortBy,
+            sort_order=sortOrder,
+            config_name=configName,
+            week_filter=weekFilter,
+            month_filter=monthFilter,
+            year_filter=yearFilter
         )
+        print(f"Retrieved {len(trades)} trades")
         return trades
     except ValueError as e:
+        print(f"Error in read_trades: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        print("Exiting read_trades function")
+
+@app.get("/portfolio", response_model=List[schemas.PortfolioTrade])
+def read_portfolio(
+    skip: int = Query(0, ge=0, description="Number of trades to skip"),
+    limit: int = Query(500, ge=1, le=1000, description="Maximum number of trades to return"),
+    sortBy: Optional[str] = Query(None, description="Field to sort trades by"),
+    sortOrder: Optional[str] = Query("desc", regex="^(asc|desc)$", description="Sort order (ascending or descending)"),
+    configName: Optional[str] = Query(None, description="Filter trades by configuration name"),
+    weekFilter: Optional[str] = Query(None, description="Filter trades by week"),
+    db: Session = Depends(get_db)   
+):
+    print("Entering read_trades function")
+    try:
+        trades = crud.get_portfolio_trades(
+            db,
+            skip=skip,
+            limit=limit,
+            sort_by=sortBy,
+            sort_order=sortOrder,
+            config_name=configName,
+            week_filter=weekFilter,
+        )
+        print(f"Retrieved {len(trades)} trades")
+        return trades
+    except ValueError as e:
+        print(f"Error in read_trades: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        print("Exiting read_trades function")
+
 
 @app.get("/trades/{trade_id}", response_model=schemas.Trade)
 def read_trade(trade_id: str, db: Session = Depends(get_db)):

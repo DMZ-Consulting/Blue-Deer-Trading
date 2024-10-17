@@ -7,7 +7,10 @@ from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, field_validator
 import logging
+from datetime import datetime, timedelta
 import json
+
+logger = logging.getLogger(__name__)
 
 class TradeInput(BaseModel):
     symbol: str
@@ -46,8 +49,12 @@ def get_trades(
     trade_type: Optional[str] = None,
     sort_by: Optional[str] = None,
     sort_order: str = "desc",
-    config: Optional[str] = None
+    config_name: Optional[str] = None,
+    week_filter: Optional[str] = None,
+    month_filter: Optional[str] = None,
+    year_filter: Optional[str] = None
 ) -> List[models.Trade]:
+    print("Entering get_trades function")
     query = db.query(models.Trade)
 
     if status:
@@ -57,12 +64,26 @@ def get_trades(
     if trade_type:
         query = query.filter(models.Trade.trade_type == trade_type)
     
-    if config:
-        trade_config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == config).first()
+    if config_name:
+        trade_config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == config_name).first()
         if trade_config:
             query = query.filter(models.Trade.configuration_id == trade_config.id)
         else:
             return []
+
+    if week_filter and status == models.TradeStatusEnum.CLOSED:
+        # Find the friday of the week from the week_filter string
+        # Get the date of the first day of the week (monday)
+        day = datetime.strptime(week_filter, "%Y-%m-%d")
+        first_day_of_week = day - timedelta(days=day.weekday())
+        # Get the date of the last day of the week (friday)
+        last_day_of_week = first_day_of_week + timedelta(days=4)
+        query = query.filter(models.Trade.closed_at >= first_day_of_week)
+        query = query.filter(models.Trade.closed_at <= last_day_of_week + timedelta(days=1))
+    if month_filter and status == models.TradeStatusEnum.CLOSED:
+        query = query.filter(models.Trade.closed_at >= month_filter)
+    if year_filter and status == models.TradeStatusEnum.CLOSED:
+        query = query.filter(models.Trade.closed_at >= year_filter)
 
     if sort_by:
         if hasattr(models.Trade, sort_by):
@@ -71,7 +92,119 @@ def get_trades(
         else:
             raise ValueError(f"Invalid sort_by parameter: {sort_by}")
 
-    return query.offset(skip).limit(limit).all()
+    print(f"Final query: {query}")
+    result = query.offset(skip).limit(limit).all()
+    print(f"Retrieved {len(result)} trades")
+    return result
+
+def get_portfolio_trades(
+    db: Session,
+    skip: int = 0,
+    limit: int = 500,
+    status: Optional[models.TradeStatusEnum] = 'closed',
+    sort_by: Optional[str] = None,
+    sort_order: str = "desc",
+    config_name: Optional[str] = None,
+    week_filter: Optional[str] = None
+):
+    query = db.query(models.Trade)
+
+    if status:
+        query = query.filter(models.Trade.status == status)
+
+    if config_name:
+        trade_config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == config_name).first()
+        if trade_config:
+            query = query.filter(models.Trade.configuration_id == trade_config.id)
+        else:
+            return []
+
+    if not week_filter:
+        raise ValueError("Week filter is required")
+    
+    # Find the Monday and Sunday of the week from the week_filter string
+    day = datetime.strptime(week_filter, "%Y-%m-%d")
+    monday = day - timedelta(days=day.weekday())
+    sunday = monday + timedelta(days=6)
+    query = query.filter(
+        (models.Trade.closed_at >= monday) & (models.Trade.closed_at <= sunday + timedelta(days=1))
+    )
+
+    if sort_by:
+        if hasattr(models.Trade, sort_by):
+            order_func = desc if sort_order == "desc" else asc
+            query = query.order_by(order_func(getattr(models.Trade, sort_by)))
+        else:
+            raise ValueError(f"Invalid sort_by parameter: {sort_by}")
+
+    trades = query.offset(skip).limit(limit).all()
+
+    # Calculate additional fields
+    total_pl = Decimal(0)
+
+    processed_trades = []
+
+    for trade in trades:
+        # Get all transactions for this trade
+        transactions = get_transactions_for_trade(db, trade.trade_id)
+        
+        trade_pl = Decimal(0)
+        trade_size = Decimal(0)
+        trade_entry_cost = Decimal(0)
+        trade_exit_value = Decimal(0)
+        
+        processed_transactions = []
+
+        for transaction in transactions:
+            if monday - timedelta(days=1) <= transaction.created_at <= sunday:
+                size = Decimal(transaction.size)
+                
+                if transaction.transaction_type in [models.TransactionTypeEnum.CLOSE, models.TransactionTypeEnum.TRIM]:
+                    exit_price = Decimal(transaction.amount)
+                    entry_price = Decimal(trade.average_price)
+                    
+                    pl = (exit_price - entry_price) * size
+                    print(f"PL: {pl}")
+                    percent_change = (exit_price - entry_price) / entry_price * 100
+
+                    if trade.is_contract:
+                        print(f"Trade is a contract")
+                        pl = pl * 100
+
+                    trade_pl += pl
+                    trade_size += size
+                    trade_entry_cost += entry_price * size 
+                    trade_exit_value += exit_price * size
+
+                    processed_transactions.append({
+                        "id": transaction.id,
+                        "trade_id": trade.trade_id,
+                        "type": transaction.transaction_type,
+                        "amount": float(transaction.amount),
+                        "size": float(size),
+                        "pl": float(pl),
+                        "percent_change": float(percent_change)
+                    })
+
+        trade_avg_exit = trade_exit_value / trade_size if trade_size > 0 else Decimal(0)
+        trade_pct_change = (Decimal(trade_avg_exit) - Decimal(trade.average_price)) / Decimal(trade.average_price) * 100
+        
+        processed_trades.append({
+            "trade": trade,
+            "realized_pl": float(trade_pl),
+            "realized_size": float(trade_size),
+            "avg_entry_price": float(trade.average_price),
+            "avg_exit_price": float(trade_avg_exit),
+            "pct_change": float(trade_pct_change),
+            #"transactions": processed_transactions
+        })
+
+        print(f"Processed trades: {processed_trades}")
+
+        total_pl += trade_pl
+
+    # Instead of returning a dictionary, return the list of processed trades
+    return processed_trades
 
 def get_os_trades(
     db: Session,
