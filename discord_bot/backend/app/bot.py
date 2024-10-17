@@ -124,6 +124,16 @@ async def sync_commands_with_backoff(guild, max_retries=5, base_delay=1):
 async def kill_interaction(interaction):
     await interaction.response.send_message("Processing...", ephemeral=True, delete_after=0)
 
+def format_size(size):
+    """Format size to remove decimal places if it's a whole number."""
+    try:
+        float_size = float(size)
+        if float_size.is_integer():
+            return str(int(float_size))
+        return f"{float_size:.2f}"
+    except ValueError:
+        return size  # Return as is if it can't be converted to float
+
 class TradePaginator(View):
     def __init__(self, trades, interaction):
         super().__init__(timeout=180)
@@ -150,14 +160,14 @@ class TradePaginator(View):
             entry_price = f"${trade.entry_price:,.2f}" if trade.entry_price >= 0 else f"(${abs(trade.entry_price):,.2f})"
             embed.add_field(
                 name=f"Trade ID: {trade.trade_id}",
-                value=f"Symbol: {trade.symbol}\nType: {trade.trade_type}\nEntry Price: {entry_price}\nCurrent Size: {trade.current_size}",
+                value=f"Symbol: {trade.symbol}\nType: {trade.trade_type}\nEntry Price: {entry_price}\nCurrent Size: {format_size(trade.current_size)}",
                 inline=False
             )
             
             # Add transactions for this trade
             transactions = crud.get_transactions_for_trade(next(get_db()), trade.trade_id)
             if transactions:
-                transaction_text = "\n".join([f"{t.transaction_type.value}: {t.size} @ ${t.amount:,.2f}" if t.amount >= 0 else f"{t.transaction_type.value}: {t.size} @ (${abs(t.amount):,.2f}) at {t.created_at.strftime('%Y-%m-%d %H:%M:%S')}" for t in transactions])
+                transaction_text = "\n".join([f"{t.transaction_type.value}: {format_size(t.size)} @ ${t.amount:,.2f}" if t.amount >= 0 else f"{t.transaction_type.value}: {format_size(t.size)} @ (${abs(t.amount):,.2f}) at {t.created_at.strftime('%Y-%m-%d %H:%M:%S')}" for t in transactions])
                 embed.add_field(name="Transactions", value=transaction_text, inline=False)
             else:
                 embed.add_field(name="Transactions", value="No transactions", inline=False)
@@ -301,7 +311,7 @@ async def exit_expired_trade(trade):
         embed = discord.Embed(title="Trade Expired and Closed", color=discord.Color.red())
         embed.description = create_trade_oneliner(trade)
         embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
-        embed.add_field(name="Final Size", value=current_size, inline=True)
+        embed.add_field(name="Final Size", value=format_size(current_size), inline=True)
         embed.add_field(name="Total Profit/Loss", value=f"${total_profit_loss:.2f}", inline=True)
         embed.add_field(name="Result", value="Loss (Expired)", inline=True)
         embed.set_footer(text=f"Trade ID: {trade.trade_id}")
@@ -541,9 +551,29 @@ def create_trade_oneliner(trade):
     if trade.is_contract:
         expiration = convert_to_two_digit_year(trade.expiration_date.strftime('%m/%d/%y')) if trade.expiration_date else "No Exp"
         strike = f"${trade.strike:.2f}"
-        return f"{expiration} {trade.symbol} {strike} {option_type}"# @ {entry_price} {size} size"
+        return f"### {expiration} {trade.symbol} {strike} {option_type}"# @ {entry_price} {size} size"
     else:
-        return f"{trade.symbol} @ {entry_price} {size} size"
+        return f"### {trade.symbol} @ {entry_price} {size} risk"
+    
+def create_transaction_oneliner(trade, type, size):
+    if trade.option_type:
+        if trade.option_type.startswith("C"):
+            option_type = "CALL"
+        elif trade.option_type.startswith("P"):
+            option_type = "PUT"   
+        else:
+            option_type = trade.option_type
+    else:
+        option_type = ""
+
+    risk_identifier = "risk" if type == "ADD" else "size"
+
+    if trade.is_contract:
+        expiration = convert_to_two_digit_year(trade.expiration_date.strftime('%m/%d/%y')) if trade.expiration_date else "No Exp"
+        strike = f"${trade.strike:.2f}"
+        return f"### {type} {expiration} {trade.symbol} {strike} {option_type} {size} {risk_identifier}"
+    else:
+        return f"### {type} {trade.symbol} @ {trade.entry_price} {size} {risk_identifier}"
 
 async def create_trade(
     interaction: discord.Interaction,
@@ -606,6 +636,16 @@ async def create_trade(
         db.add(new_trade)
         db.commit()
         db.refresh(new_trade)
+
+        open_transaction = models.Transaction(
+            trade_id=new_trade.trade_id,
+            transaction_type=models.TransactionTypeEnum.OPEN,
+            amount=entry_price,
+            size=size,
+            created_at=datetime.now()
+        )
+        db.add(open_transaction)
+        db.commit()
 
         if not suppress_embed:
             embed_color = discord.Color.green() if trade_type == "BTO" else discord.Color.red()
@@ -1058,7 +1098,7 @@ async def os_exit(
 
         embed = discord.Embed(title=f"Exited Options Strategy: {strategy.name}", color=discord.Color.red())
         embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
-        embed.add_field(name="Exited Size", value=strategy.current_size, inline=True)
+        embed.add_field(name="Exited Size", value=format_size(strategy.current_size), inline=True)
         embed.add_field(name="Avg Entry Cost", value=f"${avg_entry_cost:.2f}", inline=True)
         embed.add_field(name="Avg Exit Cost", value=f"${avg_exit_cost:.2f}", inline=True)
         embed.add_field(name="P/L per Contract", value=f"${pl_per_contract:.2f}", inline=True)
@@ -1300,10 +1340,10 @@ async def exit_trade(
 
         # Calculate profit/loss per share or per contract
         if trade.is_contract:
-            profit_loss_per_unit = total_profit_loss / Decimal('100')  # Assuming 100 shares per contract
+            profit_loss_per_unit = (total_profit_loss / total_open_size) * 100 # Assuming 100 shares per contract
             unit_type = "contract"
         else:
-            profit_loss_per_unit = total_profit_loss / (current_size + total_trimmed_size)
+            profit_loss_per_unit = total_profit_loss / total_open_size
             unit_type = "share"
 
         # Determine win/loss
@@ -1323,14 +1363,11 @@ async def exit_trade(
         embed.description = create_trade_oneliner(trade)
         
         embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
-        embed.add_field(name="Final Size", value=str(current_size), inline=True)
-        embed.add_field(name=f"P/L per {unit_type}", value=f"${profit_loss_per_unit:.2f}", inline=True)
-        embed.add_field(name="Total Profit/Loss", value=f"${total_profit_loss:.2f}", inline=True)
+        embed.add_field(name="Exit Size", value=format_size(current_size), inline=True)
+        embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${profit_loss_per_unit:.2f}", inline=True)
+        embed.add_field(name="Avg Entry Price", value=f"${trade.average_price:.2f}", inline=True)
+        embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
         embed.add_field(name="Result", value=trade.win_loss.value.capitalize(), inline=True)
-
-        if total_trimmed_size > 0:
-            embed.add_field(name="Trimmed Size", value=str(total_trimmed_size), inline=True)
-            embed.add_field(name="Trim Profit/Loss", value=f"${trim_profit_loss:.2f}", inline=True)
 
         # Set the footer to include the trade ID
         embed.set_footer(text=f"Trade ID: {trade_id}")
@@ -1394,22 +1431,22 @@ async def add_to_trade(
         add_size_decimal = Decimal(add_size)
         new_size = current_size + add_size_decimal
         trade.current_size = str(new_size)
+        trade.average_price = (Decimal(trade.average_price) * current_size + Decimal(add_price) * add_size_decimal) / new_size
 
         db.commit()
 
         # Create an embed with the transaction information
         embed = discord.Embed(title="Added to Trade", color=discord.Color.teal())
-        embed.description = create_trade_oneliner(trade)
+        embed.description = create_transaction_oneliner(trade, "ADD", add_size)
         embed.add_field(name="Symbol", value=trade.symbol, inline=True)
         embed.add_field(name="Trade Type", value=trade.trade_type, inline=True)
         if trade.strike:
             embed.add_field(name="Strike", value=f"${trade.strike:.2f}", inline=True)
         if trade.expiration_date:
             embed.add_field(name="Exp. Date", value=trade.expiration_date.strftime('%m/%d/%y'), inline=True)
-        embed.add_field(name="Add Price", value=f"${add_price:.2f}", inline=True)
-        embed.add_field(name="Add Size", value=add_size, inline=True)
-        embed.add_field(name="Previous Size", value=str(current_size), inline=True)
-        embed.add_field(name="New Total Size", value=f"{new_size:.2f}", inline=True)
+        embed.add_field(name="Avg Price", value=f"${trade.average_price:.2f}", inline=True)
+        embed.add_field(name="Add Size", value=format_size(add_size), inline=True)
+        embed.add_field(name="Total Size", value=format_size(new_size), inline=True)
 
         embed.set_footer(text=f"Trade ID: {trade.trade_id}")
 
@@ -1462,6 +1499,9 @@ async def trim_trade(
         current_size = Decimal(trade.current_size)
         trim_size = Decimal(trim_size)
 
+        trim_transactions = crud.get_transactions_for_trade(db, trade_id, [models.TransactionTypeEnum.TRIM])
+        total_trim_size = sum(Decimal(t.size) for t in trim_transactions)
+
         if trim_size > current_size:
             await log_to_channel(interaction.guild, f"User {interaction.user.name} executed TRIM command: Trim size ({trim_size}) is greater than current trade size ({current_size}).")
             await kill_interaction(interaction)
@@ -1479,6 +1519,10 @@ async def trim_trade(
         # Update the current size of the trade
         new_size = current_size - trim_size
         trade.current_size = str(new_size)
+        if trade.average_exit_price:
+            trade.average_exit_price = (Decimal(trade.average_exit_price) * total_trim_size + Decimal(trim_price) * trim_size) / (total_trim_size + trim_size)
+        else:
+            trade.average_exit_price = trim_price
 
         db.commit()
 
@@ -1490,21 +1534,24 @@ async def trim_trade(
         
         trim_profit_loss = (Decimal(trim_price) - average_cost)
 
-        unit = "contract" if trade.is_contract else "share"
+        if trade.is_contract:
+            trim_profit_loss = trim_profit_loss * 100
+            unit = "contract"
+        else:
+            unit = "share"
 
         # Create an embed with the transaction information
         embed = discord.Embed(title="Trimmed Trade", color=discord.Color.orange())
-        embed.description = create_trade_oneliner(trade)
+        embed.description = create_transaction_oneliner(trade, "TRIM", trim_size)
         embed.add_field(name="Symbol", value=trade.symbol, inline=True)
         embed.add_field(name="Trade Type", value=trade.trade_type, inline=True)
         if trade.strike:
             embed.add_field(name="Strike", value=f"${trade.strike:.2f}", inline=True)
         if trade.expiration_date:
             embed.add_field(name="Exp. Date", value=trade.expiration_date.strftime('%m/%d/%y'), inline=True)
-        embed.add_field(name="Trim Price", value=f"${trim_price:.2f}", inline=True)
-        embed.add_field(name="Trim Size", value=str(trim_size), inline=True)
-        embed.add_field(name="Previous Size", value=str(current_size), inline=True)
-        embed.add_field(name="Remaining Size", value=f"{new_size:.2f}", inline=True)
+        embed.add_field(name="Trim Size", value=format_size(trim_size), inline=True)
+        embed.add_field(name="Remaining Size", value=format_size(new_size), inline=True)
+        embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
         embed.add_field(name=f"P/L per {unit}", value=f"${trim_profit_loss:.2f}", inline=True)
 
         embed.set_footer(text=f"Trade ID: {trade.trade_id}")
@@ -1689,6 +1736,12 @@ async def watchlist_update(
         if not channel:
             await log_to_channel(interaction.guild, f"User {interaction.user.name} executed WL command: Configured watchlist channel not found.")
             return
+        try:
+            parsed_message = await parse_option_symbol(message)
+            message = f"{parsed_message['trade_type']} {parsed_message['expiration_date']} {parsed_message['symbol']} {parsed_message['strike']} {parsed_message['option_type']}"
+        except Exception as e:
+            await interaction.response.send_message(f"Error parsing option symbols: {str(e)}", ephemeral=True)
+
         embed = discord.Embed(title="Watchlist Update", description=message, color=discord.Color.blue())
         embed.set_footer(text=f"Posted by {interaction.user.name}")
         await channel.send(embed=embed)
