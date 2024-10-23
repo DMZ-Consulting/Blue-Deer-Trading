@@ -1729,7 +1729,7 @@ async def remove_trade_config(
     finally:
         db.close()
 
-bot.slash_command(name="wl", description="Send a watchlist update")
+@bot.slash_command(name="wl", description="Send a watchlist update")
 async def watchlist_update(
     interaction: discord.Interaction,
     message: discord.Option(str, description="The watchlist update message")
