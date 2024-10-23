@@ -250,6 +250,8 @@ async def check_and_exit_expired_trades():
     finally:
         db.close()
 
+
+# TODO: This is a mess. Need to refactor. the trade is changed to closed but not being committed for some reason.
 async def exit_expired_trade(trade):
     db = next(get_db())
     try:
@@ -263,7 +265,7 @@ async def exit_expired_trade(trade):
 
         trade.status = models.TradeStatusEnum.CLOSED
         trade.exit_price = exit_price
-        trade.closed_at = datetime.utcnow()
+        trade.closed_at = datetime.now()
         
         current_size = Decimal(trade.current_size)
         
@@ -272,7 +274,7 @@ async def exit_expired_trade(trade):
             transaction_type=models.TransactionTypeEnum.CLOSE,
             amount=exit_price,
             size=str(current_size),
-            created_at=datetime.utcnow()
+            created_at=datetime.now()
         )
         db.add(new_transaction)
 
@@ -282,11 +284,12 @@ async def exit_expired_trade(trade):
         
         total_cost = sum(Decimal(t.amount) * Decimal(t.size) for t in open_transactions)
         total_open_size = sum(Decimal(t.size) for t in open_transactions)
-        total_trimmed_size = sum(Decimal(t.size) for t in trim_transactions)
         
         average_cost = total_cost / total_open_size if total_open_size > 0 else 0
         
-        trim_profit_loss = sum((Decimal(t.amount) - average_cost) * Decimal(t.size) for t in trim_transactions)
+        trim_profit_loss = 0
+        if trim_transactions:
+            trim_profit_loss = sum((Decimal(t.amount) - average_cost) * Decimal(t.size) for t in trim_transactions)
         exit_profit_loss = (Decimal(exit_price) - average_cost) * current_size
         
         total_profit_loss = trim_profit_loss + exit_profit_loss
@@ -296,6 +299,9 @@ async def exit_expired_trade(trade):
         trade.win_loss = models.WinLossEnum.LOSS
 
         db.commit()
+
+        '''
+        TODO: We are commenting this out for now. Fix this.
 
         # Create an embed with the closed trade information
         embed = discord.Embed(title="Trade Expired and Closed", color=discord.Color.red())
@@ -310,6 +316,7 @@ async def exit_expired_trade(trade):
         channel = bot.get_channel(int(config.channel_id))
         role = channel.guild.get_role(int(config.role_id))
         await channel.send(content=f"{role.mention}", embed=embed)
+        '''
 
     except Exception as e:
         logger.error(f"Error exiting expired trade {trade.trade_id}: {str(e)}")
@@ -544,6 +551,26 @@ def create_trade_oneliner(trade):
         return f"{expiration} {trade.symbol} {strike} {option_type}"# @ {entry_price} {size} size"
     else:
         return f"{trade.symbol} @ {entry_price} {size} size"
+
+def create_trade_oneliner_os(os_trade):
+    add_date = True
+    trade_oneliner = f"{os_trade.underlying_symbol} - {os_trade.name} "
+    for leg in os_trade.legs:
+        leg_parsed = parse_option_symbol(leg)
+
+        if add_date:
+            trade_oneliner += f" ({leg_parsed['expiration_date']})"
+            add_date = False
+        else:
+            if leg_parsed['option_type'] == "C":
+                trade_oneliner += "+"
+            else:
+                trade_oneliner += "-"
+        
+        trade_oneliner += f"{leg_parsed['strike']}{leg_parsed['option_type']}"
+
+    return trade_oneliner
+
 
 async def create_trade(
     interaction: discord.Interaction,
@@ -934,6 +961,7 @@ async def os_add(
         db.commit()
 
         embed = discord.Embed(title=f"Added to Options Strategy: {strategy.name}", color=discord.Color.green())
+        embed.description = create_trade_oneliner_os(strategy)
         embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
         embed.add_field(name="Added Size", value=size, inline=True)
         embed.add_field(name="New Total Size", value=strategy.current_size, inline=True)
@@ -989,6 +1017,7 @@ async def os_trim(
         db.commit()
 
         embed = discord.Embed(title=f"Trimmed Options Strategy: {strategy.name}", color=discord.Color.orange())
+        embed.description = create_trade_oneliner_os(strategy)
         embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
         embed.add_field(name="Trimmed Size", value=size, inline=True)
         embed.add_field(name="Remaining Size", value=strategy.current_size, inline=True)
@@ -1191,7 +1220,7 @@ def parse_option_symbol(option_string):
         option_type = 'PUT' if rest[6] == 'P' else 'CALL'
         
         # Parse strike price
-        strike = float(rest[7:])  # Assuming the last 3 digits are decimal places
+        strike = round(float(rest[7:]), 2)  # Round to two decimal places
         
         return {
             'symbol': symbol,
