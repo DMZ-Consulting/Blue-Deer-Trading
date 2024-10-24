@@ -259,10 +259,17 @@ def get_transactions_for_trade(db: Session, trade_id: str, transaction_types: Li
     return query.all()
 
 def create_trade(db: Session, trade: schemas.TradeCreate):
-    db_trade = models.Trade(**trade.model_dump(), status=models.TradeStatusEnum.OPEN)
+    db_trade = models.Trade(
+        **trade.model_dump(),
+        status=models.TradeStatusEnum.OPEN,
+    )
     db_trade.average_price = trade.entry_price
     db_trade.size = trade.size
     db_trade.current_size = trade.size
+
+    db.add(db_trade)  # Commit db_trade first to get the id
+    db.commit()       # Commit to save the trade and generate the ID
+    db.refresh(db_trade)  # Refresh to get the latest state of db_trade
 
     transaction = models.Transaction(
         trade_id=db_trade.trade_id,
@@ -273,9 +280,7 @@ def create_trade(db: Session, trade: schemas.TradeCreate):
     )
     
     db.add(transaction)
-    db.add(db_trade)
-    db.commit()
-    db.refresh(db_trade)
+    db.commit()  # Commit the transaction after adding it
     logging.info(f"Trade created: {db_trade.trade_id}")
     return db_trade
 
@@ -385,9 +390,15 @@ def add_to_trade(db: Session, action_input: TradeActionInput):
     )
     db.add(new_transaction)
 
-    new_size = Decimal(trade.current_size) + Decimal(action_input.size)
+    current_size = Decimal(trade.current_size)
+    add_size = Decimal(action_input.size)
+    new_size = current_size + add_size
+
+    # Update average entry price
+    total_cost = (current_size * Decimal(trade.average_price)) + (add_size * Decimal(action_input.price))
+    trade.average_price = float(total_cost / new_size)
+
     trade.current_size = str(new_size)
-    trade.average_price = ((Decimal(trade.average_price) * Decimal(trade.current_size)) + (Decimal(action_input.price) * Decimal(action_input.size))) / new_size
 
     db.commit()
     db.refresh(trade)
@@ -457,6 +468,11 @@ def exit_trade(db: Session, action_input: TradeActionInput):
 
     total_profit_loss = trim_profit_loss + exit_profit_loss
     trade.profit_loss = float(total_profit_loss)
+
+    # Update average exit price
+    total_exit_value = sum(Decimal(t.amount) * Decimal(t.size) for t in trim_transactions) + (Decimal(action_input.price) * Decimal(trade.current_size))
+    total_exit_size = total_trimmed_size + Decimal(trade.current_size)
+    trade.average_exit_price = float(total_exit_value / total_exit_size)
 
     # Determine win/loss
     if total_profit_loss > 0:
@@ -550,3 +566,4 @@ def os_exit(db: Session, strategy_id: str, net_cost: float):
     return strategy
 
 # Add more CRUD functions as needed...
+

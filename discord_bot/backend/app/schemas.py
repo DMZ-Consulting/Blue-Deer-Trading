@@ -40,6 +40,7 @@ class TradeBase(BaseModel):
         return v
 
 class TradeCreate(TradeBase):
+    configuration_id: Optional[str]
     pass
 
 class Trade(TradeBase):
