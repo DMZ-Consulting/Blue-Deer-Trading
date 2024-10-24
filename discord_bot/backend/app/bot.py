@@ -581,6 +581,25 @@ def create_transaction_oneliner(trade, type, size):
         return f"### {type} {expiration} {trade.symbol} {strike} {option_type} {size} {risk_identifier}"
     else:
         return f"### {type} {trade.symbol} @ {trade.entry_price} {size} {risk_identifier}"
+    
+def create_trade_oneliner_os(os_trade):
+    add_date = True
+    trade_oneliner = f"{os_trade.underlying_symbol} - {os_trade.name} "
+    for leg in os_trade.legs:
+        leg_parsed = parse_option_symbol(leg)
+
+        if add_date:
+            trade_oneliner += f" ({leg_parsed['expiration_date']})"
+            add_date = False
+        else:
+            if leg_parsed['option_type'] == "C":
+                trade_oneliner += "+"
+            else:
+                trade_oneliner += "-"
+        
+        trade_oneliner += f"{leg_parsed['strike']}{leg_parsed['option_type']}"
+
+    return trade_oneliner
 
 async def create_trade(
     interaction: discord.Interaction,
