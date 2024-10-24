@@ -6,6 +6,7 @@ from .schemas import TransactionTypeEnum
 from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, field_validator
+from .bot import create_trade_oneliner
 import logging
 from datetime import datetime, timedelta
 import json
@@ -191,6 +192,7 @@ def get_portfolio_trades(
         
         processed_trades.append({
             "trade": trade,
+            "oneliner": create_trade_oneliner(trade),
             "realized_pl": float(trade_pl),
             "realized_size": float(trade_size),
             "avg_entry_price": float(trade.average_price),
@@ -379,7 +381,7 @@ def add_to_trade(db: Session, action_input: TradeActionInput):
         transaction_type=models.TransactionTypeEnum.ADD,
         amount=action_input.price,
         size=action_input.size,
-        created_at=datetime.utcnow()
+        created_at=datetime.now()
     )
     db.add(new_transaction)
 
@@ -408,7 +410,7 @@ def trim_trade(db: Session, action_input: TradeActionInput):
         transaction_type=models.TransactionTypeEnum.TRIM,
         amount=action_input.price,
         size=str(trim_size),
-        created_at=datetime.utcnow()
+        created_at=datetime.now()
     )
     db.add(new_transaction)
 
@@ -424,17 +426,19 @@ def exit_trade(db: Session, action_input: TradeActionInput):
     trade = get_trade(db, action_input.trade_id)
     if not trade:
         raise ValueError(f"Trade {action_input.trade_id} not found.")
+    
+    action_input.size = trade.current_size
 
     trade.status = models.TradeStatusEnum.CLOSED
     trade.exit_price = action_input.price
-    trade.closed_at = datetime.utcnow()
+    trade.closed_at = datetime.now()
 
     new_transaction = models.Transaction(
         trade_id=trade.trade_id,
         transaction_type=models.TransactionTypeEnum.CLOSE,
         amount=action_input.price,
-        size=action_input.size,
-        created_at=datetime.utcnow()
+        size=trade.current_size,
+        created_at=datetime.now()
     )
     db.add(new_transaction)
 
@@ -449,7 +453,7 @@ def exit_trade(db: Session, action_input: TradeActionInput):
     average_cost = total_cost / total_open_size if total_open_size > 0 else 0
 
     trim_profit_loss = sum((Decimal(t.amount) - average_cost) * Decimal(t.size) for t in trim_transactions)
-    exit_profit_loss = (Decimal(action_input.price) - average_cost) * Decimal(action_input.size)
+    exit_profit_loss = (Decimal(action_input.price) - average_cost) * Decimal(trade.current_size)
 
     total_profit_loss = trim_profit_loss + exit_profit_loss
     trade.profit_loss = float(total_profit_loss)

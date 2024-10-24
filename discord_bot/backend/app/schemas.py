@@ -60,6 +60,7 @@ class Trade(TradeBase):
 
 class PortfolioTrade(BaseModel):
     trade: Trade
+    oneliner: str
     realized_pl: float
     realized_size: float
     avg_entry_price: float

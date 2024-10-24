@@ -1086,6 +1086,7 @@ async def os_exit(
         db.commit()
 
         embed = discord.Embed(title=f"Exited Options Strategy: {strategy.name}", color=discord.Color.red())
+        embed.description = create_trade_oneliner_os(strategy)
         embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
         embed.add_field(name="Exited Size", value=strategy.current_size, inline=True)
         embed.add_field(name="Avg Entry Cost", value=f"${avg_entry_cost:.2f}", inline=True)

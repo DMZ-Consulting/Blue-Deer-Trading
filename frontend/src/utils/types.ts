@@ -29,6 +29,7 @@ export interface Transaction {
 
 export interface PortfolioTrade {
   trade: Trade
+  oneliner: string
   realized_pl: number
   realized_size: number
   avg_entry_price: number

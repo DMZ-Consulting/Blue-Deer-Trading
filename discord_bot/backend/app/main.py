@@ -207,9 +207,9 @@ def cleanup_old_backups(backup_dir):
         logger.error(f"Failed to clean up old backups: {str(e)}")
 
 @app.post("/trades/bto", response_model=schemas.Trade)
-def create_bto_trade(trade_input: crud.TradeInput, db: Session = Depends(get_db)):
+def create_bto_trade(trade: schemas.TradeCreate, db: Session = Depends(get_db)):
     try:
-        return crud.bto_trade(db, trade_input)
+        return crud.create_trade(db, trade)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

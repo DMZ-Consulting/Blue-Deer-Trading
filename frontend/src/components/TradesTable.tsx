@@ -79,6 +79,12 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
     const newDate = e.target.value
     setDateFilter(newDate)
     setWeekFilter(newDate)
+    fetchTrades(); // Fetch trades when date changes
+  }
+
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value);
+    fetchTrades(); // Fetch trades when status changes
   }
 
   const formatDateTime = (dateString: string | null): string => {
@@ -157,7 +163,7 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
               value={dateFilter}
               onChange={handleDateChange}
             />
-            <Select value={statusFilter} onValueChange={setStatusFilter}> {/* Updated Select component */}
+            <Select value={statusFilter} onValueChange={handleStatusChange}> {/* Updated Select component */}
               <SelectTrigger>
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>
@@ -182,42 +188,44 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
               <TableRow>
                 <TableHead className="w-[50px]"></TableHead>
                 {isDevelopment && debugMode && <TableHead>Trade ID</TableHead>}
-                <TableHead>
+                <TableHead className="text-center">
                   <Button variant="ghost" onClick={() => handleSort('symbol')}>
                     Symbol {renderSortIcon('symbol')}
                   </Button>
                 </TableHead>
-                <TableHead>
+                <TableHead className="text-center">
                   <Button variant="ghost" onClick={() => handleSort('trade_type')}>
                     Type {renderSortIcon('trade_type')}
                   </Button>
                 </TableHead>
-                <TableHead>
+                <TableHead className="text-center">
                   <Button variant="ghost" onClick={() => handleSort('status')}>
                     Status {renderSortIcon('status')}
                   </Button>
                 </TableHead>
-                <TableHead>
+                <TableHead className="text-center">
                   <Button variant="ghost" onClick={() => handleSort('entry_price')}>
                     Entry Price {renderSortIcon('entry_price')}
                   </Button>
                 </TableHead>
-                <TableHead>
+                <TableHead className="text-center">
                   <Button variant="ghost" onClick={() => handleSort('current_size')}>
                     Size {renderSortIcon('current_size')}
                   </Button>
                 </TableHead>
-                <TableHead>
+                <TableHead className="text-center">
                   <Button variant="ghost" onClick={() => handleSort('created_at')}>
                     Opened At {renderSortIcon('created_at')}
                   </Button>
                 </TableHead>
-                <TableHead>
-                  <Button variant="ghost" onClick={() => handleSort('closed_at')}>
-                    Closed At {renderSortIcon('closed_at')}
-                  </Button>
-                </TableHead>
-                <TableHead>
+                {statusFilter !== 'open' && (
+                  <TableHead className="text-center">
+                    <Button variant="ghost" onClick={() => handleSort('closed_at')}>
+                      Closed At {renderSortIcon('closed_at')}
+                    </Button>
+                  </TableHead>
+                )}
+                <TableHead className="text-center">
                   <Button variant="ghost" onClick={() => handleSort('realized_pl')}>
                     Realized P/L {renderSortIcon('realized_pl')}
                   </Button>
@@ -228,7 +236,7 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
               {sortedTrades.map(trade => (
                 <React.Fragment key={trade.trade_id}>
                   <TableRow>
-                    <TableCell>
+                    <TableCell className="text-center">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -241,19 +249,21 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
                         )}
                       </Button>
                     </TableCell>
-                    {isDevelopment && debugMode && <TableCell>{trade.trade_id}</TableCell>}
-                    <TableCell>{trade.symbol}</TableCell>
-                    <TableCell>{trade.trade_type}</TableCell>
-                    <TableCell>
+                    {isDevelopment && debugMode && <TableCell className="text-center">{trade.trade_id}</TableCell>}
+                    <TableCell className="text-center">{trade.symbol}</TableCell>
+                    <TableCell className="text-center">{trade.trade_type}</TableCell>
+                    <TableCell className="text-center">
                       <span className={`px-2 py-1 rounded-full text-xs ${trade.status === 'open' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
                         {trade.status}
                       </span>
                     </TableCell>
-                    <TableCell>${trade.entry_price.toFixed(2)}</TableCell>
-                    <TableCell>{trade.current_size}</TableCell>
-                    <TableCell>{formatDateTime(trade.created_at)}</TableCell>
-                    <TableCell>{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
-                    <TableCell>${trade.realized_pl !== undefined ? trade.realized_pl.toFixed(2) : 'N/A'}</TableCell>
+                    <TableCell className="text-center">${trade.entry_price.toFixed(2)}</TableCell>
+                    <TableCell className="text-center">{trade.current_size}</TableCell>
+                    <TableCell className="text-center">{formatDateTime(trade.created_at)}</TableCell>
+                    {statusFilter !== 'open' && (
+                      <TableCell className="text-center">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
+                    )}
+                    <TableCell className="text-center">${trade.realized_pl !== undefined ? trade.realized_pl.toFixed(2) : 'N/A'}</TableCell>
                   </TableRow>
                   {expandedTrades.has(trade.trade_id) && (
                     <TableRow>

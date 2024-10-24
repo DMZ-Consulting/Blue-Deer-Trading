@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 
-type SortField = 'symbol' | 'expiration' | 'type' | 'avg_price' | 'size' | 'avg_exit'
+type SortField = 'oneliner' | 'expiration' | 'type' | 'avg_price' | 'size' | 'avg_exit'
 type SortOrder = 'asc' | 'desc'
 
 const HighlightedNumber = ({ value, decimals = 2 }: { value: number, decimals?: number }) => {
@@ -18,7 +18,7 @@ const HighlightedNumber = ({ value, decimals = 2 }: { value: number, decimals?: 
 };
 
 export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTrade[] }) {
-  const [sortField, setSortField] = useState<SortField>('symbol')
+  const [sortField, setSortField] = useState<SortField>('oneliner')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
 
   const handleSort = (field: SortField) => {
@@ -55,8 +55,8 @@ export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTra
             <TableHeader>
               <TableRow>
                 <TableHead className="text-center">
-                  <Button variant="ghost" onClick={() => handleSort('symbol')}>
-                    Symbol {renderSortIcon('symbol')}
+                  <Button variant="ghost" onClick={() => handleSort('oneliner')}>
+                    Trade {renderSortIcon('oneliner')}
                   </Button>
                 </TableHead>
                 <TableHead className="text-center">
@@ -104,7 +104,7 @@ export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTra
             <TableBody>
               {sortedPortfolio.map((item, index) => (
                 <TableRow key={index}>
-                  <TableCell className="text-center">{item.trade.symbol}</TableCell>
+                  <TableCell className="text-center">{item.oneliner}</TableCell>
                   <TableCell className="text-center">{item.trade.expiration_date ? new Date(item.trade.expiration_date).toLocaleDateString() : 'N/A'}</TableCell>
                   <TableCell className="text-center">{item.trade.trade_type}</TableCell>
                   <TableCell className="text-center">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
