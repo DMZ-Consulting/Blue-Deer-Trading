@@ -6,13 +6,16 @@ export interface Trade {
   trade_type: string
   status: string
   entry_price: number
-  current_size: string
+  current_size: number
+  is_contract: boolean
   created_at: string
   closed_at?: string
   exit_price?: number
   profit_loss?: number
   risk_reward_ratio?: number
   win_loss?: string
+  transactions?: Transaction[]
+  expiration_date?: string
 }
 
 export interface Transaction {
@@ -22,4 +25,14 @@ export interface Transaction {
   amount: number
   size: string
   created_at: string
+}
+
+export interface PortfolioTrade {
+  trade: Trade
+  oneliner: string
+  realized_pl: number
+  realized_size: number
+  avg_entry_price: number
+  avg_exit_price: number
+  pct_change: number
 }

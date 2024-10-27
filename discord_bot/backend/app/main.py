@@ -1,12 +1,15 @@
+print("Starting application...")
+
 import asyncio
 import logging
 import os
 import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import List
+from typing import List, Optional
+from enum import Enum
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -16,8 +19,15 @@ from .database import get_db, engine, SessionLocal
 from .models import create_tables
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Add a console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 # Check if we're in a test environment
 IS_TEST = os.getenv('FASTAPI_TEST') == 'true'
@@ -56,10 +66,77 @@ def get_db():
     finally:
         db.close()
 
+class SortOrder(str, Enum):
+    asc = "asc"
+    desc = "desc"
 @app.get("/trades", response_model=List[schemas.Trade])
-def read_trades(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    trades = crud.get_trades(db, skip=skip, limit=limit)
-    return trades
+def read_trades(
+    skip: int = Query(0, ge=0, description="Number of trades to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of trades to return"),
+    status: Optional[models.TradeStatusEnum] = Query(None, description="Filter trades by status"),
+    symbol: Optional[str] = Query(None, description="Filter trades by symbol"),
+    tradeType: Optional[str] = Query(None, description="Filter trades by trade type"),
+    sortBy: Optional[str] = Query(None, description="Field to sort trades by"),
+    sortOrder: Optional[str] = Query("desc", regex="^(asc|desc)$", description="Sort order (ascending or descending)"),
+    configName: Optional[str] = Query(None, description="Filter trades by configuration name"),
+    weekFilter: Optional[str] = Query(None, description="Filter trades by week"),
+    monthFilter: Optional[str] = Query(None, description="Filter trades by month"),
+    yearFilter: Optional[str] = Query(None, description="Filter trades by year"),
+    db: Session = Depends(get_db)   
+):
+    print("Entering read_trades function")
+    try:
+        trades = crud.get_trades(
+            db,
+            skip=skip,
+            limit=limit,
+            status=status,
+            symbol=symbol,
+            trade_type=tradeType,
+            sort_by=sortBy,
+            sort_order=sortOrder,
+            config_name=configName,
+            week_filter=weekFilter,
+            month_filter=monthFilter,
+            year_filter=yearFilter
+        )
+        print(f"Retrieved {len(trades)} trades")
+        return trades
+    except ValueError as e:
+        print(f"Error in read_trades: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        print("Exiting read_trades function")
+
+@app.get("/portfolio", response_model=List[schemas.PortfolioTrade])
+def read_portfolio(
+    skip: int = Query(0, ge=0, description="Number of trades to skip"),
+    limit: int = Query(500, ge=1, le=1000, description="Maximum number of trades to return"),
+    sortBy: Optional[str] = Query(None, description="Field to sort trades by"),
+    sortOrder: Optional[str] = Query("desc", regex="^(asc|desc)$", description="Sort order (ascending or descending)"),
+    configName: Optional[str] = Query(None, description="Filter trades by configuration name"),
+    weekFilter: Optional[str] = Query(None, description="Filter trades by week"),
+    db: Session = Depends(get_db)   
+):
+    print("Entering read_trades function")
+    try:
+        trades = crud.get_portfolio_trades(
+            db,
+            skip=skip,
+            limit=limit,
+            sort_by=sortBy,
+            sort_order=sortOrder,
+            config_name=configName,
+            week_filter=weekFilter,
+        )
+        print(f"Retrieved {len(trades)} trades")
+        return trades
+    except ValueError as e:
+        print(f"Error in read_trades: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        print("Exiting read_trades function")
+
 
 @app.get("/trades/{trade_id}", response_model=schemas.Trade)
 def read_trade(trade_id: str, db: Session = Depends(get_db)):
@@ -130,9 +207,9 @@ def cleanup_old_backups(backup_dir):
         logger.error(f"Failed to clean up old backups: {str(e)}")
 
 @app.post("/trades/bto", response_model=schemas.Trade)
-def create_bto_trade(trade_input: crud.TradeInput, db: Session = Depends(get_db)):
+def create_bto_trade(trade: schemas.TradeCreate, db: Session = Depends(get_db)):
     try:
-        return crud.bto_trade(db, trade_input)
+        return crud.create_trade(db, trade)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -143,8 +220,8 @@ def create_sto_trade(trade: schemas.TradeCreate, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-@app.post("/trades/options-strategy", response_model=schemas.StrategyTrade)
-def create_options_strategy(strategy: schemas.StrategyTradeCreate, db: Session = Depends(get_db)):
+@app.post("/trades/options-strategy", response_model=schemas.OptionsStrategyTrade)
+def create_options_strategy(strategy: schemas.OptionsStrategyTradeCreate, db: Session = Depends(get_db)):
     return crud.create_options_strategy(db, strategy)
 
 @app.post("/trades/{trade_id}/add", response_model=schemas.Trade)
@@ -202,3 +279,24 @@ async def check_and_exit_expired_trades(db: Session = Depends(get_db)):
 # Ignore DeprecationWarning for discord.player
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="discord.player")
+
+@app.post("/trades/os/{strategy_id}/add", response_model=schemas.OptionsStrategyTrade)
+def add_to_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActionInput, db: Session = Depends(get_db)):
+    try:
+        return crud.os_add(db, strategy_id, action_input.net_cost, action_input.size)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/trades/os/{strategy_id}/trim", response_model=schemas.OptionsStrategyTrade)
+def trim_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActionInput, db: Session = Depends(get_db)):
+    try:
+        return crud.os_trim(db, strategy_id, action_input.net_cost, action_input.size)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/trades/os/{strategy_id}/exit", response_model=schemas.OptionsStrategyTrade)
+def exit_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActionInput, db: Session = Depends(get_db)):
+    try:
+        return crud.os_exit(db, strategy_id, action_input.net_cost)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

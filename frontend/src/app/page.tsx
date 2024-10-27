@@ -1,44 +1,44 @@
 'use client'
 
-import { useState } from 'react'
-import { TradesTableComponent } from '../components/TradesTable'
-import { ReportAreaComponent } from '../components/ReportArea'
+import React, { useState } from 'react'
+import { Button } from "@/components/ui/button"
+import { PanelRightOpen, PanelRightClose } from 'lucide-react'
+import { TradesTableComponent } from '@/components/TradesTable'
 
 export default function Page() {
-  const [dateFilter, setDateFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [isReportsVisible, setIsReportsVisible] = useState(true)
+  const [configName, setConfigName] = useState('day_trader')
+
+  const toggleReportsVisibility = () => {
+    setIsReportsVisible(prev => !prev)
+  }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Blue Deer Trading Dashboard</h1>
-      <div className="flex flex-col lg:flex-row gap-8">
-        <div className="lg:w-2/3">
-          <div className="mb-4 flex flex-wrap gap-4">
-            <input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="border p-2 rounded"
-            />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border p-2 rounded"
-            >
-              <option value="">All Statuses</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-            </select>
+    <main className="flex min-h-screen flex-col items-center justify-between p-24">
+      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
+        <div className={`flex-grow ${isReportsVisible ? 'w-3/4' : 'w-full'}`}>
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-3xl font-bold">Trades</h1>
+            <Button onClick={toggleReportsVisibility} variant="outline">
+              {isReportsVisible ? <PanelRightClose className="w-4 h-4 mr-2" /> : <PanelRightOpen className="w-4 h-4 mr-2" />}
+              {isReportsVisible ? "Hide Reports" : "Show Reports"}
+            </Button>
           </div>
-          <TradesTableComponent
-            dateFilter={dateFilter}
-            statusFilter={statusFilter}
+          <select
+            id="trade-group-selector"
+            value={configName}
+            onChange={(e) => setConfigName(e.target.value)}
+            className="mb-4 border p-2 rounded"
+          >
+            <option value="day_trader">Day Trader</option>
+            <option value="swing_trader">Swing Trader</option>
+            <option value="long_term_trader">Long Term Trader</option>
+          </select>
+          <TradesTableComponent 
+            configName={configName}
           />
         </div>
-        <div className="lg:w-1/3">
-          <ReportAreaComponent />
-        </div>
       </div>
-    </div>
+    </main>
   )
 }
