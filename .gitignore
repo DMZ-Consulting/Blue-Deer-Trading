@@ -171,6 +171,7 @@ cython_debug/
 *.sqlite3
 
 # Next.js specific
+.next/
 out/
 .vercel
 *.tsbuildinfo

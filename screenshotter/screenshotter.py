@@ -2,6 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import Select
 import time
 import os
@@ -9,6 +10,7 @@ import requests
 import json
 from contextlib import ExitStack
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
 
 def setup_driver():
     """Set up Chrome WebDriver with headless mode and VPS-friendly options"""
@@ -21,6 +23,9 @@ def setup_driver():
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-extensions')
     options.add_argument('--remote-debugging-port=9222')
+    options.add_argument('--start-maximized')  # Ensure maximum viewport
+    options.add_argument('--force-device-scale-factor=1')  # Prevent scaling issues
+
 
     return webdriver.Chrome(options=options)
 
@@ -39,17 +44,85 @@ def change_status_to_open2(driver):
     status_selector = Select(driver.find_element(By.CSS_SELECTOR, "select[name='status-selector']"))
     status_selector.select_by_visible_text("Open")
 
+def wait_for_element(driver, by, selector, timeout=10, condition="presence"):
+    """Generic wait function with different wait conditions"""
+    try:
+        if condition == "presence":
+            element = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((by, selector))
+            )
+        elif condition == "clickable":
+            element = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable((by, selector))
+            )
+        elif condition == "visible":
+            element = WebDriverWait(driver, timeout).until(
+                EC.visibility_of_element_located((by, selector))
+            )
+        return element
+    except TimeoutException:
+        print(f"Timeout waiting for element: {selector}")
+        driver.save_screenshot(f"screenshots/debug_timeout_{time.strftime('%Y%m%d_%H%M%S')}.png")
+        raise
+
+
 def change_status_to_open(driver):
-    """Change all closed statuses to open"""
-    # Locate the button and click it to open the combo box
-    button = driver.find_element(By.CSS_SELECTOR, "button[role='combobox']")
-    button.click()
-    
-    # Wait for the options to be visible and select the "Open" option
-    open_option = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.XPATH, "//span[text()='Open']"))
-    )
-    open_option.click()
+    """Change all closed statuses to open with enhanced error handling"""
+    try:
+        # Wait for page to be completely loaded
+        WebDriverWait(driver, 10).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        
+        # First try the combobox button
+        try:
+            button = wait_for_element(
+                driver, 
+                By.CSS_SELECTOR, 
+                "button[role='combobox']", 
+                condition="clickable"
+            )
+            
+            # Scroll into view with offset to ensure it's fully visible
+            driver.execute_script(
+                "arguments[0].scrollIntoView({behavior: 'instant', block: 'center'});", 
+                button
+            )
+            time.sleep(0.5)
+            
+            # Try multiple click methods
+            try:
+                button.click()
+            except:
+                ActionChains(driver).move_to_element(button).click().perform()
+            
+            # Wait for and click the Open option
+            open_option = wait_for_element(
+                driver,
+                By.XPATH,
+                "//span[text()='Open']",
+                condition="clickable"
+            )
+            open_option.click()
+            
+        except Exception as e:
+            print(f"Combobox approach failed, trying select element: {str(e)}")
+            # Fallback to select element if combobox fails
+            status_selector = wait_for_element(
+            driver,
+            By.CSS_SELECTOR,
+            "select[name='status-selector']",
+            condition="presence"
+            )
+            Select(status_selector).select_by_visible_text("Open")
+            
+        # Wait for any loading indicators to disappear
+        time.sleep(2)
+
+    except Exception as e:
+        print(f"Error changing status to open: {str(e)}")
+        driver.save_screenshot("screenshots/status_change_error.png")
+        raise   
 
 def select_trade_group(driver, group_value):
     """Safely select a trade group with retry logic"""
@@ -261,6 +334,12 @@ def main():
     try:
         # Load the webpage (replace with actual URL)
         driver.get("http://localhost:3000")
+
+                # Wait for initial page load
+        WebDriverWait(driver, 10).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        time.sleep(2)  # Additional wait for dynamic content
 
         # Take initial screenshot of table
         take_table_screenshot(driver, "initial_table.png")
