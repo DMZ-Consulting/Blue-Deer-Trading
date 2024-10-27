@@ -10,11 +10,11 @@ const geistSans = localFont({
   weight: "100 900",
 });
 
-const geistMono = localFont({
+/*const geistMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
   variable: "--font-geist-mono",
   weight: "100 900",
-});
+});*/
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -27,7 +27,7 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={geistSans.variable}>
       <head />
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>

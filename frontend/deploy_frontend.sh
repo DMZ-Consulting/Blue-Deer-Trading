@@ -1,10 +1,16 @@
 #!/bin/bash
 
+set -x  # Enable debug mode to see all commands being executed
+
 # Get the directory of the current script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # Navigate to the frontend directory
 cd "$SCRIPT_DIR"
+
+# Clean the existing .next directory
+echo "Cleaning .next directory..."
+rm -rf .next
 
 # Install dependencies
 echo "Installing dependencies..."
@@ -14,17 +20,21 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Build the frontend
+# Build the frontend with debug output
 echo "Building the frontend..."
-npm run build
+NODE_ENV=production npm run build -- --debug
 if [ $? -ne 0 ]; then
     echo "Failed to build the frontend"
     exit 1
 fi
 
-# Verify the build exists
-if [ ! -d ".next" ]; then
-    echo "Build directory .next not found after build"
+# List contents of .next directory
+echo "Contents of .next directory:"
+ls -la .next/
+
+# Verify the build exists and has required files
+if [ ! -d ".next/static" ] || [ ! -f ".next/build-manifest.json" ]; then
+    echo "Build appears incomplete. Missing required files."
     exit 1
 fi
 
@@ -47,7 +57,7 @@ fi
 
 # Start the frontend using PM2
 echo "Starting the frontend with PM2..."
-pm2 start npm --name "BlueDeerTradingFrontend" -- start
+NODE_ENV=production pm2 start npm --name "BlueDeerTradingFrontend" -- start
 
 # Verify the process started
 if ! pm2 list | grep -q "BlueDeerTradingFrontend"; then

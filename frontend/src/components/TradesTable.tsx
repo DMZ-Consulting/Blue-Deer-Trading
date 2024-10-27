@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Trade, Transaction } from '../utils/types'
+import { Trade } from '../utils/types'
 import { ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react'
 import { getTradesByConfiguration } from '../api/api'
 
@@ -17,7 +17,7 @@ interface TradesTableProps {
   configName: string
 }
 
-type SortField = 'symbol' | 'trade_type' | 'status' | 'entry_price' | 'current_size' | 'created_at' | 'closed_at' | 'realized_pl'
+type SortField = keyof Trade
 type SortOrder = 'asc' | 'desc'
 
 export function TradesTableComponent({ configName }: TradesTableProps) {
@@ -127,8 +127,8 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
     }
   }
   const sortedTrades = [...trades].sort((a, b) => {
-    const aValue = a[sortField] ?? '';
-    const bValue = b[sortField] ?? '';
+    const aValue = (a[sortField] as unknown) ?? '';
+    const bValue = (b[sortField] as unknown) ?? '';
     
     if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;

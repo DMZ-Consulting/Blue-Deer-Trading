@@ -16,6 +16,8 @@ export interface Trade {
   win_loss?: string
   transactions?: Transaction[]
   expiration_date?: string
+  option_type?: string
+  strike?: number
 }
 
 export interface Transaction {
