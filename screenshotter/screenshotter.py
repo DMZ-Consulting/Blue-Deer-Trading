@@ -8,12 +8,20 @@ import os
 import requests
 import json
 from contextlib import ExitStack
+from selenium.webdriver.chrome.options import Options
 
 def setup_driver():
-    """Set up Chrome WebDriver with appropriate options"""
-    options = webdriver.ChromeOptions()
-    options.add_argument('--start-maximized')
+    """Set up Chrome WebDriver with headless mode and VPS-friendly options"""
+    options = Options()
+    options.add_argument('--headless=new')  # Enable new headless mode
+    options.add_argument('--no-sandbox')  # Required for running as root on VPS
+    options.add_argument('--disable-dev-shm-usage')  # Handle limited shared memory on VPS
+    options.add_argument('--disable-gpu')  # Disable GPU hardware acceleration
+    options.add_argument('--window-size=1920,1080')  # Set a standard resolution
     options.add_argument('--disable-infobars')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--remote-debugging-port=9222')
+
     return webdriver.Chrome(options=options)
 
 def take_table_screenshot(driver, filename):
