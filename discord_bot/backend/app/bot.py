@@ -510,7 +510,7 @@ def determine_trade_group(expiration_date: str, trade_type: str) -> str:
     days_to_expiration = (exp_date - datetime.now().date()).days
     print("days_to_expiration", days_to_expiration)
     
-    if days_to_expiration < 7:
+    if days_to_expiration <= 3:
         print(f"Returning DAY_TRADER for {expiration_date}")
         return TradeGroupEnum.DAY_TRADER
     else:
@@ -590,7 +590,7 @@ async def create_trade(
         if expiration_date:
             expiration_date = convert_to_two_digit_year(expiration_date)
         
-        if trade_group is None:
+        if not trade_group:
             trade_group = determine_trade_group(expiration_date, trade_type.lower())
         
         config = get_configuration(db, trade_group)

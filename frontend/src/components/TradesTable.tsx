@@ -175,7 +175,7 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
               value={dateFilter}
               onChange={handleDateChange}
             />
-            <Select value={statusFilter} onValueChange={handleStatusChange}> {/* Updated Select component */}
+            <Select name="status-selector" value={statusFilter} onValueChange={handleStatusChange}> {/* Updated Select component */}
               <SelectTrigger>
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>

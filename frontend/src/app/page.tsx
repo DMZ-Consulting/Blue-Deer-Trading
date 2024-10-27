@@ -25,6 +25,7 @@ export default function Page() {
             </Button>
           </div>
           <select
+            id="trade-group-selector"
             value={configName}
             onChange={(e) => setConfigName(e.target.value)}
             className="mb-4 border p-2 rounded"

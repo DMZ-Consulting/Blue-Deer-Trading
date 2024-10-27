@@ -47,7 +47,7 @@ export default function PortfolioPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div id="portfolio-page" className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Blue Deer Trading Dashboard</h1>
         <Button onClick={toggleReportsVisibility} variant="outline">
@@ -62,7 +62,7 @@ export default function PortfolioPage() {
               Select Trade Group
             </label>
             <select
-              id="trade-group"
+              id="trade-group-selector"
               value={configName}
               onChange={(e) => setConfigName(e.target.value)}
               className="border p-2 rounded"

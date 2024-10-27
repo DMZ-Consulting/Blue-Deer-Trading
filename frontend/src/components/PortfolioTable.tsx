@@ -54,47 +54,47 @@ export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTra
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost" onClick={() => handleSort('oneliner')}>
                     Trade {renderSortIcon('oneliner')}
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Expiration
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Type
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Avg Price
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Size
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Avg Exit
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Pct Change
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Unit P/L
                   </Button>
                 </TableHead>
-                <TableHead className="text-center">
+                <TableHead className="text-center whitespace-nowrap">
                   <Button variant="ghost">
                     Realized P/L
                   </Button>
@@ -104,15 +104,15 @@ export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTra
             <TableBody>
               {sortedPortfolio.map((item, index) => (
                 <TableRow key={index}>
-                  <TableCell className="text-center">{item.oneliner}</TableCell>
-                  <TableCell className="text-center">{item.trade.expiration_date ? new Date(item.trade.expiration_date).toLocaleDateString() : 'N/A'}</TableCell>
-                  <TableCell className="text-center">{item.trade.trade_type}</TableCell>
-                  <TableCell className="text-center">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
-                  <TableCell className="text-center">{item.realized_size}</TableCell>
-                  <TableCell className="text-center">$<HighlightedNumber value={item.avg_exit_price} /></TableCell>
-                  <TableCell className="text-center"><HighlightedNumber value={item.pct_change} />%</TableCell>
-                  <TableCell className="text-center">$<HighlightedNumber value={item.realized_pl / item.realized_size} /></TableCell>
-                  <TableCell className="text-center">$<HighlightedNumber value={item.realized_pl} /></TableCell>
+                  <TableCell className="text-center whitespace-nowrap">{item.oneliner}</TableCell>
+                  <TableCell className="text-center whitespace-nowrap">{item.trade.expiration_date ? new Date(item.trade.expiration_date).toLocaleDateString() : 'N/A'}</TableCell>
+                  <TableCell className="text-center whitespace-nowrap">{item.trade.trade_type}</TableCell>
+                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
+                  <TableCell className="text-center whitespace-nowrap">{item.realized_size}</TableCell>
+                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_exit_price} /></TableCell>
+                  <TableCell className="text-center whitespace-nowrap"><HighlightedNumber value={item.pct_change} />%</TableCell>
+                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl / item.realized_size} /></TableCell>
+                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>
