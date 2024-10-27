@@ -171,11 +171,9 @@ cython_debug/
 *.sqlite3
 
 # Next.js specific
-.next/
 out/
 .vercel
 *.tsbuildinfo
-next-env.d.ts
 
 # Node.js dependencies
 node_modules/
