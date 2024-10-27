@@ -2,7 +2,9 @@
 
 # Get the directory of the current script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+echo "SCRIPT_DIR: $SCRIPT_DIR"
 PROJECT_DIR="$( dirname "$SCRIPT_DIR" )"
+echo "PROJECT_DIR: $PROJECT_DIR"
 
 # Navigate to the project directory
 cd "$PROJECT_DIR"
