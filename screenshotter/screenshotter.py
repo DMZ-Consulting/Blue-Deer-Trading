@@ -5,6 +5,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 import time
 import os
+import requests
+import json
+from contextlib import ExitStack
 
 def setup_driver():
     """Set up Chrome WebDriver with appropriate options"""
@@ -69,7 +72,7 @@ def select_trade_group(driver, group_value):
             time.sleep(1)
             continue
 
-def capture_day_trader_groups(driver):
+def capture_trade_groups(driver):
     """Take screenshots for each trade group in the Day Trader selector"""
     day_trader_select = Select(driver.find_element(By.CSS_SELECTOR, "select[id='trade-group-selector']"))
     groups = [option.text for option in day_trader_select.options]
@@ -77,7 +80,8 @@ def capture_day_trader_groups(driver):
     for group in groups:
         day_trader_select.select_by_visible_text(group)
         time.sleep(1)  # Allow time for table to update
-        take_table_screenshot(driver, f"day_trader_group_{group}.png")
+        group_str = group.lower().replace(" ", "_")
+        take_table_screenshot(driver, f"{group_str}_open.png")
 
 def take_portfolio_screenshot(driver, filename):
     """Take a screenshot of the portfolio and reports sections"""
@@ -98,6 +102,7 @@ def take_portfolio_screenshot(driver, filename):
     except Exception as e:
         print(f"Error taking screenshot: {str(e)}")
         raise e
+    
 def navigate_to_portfolio(driver):
     """Navigate to portfolio view with retry logic"""
     max_attempts = 3
@@ -131,13 +136,112 @@ def capture_portfolio_for_all_groups(driver):
         for group in groups:
             print(f"\nProcessing trade group: {group}")
             if select_trade_group(driver, group):
-                take_portfolio_screenshot(driver, f"portfolio_view_{group}.png")
+                take_portfolio_screenshot(driver, f"{group}_portfolio.png")
             else:
                 print(f"Skipping screenshot for {group} due to selection failure")
 
     except Exception as e:
         print(f"Error in capture_portfolio_for_all_groups: {str(e)}")
         raise e
+    
+#"avatar_url": "https://cdn.discordapp.com/app-icons/1284994761211772928/e632e899e42157ced313d77b7aa5d3d7.png"
+DISCORD_WEBHOOKS = {
+    "day_trader": "https://discord.com/api/webhooks/1300088111665123378/ufkdui9ywzRhJO69_nxojxJya3FpcuG5WAezvq3K7OixfATHhNWZw61DXg5HsdSqoruS",
+    "swing_trader": "https://discord.com/api/webhooks/1300088535046422538/oYG32QQrGf0ikR238UeKs0H8kZZdx9mmM0-KOMQN1iasTe5BZ1X1KoTML7S8Lu_1_UZP",
+    "long_term_trader": "https://discord.com/api/webhooks/1300088644702310451/NFQ7UzgNYQ4pO-qxKA-0LZd53V3VM4C2toNwvJ_ak4g-P0_uERQlVE7NcipXi5WSNj08",
+    "full_portfolio": "https://discord.com/api/webhooks/1300088766354165820/dDOy-rbyWXHlwZbQ2TbJRDdtGNuauRN5cQHzqkj_6lBtrcE6Oo4ZQWQbcslIZSLH_rj8"
+}
+
+DISCORD_FILE_ORDER = ['day_trader_open.png', 'day_trader_portfolio.png', 'swing_trader_open.png', 'swing_trader_portfolio.png', 'long_term_trader_open.png', 'long_term_trader_portfolio.png']
+
+
+def send_screenshot_to_discord():
+    """Send a screenshot to the Discord channel"""
+    # For every screenshot in the screenshots directory, send it to the Discord channel
+    # I want to order it as Open then portfolio for each group
+    for file in DISCORD_FILE_ORDER:
+        message = "ERROR"
+        if file.endswith("open.png"):
+            message = f"# Open Trades for {file.split('_')[0].capitalize()} Trader"
+        elif file.endswith("portfolio.png"):
+            message = f"# {file.split('_')[0].capitalize()} Trader Portfolio"
+        
+        if file.startswith("day_trader"):
+            send_discord_message(DISCORD_WEBHOOKS["day_trader"], message, f"screenshots/{file}")
+        elif file.startswith("swing_trader"):
+            send_discord_message(DISCORD_WEBHOOKS["swing_trader"], message, f"screenshots/{file}")
+        elif file.startswith("long_term_trader"):
+            send_discord_message(DISCORD_WEBHOOKS["long_term_trader"], message, f"screenshots/{file}")
+        else:
+            print(f"Unknown file: {file}")
+
+        send_discord_message(DISCORD_WEBHOOKS["full_portfolio"], message, f"screenshots/{file}")
+
+def send_discord_message(webhook_url, message, image_path=None, avatar_path=None):
+    """
+    Send a message to Discord with optional local image and avatar files
+    
+    Parameters:
+    webhook_url (str): The Discord webhook URL
+    message (str): The message to send
+    image_path (str): Path to message image file (optional)
+    avatar_path (str): Path to avatar image file (optional)
+    """
+    
+    # Use ExitStack to manage multiple file contexts
+    with ExitStack() as stack:
+        files = {}
+        
+        # Basic payload with message
+        payload = {
+            "content": message,
+            "username": "Task Updates Bot",
+        }
+        
+        # If avatar file is provided, add it to the files
+        if avatar_path:
+            try:
+                avatar = stack.enter_context(open(avatar_path, 'rb'))
+                files['avatar'] = ('avatar.png', avatar, 'image/png')
+                payload["avatar_url"] = "attachment://avatar.png"
+            except FileNotFoundError:
+                print(f"Error: Avatar file '{avatar_path}' not found")
+                return
+            except Exception as e:
+                print(f"Error opening avatar file: {str(e)}")
+                return
+
+        # If message image is provided, add it to the files
+        if image_path:
+            try:
+                image = stack.enter_context(open(image_path, 'rb'))
+                files['file'] = ('image.png', image, 'image/png')
+            except FileNotFoundError:
+                print(f"Error: Image file '{image_path}' not found")
+                return
+            except Exception as e:
+                print(f"Error opening image file: {str(e)}")
+                return
+
+        try:
+            # Send the message with files
+            response = requests.post(
+                webhook_url,
+                data={'payload_json': json.dumps(payload)},
+                files=files
+            )
+            
+            if response.status_code == 204:
+                print("Message sent successfully!")
+            else:
+                print(f"Failed to send message. Status code: {response.status_code}")
+                print(f"Response: {response.text}")
+                
+        except Exception as e:
+            print(f"Error sending message: {str(e)}")
+
+def main2():
+    send_screenshot_to_discord()
 
 def main():
     # Create screenshots directory if it doesn't exist
@@ -154,16 +258,18 @@ def main():
         #take_table_screenshot(driver, "initial_table.png")
 
         # Change status from closed to open
-        #change_status_to_open(driver)
+        change_status_to_open(driver)
 
         # Take screenshot after status change
-        #take_table_screenshot(driver, "table_status_open.png")
+        ##take_table_screenshot(driver, "table_status_open.png")
 
         # Capture screenshots for each Day Trader group
-        #capture_day_trader_groups(driver)
+        capture_trade_groups(driver)
 
         # Capture portfolio view for each trade group
         capture_portfolio_for_all_groups(driver)
+
+        send_screenshot_to_discord()
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
@@ -174,3 +280,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

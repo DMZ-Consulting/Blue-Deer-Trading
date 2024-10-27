@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Set the path to your project directory
-PROJECT_DIR="/root/BlueDeerTradingBot/prototype"
+#PROJECT_DIR="/root/BlueDeerTradingBot/prototype"
 
 # Navigate to the project directory
-cd "$PROJECT_DIR"
+#cd "$PROJECT_DIR"
 
 # Check if virtual environment exists, if not create one
 if [ ! -d "venv" ]; then
