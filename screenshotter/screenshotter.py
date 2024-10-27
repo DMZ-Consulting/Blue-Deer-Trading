@@ -263,13 +263,13 @@ def main():
         driver.get("http://localhost:3000")
 
         # Take initial screenshot of table
-        #take_table_screenshot(driver, "initial_table.png")
+        take_table_screenshot(driver, "initial_table.png")
 
         # Change status from closed to open
         change_status_to_open(driver)
 
         # Take screenshot after status change
-        ##take_table_screenshot(driver, "table_status_open.png")
+        take_table_screenshot(driver, "table_status_open.png")
 
         # Capture screenshots for each Day Trader group
         capture_trade_groups(driver)
