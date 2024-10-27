@@ -14,7 +14,7 @@ echo "Starting/restarting the frontend..."
 bash "$SCRIPT_DIR/frontend/deploy_frontend.sh" restart
 
 # Start or restart the screenshotter
-echo "Starting/restarting the screenshotter..."
-bash "$SCRIPT_DIR/screenshotter/run_screenshotter.sh" restart
+#echo "Starting/restarting the screenshotter..."
+#bash "$SCRIPT_DIR/screenshotter/run_screenshotter.sh" restart
 
 echo "All components of Blue Deer Trading have been started or restarted!"
