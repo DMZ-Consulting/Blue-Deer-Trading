@@ -19,19 +19,8 @@ source venv/bin/activate
 echo "Installing requirements..."
 pip install -r requirements.txt
 
-# Check if PM2 is installed, if not install it
-if ! command -v pm2 &> /dev/null; then
-    echo "PM2 is not installed. Installing PM2..."
-    npm install pm2@latest -g
-fi
+# Run the screenshotter and log output
+echo "Starting the screenshotter..."
+python screenshotter.py > screenshotter.log 2>&1 &
 
-# Start or restart the screenshotter using PM2
-if pm2 list | grep -q "BlueDeerScreenshotter"; then
-    echo "Restarting the screenshotter with PM2..."
-    pm2 restart BlueDeerScreenshotter
-else
-    echo "Starting the screenshotter with PM2..."
-    pm2 start screenshotter.py --name "BlueDeerScreenshotter" --interpreter python
-fi
-
-echo "Screenshotter started/restarted successfully!"
+echo "Screenshotter started successfully! Logs are being written to screenshotter.log."
