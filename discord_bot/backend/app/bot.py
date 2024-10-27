@@ -205,32 +205,32 @@ async def check_and_update_roles():
         if guild.id != 1055255055474905139: # Blue Deer Server, only do this here. 
             continue
             
-        db = next(get_db())
-        try:
-            # Check role requirements
-            role_requirements = db.query(models.RoleRequirement).filter_by(guild_id=str(guild.id)).all()
-            for requirement in role_requirements:
-                required_role_ids = [role.role_id for role in requirement.required_roles]
-                members = guild.fetch_members(limit=None)
-                async for member in members:
-                    if not any(role.id in required_role_ids for role in member.roles):
-                        await member.remove_roles(*member.roles, reason="Does not meet role requirements")
-                        await log_action(guild, f"Removed roles from {member.name} (ID: {member.id}) due to not meeting role requirements")
+            db = next(get_db())
+            try:
+                # Check role requirements
+                role_requirements = db.query(models.RoleRequirement).filter_by(guild_id=str(guild.id)).all()
+                for requirement in role_requirements:
+                    required_role_ids = [role.role_id for role in requirement.required_roles]
+                    members = guild.fetch_members(limit=None)
+                    async for member in members:
+                        if not any(role.id in required_role_ids for role in member.roles):
+                            await member.remove_roles(*member.roles, reason="Does not meet role requirements")
+                            await log_action(guild, f"Removed roles from {member.name} (ID: {member.id}) due to not meeting role requirements")
 
-            # Check conditional role grants
-            conditional_grants = db.query(models.ConditionalRoleGrant).filter_by(guild_id=str(guild.id)).all()
-            for grant in conditional_grants:
-                condition_role_ids = [role.role_id for role in grant.condition_roles]
-                grant_role = guild.get_role(int(grant.grant_role_id))
-                exclude_role = guild.get_role(int(grant.exclude_role_id)) if grant.exclude_role_id else None
-                
-                members = guild.fetch_members(limit=None)
-                async for member in members:
-                    if any(role.id in condition_role_ids for role in member.roles) and (not exclude_role or exclude_role not in member.roles):
-                        await member.add_roles(grant_role, reason="Meets conditional role grant requirements")
-                        await log_action(guild, f"Added role {grant_role.name} to {member.name} (ID: {member.id}) due to meeting conditional role grant requirements")
-        finally:
-            db.close()
+                # Check conditional role grants
+                conditional_grants = db.query(models.ConditionalRoleGrant).filter_by(guild_id=str(guild.id)).all()
+                for grant in conditional_grants:
+                    condition_role_ids = [role.role_id for role in grant.condition_roles]
+                    grant_role = guild.get_role(int(grant.grant_role_id))
+                    exclude_role = guild.get_role(int(grant.exclude_role_id)) if grant.exclude_role_id else None
+                    
+                    members = guild.fetch_members(limit=None)
+                    async for member in members:
+                        if any(role.id in condition_role_ids for role in member.roles) and (not exclude_role or exclude_role not in member.roles):
+                            await member.add_roles(grant_role, reason="Meets conditional role grant requirements")
+                            await log_action(guild, f"Added role {grant_role.name} to {member.name} (ID: {member.id}) due to meeting conditional role grant requirements")
+            finally:
+                db.close()
 
 async def log_action(guild, message):
     db = next(get_db())
@@ -562,7 +562,7 @@ def create_trade_oneliner(trade):
     else:
         return f"### {trade.symbol} @ {entry_price} {size} risk"
     
-def create_transaction_oneliner(trade, type, size):
+def create_transaction_oneliner(trade, type, size, price):
     if trade.option_type:
         if trade.option_type.startswith("C"):
             option_type = "CALL"
@@ -577,29 +577,130 @@ def create_transaction_oneliner(trade, type, size):
 
     if trade.is_contract:
         expiration = convert_to_two_digit_year(trade.expiration_date.strftime('%m/%d/%y')) if trade.expiration_date else "No Exp"
-        strike = f"${trade.strike:.2f}"
-        return f"### {type} {expiration} {trade.symbol} {strike} {option_type} {size} {risk_identifier}"
+        strike = f"{trade.strike:.2f}"
+        return f"### {type} {expiration} {trade.symbol} {strike} {option_type} @ {price:.2f} {size} {risk_identifier}"
     else:
-        return f"### {type} {trade.symbol} @ {trade.entry_price} {size} {risk_identifier}"
+        return f"### {type} {trade.symbol} @ {trade.entry_price:.2f} {size} {risk_identifier}"
     
+def serialize_legs(legs):
+    """Serialize the legs data for storage in the database."""
+    return json.dumps([{**leg, 'expiration_date': leg['expiration_date'].strftime('%Y-%m-%d')} for leg in legs])
+
+def deserialize_legs(legs_json):
+    """Deserialize the legs data from the database."""
+    legs = json.loads(legs_json)
+    for leg in legs:
+        leg['expiration_date'] = datetime.strptime(leg['expiration_date'], '%Y-%m-%d').date()
+    return legs
+
 def create_trade_oneliner_os(os_trade):
     add_date = True
     trade_oneliner = f"{os_trade.underlying_symbol} - {os_trade.name} "
-    for leg in os_trade.legs:
-        leg_parsed = parse_option_symbol(leg)
-
+    legs = deserialize_legs(os_trade.legs)  # Use the new deserialize_legs function
+    for leg in legs:
         if add_date:
-            trade_oneliner += f" ({leg_parsed['expiration_date']})"
+            trade_oneliner += f" ({leg['expiration_date'].strftime('%m/%d/%y')}) "
             add_date = False
         else:
-            if leg_parsed['option_type'] == "C":
+            if leg['option_type'] == "C":
                 trade_oneliner += "+"
             else:
                 trade_oneliner += "-"
         
-        trade_oneliner += f"{leg_parsed['strike']}{leg_parsed['option_type']}"
+        trade_oneliner += f"{leg['strike']}{leg['option_type'][0]}"
 
     return trade_oneliner
+
+@bot.slash_command(name="os", description="Create an options strategy trade")
+async def options_strategy(
+    interaction: discord.Interaction,
+    strategy_name: discord.Option(str, description="The name of the options strategy"),
+    size: discord.Option(str, description="The size of the trade"),
+    net_cost: discord.Option(float, description="The net cost of the strategy"),
+    legs: discord.Option(str, description="Format: [+/-].SYMBOL[W]YYMMDDX0000,PRICE,SIZE;[+/-].SYMBOL[W]YYMMDDX0000,PRICE,SIZE;..."),
+    note: discord.Option(str, description="Optional note from the trader") = None,
+):
+    await kill_interaction(interaction)
+
+    db = next(get_db())
+    try:
+        parsed_legs = []
+        underlying_symbol = None
+
+        leg_symbols = re.findall(r'[+-]?\.?[A-Z]+\d+[CP]\d+', legs)
+        for symbol in leg_symbols:
+            parsed = parse_option_symbol(symbol)
+            parsed['size'] = size
+            parsed_legs.append(parsed)
+
+            if not underlying_symbol:
+                underlying_symbol = parsed['symbol']
+            elif parsed['symbol'] != underlying_symbol:
+                raise ValueError("All legs must have the same underlying symbol")
+
+        trade_group = determine_trade_group(parsed_legs[0]['expiration_date'].strftime('%m/%d/%y'), "os")
+        config = get_configuration(db, trade_group)
+
+        if not config:
+            await log_to_channel(interaction.guild, f"No configuration found for trade group: {trade_group}")
+            return
+
+        new_strategy = models.OptionsStrategyTrade(
+            name=strategy_name,
+            underlying_symbol=underlying_symbol,
+            status=models.OptionsStrategyStatusEnum.OPEN,
+            configuration_id=config.id,
+            trade_group=trade_group,
+            legs=serialize_legs(parsed_legs),  # Use the new serialize_legs function
+            net_cost=net_cost,
+            average_net_cost=net_cost,
+            size=size,
+            current_size=size
+        )
+
+        db.add(new_strategy)
+        db.commit()
+        db.refresh(new_strategy)
+
+        # Add the initial open transaction
+        open_transaction = models.OptionsStrategyTransaction(
+            strategy_id=new_strategy.id,
+            transaction_type=models.TransactionTypeEnum.OPEN,
+            net_cost=net_cost,
+            size=size
+        )
+        db.add(open_transaction)
+        db.commit()
+
+        # Create an embed with the strategy trade information
+        embed = discord.Embed(title=f"New Options Strategy: {strategy_name}", color=discord.Color.blue())
+        embed.add_field(name="Underlying Symbol", value=underlying_symbol, inline=True)
+        embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
+        embed.add_field(name="Size", value=size, inline=True)
+
+        for i, leg in enumerate(parsed_legs, 1):
+            leg_info = f"{leg['trade_type']} {leg['size']} {leg['symbol']} {leg['strike']} {leg['option_type']} {leg['expiration_date'].strftime('%m/%d/%y')}"
+            embed.add_field(name=f"Leg {i}", value=leg_info, inline=False)
+
+        if note:
+            embed.add_field(name="Note", value=note, inline=False)
+
+        embed.set_footer(text=f"Strategy ID: {new_strategy.trade_id}")
+
+        print(f"Sending message to channel {config.channel_id}")
+        print(f"config {config}")
+        channel = interaction.guild.get_channel(int(config.channel_id))
+        role = interaction.guild.get_role(int(config.role_id))
+        await channel.send(content=f"{role.mention}", embed=embed)
+
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed OS command: Options strategy {strategy_name} created successfully.")
+
+    except Exception as e:
+        logger.error(f"Error creating options strategy trade: {str(e)}")
+        logger.error(traceback.format_exc())
+        await log_to_channel(interaction.guild, f"Error in OS command by {interaction.user.name}: {str(e)}")
+    finally:
+        db.close()
 
 async def create_trade(
     interaction: discord.Interaction,
@@ -879,97 +980,6 @@ async def log_to_channel(guild, message):
 
 # ================= Options Strategy Functions =================
 
-@bot.slash_command(name="os", description="Create an options strategy trade")
-async def options_strategy(
-    interaction: discord.Interaction,
-    strategy_name: discord.Option(str, description="The name of the options strategy"),
-    size: discord.Option(str, description="The size of the trade"),
-    net_cost: discord.Option(float, description="The net cost of the strategy"),
-    legs: discord.Option(str, description="Format: [+/-].SYMBOL[W]YYMMDDX0000,PRICE,SIZE;[+/-].SYMBOL[W]YYMMDDX0000,PRICE,SIZE;..."),
-    note: discord.Option(str, description="Optional note from the trader") = None,
-):
-    await kill_interaction(interaction)
-
-    db = next(get_db())
-    try:
-        # legs parameter will be in format -TSLA230721P825+.TSLA230721P825-.TSLA230721P825
-        parsed_legs = []
-        underlying_symbol = None
-
-        leg_symbols = re.findall(r'[+-]?\.?[A-Z]+\d+[CP]\d+', legs)
-        for symbol in leg_symbols:
-            parsed = parse_option_symbol(symbol)
-            parsed['size'] = size
-            parsed_legs.append(parsed)
-
-            if not underlying_symbol:
-                underlying_symbol = parsed['symbol']
-            elif parsed['symbol'] != underlying_symbol:
-                raise ValueError("All legs must have the same underlying symbol")
-
-        # Determine trade group based on the first leg's expiration date
-        trade_group = determine_trade_group(parsed_legs[0]['expiration_date'].strftime('%m/%d/%y'), "os")
-        config = get_configuration(db, trade_group)
-
-        if not config:
-            await log_to_channel(interaction.guild, f"No configuration found for trade group: {trade_group}")
-            return
-
-        new_strategy = models.OptionsStrategyTrade(
-            name=strategy_name,
-            underlying_symbol=underlying_symbol,
-            status=models.OptionsStrategyStatusEnum.OPEN,
-            configuration_id=config.id,
-            trade_group=trade_group,
-            legs=json.dumps([{**leg, 'expiration_date': leg['expiration_date'].strftime('%Y-%m-%d')} for leg in parsed_legs]),
-            net_cost=net_cost,
-            average_net_cost=net_cost,
-            size=size,
-            current_size=size
-        )
-
-        db.add(new_strategy)
-        db.commit()
-        db.refresh(new_strategy)
-
-        # Add the initial open transaction
-        open_transaction = models.OptionsStrategyTransaction(
-            strategy_id=new_strategy.id,
-            transaction_type=models.TransactionTypeEnum.OPEN,
-            net_cost=net_cost,
-            size=size
-        )
-        db.add(open_transaction)
-        db.commit()
-
-        # Create an embed with the strategy trade information
-        embed = discord.Embed(title=f"New Options Strategy: {strategy_name}", color=discord.Color.blue())
-        embed.add_field(name="Underlying Symbol", value=underlying_symbol, inline=True)
-        embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
-        embed.add_field(name="Size", value=size, inline=True)
-
-        for i, leg in enumerate(parsed_legs, 1):
-            leg_info = f"{leg['trade_type']} {leg['size']} {leg['symbol']} {leg['strike']} {leg['option_type']} {leg['expiration_date'].strftime('%m/%d/%y')}"
-            embed.add_field(name=f"Leg {i}", value=leg_info, inline=False)
-
-        if note:
-            embed.add_field(name="Note", value=note, inline=False)
-
-        embed.set_footer(text=f"Strategy ID: {new_strategy.trade_id}")
-
-        channel = interaction.guild.get_channel(int(config.channel_id))
-        role = interaction.guild.get_role(int(config.role_id))
-        await channel.send(content=f"{role.mention}", embed=embed)
-
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed OS command: Options strategy {strategy_name} created successfully.")
-
-    except Exception as e:
-        logger.error(f"Error creating options strategy trade: {str(e)}")
-        logger.error(traceback.format_exc())
-        await log_to_channel(interaction.guild, f"Error in OS command by {interaction.user.name}: {str(e)}")
-    finally:
-        db.close()
-
 @bot.slash_command(name="os_add", description="Add to an existing options strategy trade")
 async def os_add(
     interaction: discord.Interaction,
@@ -1125,6 +1135,7 @@ async def os_exit(
         db.commit()
 
         embed = discord.Embed(title=f"Exited Options Strategy: {strategy.name}", color=discord.Color.red())
+        embed.description = create_trade_oneliner_os(strategy)
         embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
         embed.add_field(name="Exited Size", value=format_size(strategy.current_size), inline=True)
         embed.add_field(name="Avg Entry Cost", value=f"${avg_entry_cost:.2f}", inline=True)
@@ -1465,16 +1476,17 @@ async def add_to_trade(
 
         # Create an embed with the transaction information
         embed = discord.Embed(title="Added to Trade", color=discord.Color.teal())
-        embed.description = create_transaction_oneliner(trade, "ADD", add_size)
+        embed.description = create_transaction_oneliner(trade, "ADD", add_size, add_price)
         embed.add_field(name="Symbol", value=trade.symbol, inline=True)
+        if trade.expiration_date:
+            embed.add_field(name="Exp. Date", value=trade.expiration_date.strftime('%m/%d/%y'), inline=True)
         embed.add_field(name="Trade Type", value=trade.trade_type, inline=True)
         if trade.strike:
             embed.add_field(name="Strike", value=f"${trade.strike:.2f}", inline=True)
-        if trade.expiration_date:
-            embed.add_field(name="Exp. Date", value=trade.expiration_date.strftime('%m/%d/%y'), inline=True)
-        embed.add_field(name="Avg Price", value=f"${trade.average_price:.2f}", inline=True)
+        embed.add_field(name="Add Price", value=f"${add_price:.2f}", inline=True)
         embed.add_field(name="Add Size", value=format_size(add_size), inline=True)
         embed.add_field(name="Total Size", value=format_size(new_size), inline=True)
+        embed.add_field(name="Avg Price", value=f"${trade.average_price:.2f}", inline=True)
 
         embed.set_footer(text=f"Trade ID: {trade.trade_id}")
 
@@ -1570,13 +1582,14 @@ async def trim_trade(
 
         # Create an embed with the transaction information
         embed = discord.Embed(title="Trimmed Trade", color=discord.Color.orange())
-        embed.description = create_transaction_oneliner(trade, "TRIM", trim_size)
+        embed.description = create_transaction_oneliner(trade, "TRIM", trim_size, trim_price)
         embed.add_field(name="Symbol", value=trade.symbol, inline=True)
         embed.add_field(name="Trade Type", value=trade.trade_type, inline=True)
-        if trade.strike:
-            embed.add_field(name="Strike", value=f"${trade.strike:.2f}", inline=True)
         if trade.expiration_date:
             embed.add_field(name="Exp. Date", value=trade.expiration_date.strftime('%m/%d/%y'), inline=True)
+        if trade.strike:
+            embed.add_field(name="Strike", value=f"${trade.strike:.2f}", inline=True)
+        embed.add_field(name="Trim Price", value=f"${trim_price:.2f}", inline=True)
         embed.add_field(name="Trim Size", value=format_size(trim_size), inline=True)
         embed.add_field(name="Remaining Size", value=format_size(new_size), inline=True)
         embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
@@ -1768,7 +1781,8 @@ async def watchlist_update(
             parsed_message = await parse_option_symbol(message)
             message = f"{parsed_message['trade_type']} {parsed_message['expiration_date']} {parsed_message['symbol']} {parsed_message['strike']} {parsed_message['option_type']}"
         except Exception as e:
-            await interaction.response.send_message(f"Error parsing option symbols: {str(e)}", ephemeral=True)
+            pass
+            #await log_to_channel(interaction.guild, f"Error parsing option symbols: {str(e)} posting regular message instead.")
 
         embed = discord.Embed(title="Watchlist Update", description=message, color=discord.Color.blue())
         embed.set_footer(text=f"Posted by {interaction.user.name}")
