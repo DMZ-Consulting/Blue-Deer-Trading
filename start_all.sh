@@ -11,7 +11,7 @@ bash "$SCRIPT_DIR/discord_bot/start_bot.sh" restart
 
 # Start or restart the frontend
 echo "Starting/restarting the frontend..."
-bash "$SCRIPT_DIR/frontend/deploy_frontend.sh" restart
+bash "$SCRIPT_DIR/frontend/start_frontend.sh" restart
 
 # Start or restart the screenshotter
 #echo "Starting/restarting the screenshotter..."
