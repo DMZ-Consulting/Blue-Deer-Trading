@@ -27,19 +27,19 @@ def update_trade_metrics():
 
     for trade in trades:
         if str(trade.size).upper() == "MAX" or str(trade.current_size).upper() == "MAX":
-            trade.current_size = decimal_or_zero(6)
-            trade.size = decimal_or_zero(6)
+            trade.current_size = 6
+            trade.size = 6
             transactions = session.query(Transaction).filter(Transaction.trade_id == trade.trade_id).all()
             for t in transactions:
                 if str(t.size).upper() == "MAX":
-                    t.size = decimal_or_zero(6)
+                    t.size = 6
         elif "x" in str(trade.size) or "x" in str(trade.current_size):
-            trade.size = decimal_or_zero(str(trade.size).replace("x", ""))
-            trade.current_size = decimal_or_zero(str(trade.current_size).replace("x", ""))
+            trade.size = int(str(trade.size).replace("x", ""))
+            trade.current_size = int(str(trade.current_size).replace("x", ""))
             transactions = session.query(Transaction).filter(Transaction.trade_id == trade.trade_id).all()
             for t in transactions:
                 if "x" in str(t.size):
-                    t.size = decimal_or_zero(str(t.size).replace("x", ""))
+                    t.size = int((str(t.size).replace("x", "")))
     
     session.commit()
 
