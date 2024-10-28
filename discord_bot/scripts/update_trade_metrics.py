@@ -26,6 +26,7 @@ def update_trade_metrics():
     trades = session.query(Trade).all()
 
     for trade in trades:
+        print(trade.size)
         if str(trade.size).upper() == "MAX":
             trade.size = decimal_or_zero(6)
             transactions = session.query(Transaction).filter(Transaction.trade_id == trade.trade_id).all()
