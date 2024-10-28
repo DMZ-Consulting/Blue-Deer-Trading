@@ -1413,6 +1413,11 @@ async def exit_trade(
         else:
             trade.win_loss = models.WinLossEnum.BREAKEVEN
 
+        if trade.average_exit_price:
+            trade.average_exit_price = (trade.average_exit_price * total_trim_size + Decimal(exit_price) * current_size) / (total_trim_size + current_size)
+        else:
+            trade.average_exit_price = exit_price
+
         db.commit()
 
         # Create an embed with the closed trade information
