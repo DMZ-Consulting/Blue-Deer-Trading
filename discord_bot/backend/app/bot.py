@@ -1430,7 +1430,10 @@ async def exit_trade(
         embed.add_field(name="Exit Size", value=format_size(current_size), inline=True)
         embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${profit_loss_per_unit:.2f}", inline=True)
         embed.add_field(name="Avg Entry Price", value=f"${trade.average_price:.2f}", inline=True)
-        embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
+        if trade.average_exit_price:
+            embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
+        else:
+            embed.add_field(name="Avg Exit Price", value=f"${exit_price:.2f}", inline=True)
         embed.add_field(name="Result", value=trade.win_loss.value.capitalize(), inline=True)
 
         # Set the footer to include the trade ID
