@@ -26,16 +26,30 @@ def update_trade_metrics():
     trades = session.query(Trade).all()
 
     for trade in trades:
+        if str(trade.size).upper() == "MAX":
+            trade.size = decimal_or_zero(6)
+            transactions = session.query(Transaction).filter(Transaction.trade_id == trade.trade_id).all()
+            for t in open_transactions:
+                if str(t.size).upper() == "MAX":
+                    t.size = decimal_or_zero(6)
+        elif "x" in str(trade.size):
+            trade.size = decimal_or_zero(str(trade.size).replace("x", ""))
+            transactions = session.query(Transaction).filter(Transaction.trade_id == trade.trade_id).all()
+            for t in open_transactions:
+                if "x" in str(t.size):
+                    t.size = decimal_or_zero(str(trade.size).replace("x", ""))
+    
+    session.commit()
+
+    trades = session.query(Trade).all()
+
+    for trade in trades:
         transactions = session.query(Transaction).filter(Transaction.trade_id == trade.trade_id).all()
         
         open_transactions = [t for t in transactions if t.transaction_type in [TransactionTypeEnum.OPEN, TransactionTypeEnum.ADD]]
         close_transactions = [t for t in transactions if t.transaction_type in [TransactionTypeEnum.CLOSE, TransactionTypeEnum.TRIM]]
 
-        if str(trade.size).upper() == "MAX":
-            trade.size = 6
-            for t in open_transactions:
-                if str(t.size).upper() == "MAX":
-                    t.size = "6"
+        
 
         # Calculate original opened size
         trade.size = str(sum(decimal_or_zero(t.size) for t in open_transactions))
