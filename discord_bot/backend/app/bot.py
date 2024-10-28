@@ -447,7 +447,7 @@ async def get_open_trade_ids(ctx: discord.AutocompleteContext):
                 display = f"{symbol} {strike_display} {expiration.strftime('%m/%d/%y')}"
                 sort_key = (symbol, expiration, strike)
             else:
-                display = symbol
+                display = f"{symbol} COMMON OPENED: {trade.created_at.strftime('%m/%d/%y')}"
                 sort_key = (symbol, datetime.max, 0)  # Put non-option trades at the bottom of their symbol group
             
             trade_info.append((trade.trade_id, display, sort_key))
@@ -1798,11 +1798,10 @@ async def watchlist_update(
             await log_to_channel(interaction.guild, f"User {interaction.user.name} executed WL command: Configured watchlist channel not found.")
             return
         try:
-            parsed_message = await parse_option_symbol(message)
-            message = f"{parsed_message['trade_type']} {parsed_message['expiration_date']} {parsed_message['symbol']} {parsed_message['strike']} {parsed_message['option_type']}"
+            parsed_message = parse_option_symbol(message)
+            message = f"{parsed_message['expiration_date'].strftime('%m/%d/%y')} {parsed_message['symbol']} {parsed_message['strike']} {parsed_message['option_type']}"
         except Exception as e:
-            pass
-            #await log_to_channel(interaction.guild, f"Error parsing option symbols: {str(e)} posting regular message instead.")
+            await log_to_channel(interaction.guild, f"Error parsing option symbols: {str(e)} posting regular message instead.")
 
         embed = discord.Embed(title="Watchlist Update", description=message, color=discord.Color.blue())
         embed.set_footer(text=f"Posted by {interaction.user.name}")
@@ -1814,6 +1813,27 @@ async def watchlist_update(
         await log_to_channel(interaction.guild, f"Error in WL command by {interaction.user.name}: {str(e)}")
     finally:
         db.close()
+
+@bot.slash_command(name="set_configuration_wl_ta", description="Set the watchlist and technical analysis channels")
+async def set_configuration_wl_ta(
+    interaction: discord.Interaction,
+    watchlist_channel: discord.Option(discord.TextChannel, description="The watchlist channel"),
+    technical_analysis_channel: discord.Option(discord.TextChannel, description="The technical analysis channel")
+):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    config = db.query(models.BotConfiguration).first()
+    if not config:
+        config = models.BotConfiguration()
+        config.watchlist_channel_id = str(watchlist_channel.id)
+        config.ta_channel_id = str(technical_analysis_channel.id) 
+        db.add(config)
+    else:
+        config.watchlist_channel_id = str(watchlist_channel.id)
+        config.ta_channel_id = str(technical_analysis_channel.id)
+    
+    db.commit()
+    await interaction.response.send_message("Configuration updated successfully.", ephemeral=True)
 
 @bot.slash_command(name="ta", description="Send a technical analysis update")
 async def ta_update(

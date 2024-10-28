@@ -31,6 +31,12 @@ def update_trade_metrics():
         open_transactions = [t for t in transactions if t.transaction_type in [TransactionTypeEnum.OPEN, TransactionTypeEnum.ADD]]
         close_transactions = [t for t in transactions if t.transaction_type in [TransactionTypeEnum.CLOSE, TransactionTypeEnum.TRIM]]
 
+        if str(trade.size).upper() == "MAX":
+            trade.size = 6
+            for t in open_transactions:
+                if str(t.size).upper() == "MAX":
+                    t.size = "6"
+
         # Calculate original opened size
         trade.size = str(sum(decimal_or_zero(t.size) for t in open_transactions))
 
