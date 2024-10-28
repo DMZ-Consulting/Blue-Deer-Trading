@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from . import crud, models, schemas
 from .database import SessionLocal, get_db, engine
 from .models import create_tables  # Add this import
+from .models import TransactionTypeEnum
 
 load_dotenv()
 
@@ -702,7 +703,7 @@ async def options_strategy(
     finally:
         db.close()
 
-def create_trade_oneliner_os(os_trade):
+"""def create_trade_oneliner_os(os_trade):
     add_date = True
     trade_oneliner = f"{os_trade.underlying_symbol} - {os_trade.name} "
     for leg in os_trade.legs:
@@ -720,7 +721,7 @@ def create_trade_oneliner_os(os_trade):
         trade_oneliner += f"{leg_parsed['strike']}{leg_parsed['option_type']}"
 
     return trade_oneliner
-
+"""
 
 async def create_trade(
     interaction: discord.Interaction,
@@ -2031,3 +2032,50 @@ async def unsync_resync(ctx, guild_id: int = None):
     await ctx.send("Resyncing commands...", ephemeral=True)
     synced = await bot.sync_commands(guild=guild)
     await ctx.send(f"Resynced {len(synced)} commands.", ephemeral=True)
+
+
+@bot.slash_command(name="transaction_send", description="Send a transaction message")
+async def transaction_send(interaction: discord.Interaction, transaction_id: discord.Option(str, description="The transaction to send")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+    if not transaction:
+        await interaction.response.send_message("Transaction not found.", ephemeral=True)
+        return
+    
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == transaction.trade_id).first()
+    if not trade:
+        await interaction.response.send_message("Trade not found.", ephemeral=True)
+        return
+    
+    config = get_configuration(db, trade.trade_group)
+    if not config:
+        await interaction.response.send_message("No configuration found for this trade group.", ephemeral=True)
+        return
+    
+    if transaction.transaction_type == "open":  
+        await post_update(interaction, trade.trade_group, f"Open {transaction.transaction_id}")
+    elif transaction.transaction_type == "close":
+        await post_update(interaction, trade.trade_group, f"Close {transaction.transaction_id}")
+    elif transaction.transaction_type == TransactionTypeEnum.EXIT:
+        # Create an embed with the closed trade information
+        embed = discord.Embed(title="Trade Closed", color=discord.Color.gold())
+        
+        # Add the one-liner at the top of the embed
+        embed.description = create_trade_oneliner(trade)
+        
+        embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
+        embed.add_field(name="Exit Size", value=format_size(current_size), inline=True)
+        embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${profit_loss_per_unit:.2f}", inline=True)
+        embed.add_field(name="Avg Entry Price", value=f"${trade.average_price:.2f}", inline=True)
+        if trade.average_exit_price:
+            embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
+        else:
+            embed.add_field(name="Avg Exit Price", value=f"${exit_price:.2f}", inline=True)
+        embed.add_field(name="Result", value=trade.win_loss.value.capitalize(), inline=True)
+
+        # Set the footer to include the trade ID
+        embed.set_footer(text=f"Trade ID: {trade_id}")
+
+        channel = interaction.guild.get_channel(int(config.update_channel_id))
+        await channel.send(embed=embed)
