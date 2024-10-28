@@ -2048,7 +2048,7 @@ async def transaction_send(interaction: discord.Interaction, transaction_id: dis
         await interaction.response.send_message("Trade not found.", ephemeral=True)
         return
     
-    config = get_configuration(db, trade.trade_group)
+    config = get_configuration(db, trade.configuration.name)
     if not config:
         await interaction.response.send_message("No configuration found for this trade group.", ephemeral=True)
         return
@@ -2057,25 +2057,29 @@ async def transaction_send(interaction: discord.Interaction, transaction_id: dis
         await post_update(interaction, trade.trade_group, f"Open {transaction.transaction_id}")
     elif transaction.transaction_type == "close":
         await post_update(interaction, trade.trade_group, f"Close {transaction.transaction_id}")
-    elif transaction.transaction_type == TransactionTypeEnum.EXIT:
+    elif transaction.transaction_type == TransactionTypeEnum.CLOSE:
         # Create an embed with the closed trade information
         embed = discord.Embed(title="Trade Closed", color=discord.Color.gold())
+
+        unit_type = "contract" if trade.is_contract else "share"
+
+        profit_loss_per_unit = trade.average_price - transaction.amount
         
         # Add the one-liner at the top of the embed
         embed.description = create_trade_oneliner(trade)
         
-        embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
-        embed.add_field(name="Exit Size", value=format_size(current_size), inline=True)
+        embed.add_field(name="Exit Price", value=f"${transaction.amount:.2f}", inline=True)
+        embed.add_field(name="Exit Size", value=format_size(transaction.size), inline=True)
         embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${profit_loss_per_unit:.2f}", inline=True)
         embed.add_field(name="Avg Entry Price", value=f"${trade.average_price:.2f}", inline=True)
         if trade.average_exit_price:
             embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
         else:
-            embed.add_field(name="Avg Exit Price", value=f"${exit_price:.2f}", inline=True)
+            embed.add_field(name="Avg Exit Price", value=f"${transaction.amount:.2f}", inline=True)
         embed.add_field(name="Result", value=trade.win_loss.value.capitalize(), inline=True)
 
         # Set the footer to include the trade ID
-        embed.set_footer(text=f"Trade ID: {trade_id}")
+        embed.set_footer(text=f"Trade ID: {trade.trade_id}")
 
         channel = interaction.guild.get_channel(int(config.update_channel_id))
         await channel.send(embed=embed)
