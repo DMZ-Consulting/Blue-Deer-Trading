@@ -335,6 +335,17 @@ async def exit_expired_trade(trade):
     finally:
         db.close()
 
+async def log_command_usage(interaction: discord.Interaction, command_name: str, params: dict):
+    """Log command usage to the log channel."""
+    try:
+        # Format parameters, excluding any None values
+        param_str = ', '.join(f"{k}={v}" for k, v in params.items() if v is not None)
+        log_message = f"Command executed: /{command_name} by {interaction.user.name} ({interaction.user.id})\nParameters: {param_str}"
+        await log_to_channel(interaction.guild, log_message)
+    except Exception as e:
+        logger.error(f"Error logging command usage: {str(e)}")
+        logger.error(traceback.format_exc())
+
 @bot.slash_command(name="setup_verification", description="Set up a verification message with terms and conditions")
 async def setup_verification(
     interaction: discord.Interaction,
@@ -344,6 +355,13 @@ async def setup_verification(
     role_to_add: discord.Role,
     log_channel: discord.TextChannel,
 ):
+    await log_command_usage(interaction, "setup_verification", {
+        "channel": channel.name,
+        "terms": terms,
+        "role_to_remove": role_to_remove.name,
+        "role_to_add": role_to_add.name,
+        "log_channel": log_channel.name
+    })
     print("setup_verification called")
     # Kill the response immediately
     await interaction.response.defer(ephemeral=True)
@@ -621,6 +639,13 @@ async def options_strategy(
     legs: discord.Option(str, description="Format: [+/-].SYMBOL[W]YYMMDDX0000,PRICE,SIZE;[+/-].SYMBOL[W]YYMMDDX0000,PRICE,SIZE;..."),
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
+    await log_command_usage(interaction, "os", {
+        "strategy_name": strategy_name,
+        "size": size,
+        "net_cost": net_cost,
+        "legs": legs,
+        "note": note
+    })
     await kill_interaction(interaction)
 
     db = next(get_db())
@@ -837,6 +862,15 @@ async def bto(
     option_type: discord.Option(str, description="The option type of the trade (C or P)") = None,
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
+    await log_command_usage(interaction, "bto", {
+        "symbol": symbol,
+        "entry_price": entry_price,
+        "size": size,
+        "expiration_date": expiration_date,
+        "strike": strike,
+        "option_type": option_type,
+        "note": note
+    })
     await kill_interaction(interaction)
     try:
         new_trade = await create_trade(
@@ -867,6 +901,15 @@ async def sto(
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
     await kill_interaction(interaction)
+    await log_command_usage(interaction, "sto", {
+        "symbol": symbol,
+        "entry_price": entry_price,
+        "size": size,
+        "expiration_date": expiration_date,
+        "strike": strike,
+        "option_type": option_type,
+        "note": note
+    })
     try:
         new_trade = await create_trade(
             interaction=interaction, 
@@ -893,6 +936,12 @@ async def future_trade(
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
     await kill_interaction(interaction)
+    await log_command_usage(interaction, "fut", {
+        "symbol": symbol,
+        "entry_price": entry_price,
+        "size": size,
+        "note": note
+    })
     await common_stock_trade(interaction, TradeGroupEnum.DAY_TRADER, symbol, entry_price, size, note)
 
 @bot.slash_command(name="lt", description="Buy to open a new long-term trade")
@@ -904,6 +953,12 @@ async def long_term_trade(
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
     await kill_interaction(interaction)
+    await log_command_usage(interaction, "lt", {
+        "symbol": symbol,
+        "entry_price": entry_price,
+        "size": size,
+        "note": note
+    })
     await common_stock_trade(interaction, TradeGroupEnum.LONG_TERM_TRADER, symbol, entry_price, size, note)
 
 async def common_stock_trade(
@@ -938,6 +993,10 @@ async def scrape_channel(
     channel: discord.Option(discord.TextChannel, description="The channel to scrape"),
     filename: discord.Option(str, description="The filename to save the scraped data (e.g., 'output.txt')")
 ):
+    await log_command_usage(interaction, "scrape_channel", {
+        "channel": channel.name,
+        "filename": filename
+    })
     await interaction.response.defer(ephemeral=True)
     
     try:
@@ -1010,6 +1069,12 @@ async def os_add(
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
     await kill_interaction(interaction)
+    await log_command_usage(interaction, "os_add", {
+        "trade_id": trade_id,
+        "net_cost": net_cost,
+        "size": size,
+        "note": note
+    })
 
     db = next(get_db())
     try:
@@ -1063,6 +1128,12 @@ async def os_trim(
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
     await kill_interaction(interaction)
+    await log_command_usage(interaction, "os_trim", {
+        "trade_id": trade_id,
+        "net_cost": net_cost,
+        "size": size,
+        "note": note
+    })
 
     db = next(get_db())
     try:
@@ -1117,6 +1188,11 @@ async def os_exit(
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
     await kill_interaction(interaction)
+    await log_command_usage(interaction, "os_exit", {
+        "trade_id": trade_id,
+        "net_cost": net_cost,
+        "note": note
+    })
 
     db = next(get_db())
     try:
@@ -1221,6 +1297,12 @@ async def open_trade(
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
     await kill_interaction(interaction)
+    await log_command_usage(interaction, "open", {
+        "trade_string": trade_string,
+        "price": price,
+        "size": size,
+        "note": note
+    })
 
     try:
         parsed = parse_option_symbol(trade_string)
@@ -1316,6 +1398,8 @@ def parse_option_symbol(option_string):
 
 @bot.slash_command(name="list", description="List open trades")
 async def list_trades(interaction: discord.Interaction):
+    await log_command_usage(interaction, "list", {})
+
     db = next(get_db())
     try:
         open_trades = crud.get_trades(db, status=models.TradeStatusEnum.OPEN)
