@@ -2221,7 +2221,7 @@ async def add_note(interaction: discord.Interaction, trade_id: discord.Option(st
         await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
         return
     
-    channel = interaction.guild.get_channel(int(config.update_channel_id))
+    channel = interaction.guild.get_channel(int(config.channel_id))
     embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
     embed.description = create_trade_oneliner(trade)
     embed.add_field(name="Note", value=note, inline=False)
@@ -2229,3 +2229,17 @@ async def add_note(interaction: discord.Interaction, trade_id: discord.Option(st
     await channel.send(embed=embed)
 
     await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
+
+@bot.slash_command(name="admin_reopen_trade", description="Reopen a trade")
+async def admin_reopen_trade(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to reopen")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
+    if not trade:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADMIN_REOPEN_TRADE command: Trade not found.")
+        return
+    
+    trade.status = "open"
+    db.commit()
+
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADMIN_REOPEN_TRADE command: Trade reopened.")
