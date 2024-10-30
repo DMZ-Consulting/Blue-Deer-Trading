@@ -169,8 +169,10 @@ async def backup_database():
         try:
             # Get the current date for the backup file name
             current_date = datetime.now().strftime("%Y-%m-%d")
-            source_db = "sql_app.db"  # Update this with your actual database file name
-            backup_dir = "backups"  # Directory to store backups
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            source_db = os.path.join(current_dir, "../db/sql_app.db")
+            
+            backup_dir = os.path.join(current_dir, "../db/backups")
             backup_db = os.path.join(backup_dir, f"backup_{current_date}.db")
             
             # Create backup directory if it doesn't exist
@@ -300,3 +302,7 @@ def exit_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActi
         return crud.os_exit(db, strategy_id, action_input.net_cost)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+@app.post("/trades/{trade_id}/delete")
+def delete_trade(trade_id: str, db: Session = Depends(get_db)):
+    return crud.delete_trade(db, trade_id)

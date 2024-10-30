@@ -567,3 +567,11 @@ def os_exit(db: Session, strategy_id: str, net_cost: float):
 
 # Add more CRUD functions as needed...
 
+def delete_trade(db: Session, trade_id: str):
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
+    if not trade:
+        raise ValueError(f"Trade {trade_id} not found.")
+    
+    db.delete(trade)
+    db.commit()
+    return trade
