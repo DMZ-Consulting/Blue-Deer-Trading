@@ -261,18 +261,55 @@ async def check_and_exit_expired_trades():
     finally:
         db.close()
 
-
-# TODO: This is a mess. Need to refactor. the trade is changed to closed but not being committed for some reason.
-async def exit_expired_trade(trade):
+@bot.slash_command(name="expire_trades", description="Exit all expired trades")
+async def expire_trades(interaction: discord.Interaction):
+    await kill_interaction(interaction)
     db = next(get_db())
     try:
+        today = date.today()
+        open_trades = crud.get_trades(db, status=models.TradeStatusEnum.OPEN)
+        
+        for trade in open_trades:
+            if trade.expiration_date and trade.expiration_date.date() <= today:
+                await exit_expired_trade(trade)
+        
+    except Exception as e:
+        logger.error(f"Error in check_and_exit_expired_trades: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        db.close()
+
+async def manually_expire_trades():
+    db = next(get_db())
+    try:
+        today = date.today()
+        open_trades = crud.get_trades(db, status=models.TradeStatusEnum.OPEN)
+        
+        for trade in open_trades:
+            print(f"Checking trade {trade.trade_id} with expiration date {trade.expiration_date} and today's date {today}")
+            if trade.expiration_date and trade.expiration_date.date() <= today:
+                await exit_expired_trade(trade)
+        
+    except Exception as e:
+        logger.error(f"Error in check_and_exit_expired_trades: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        db.close()
+
+
+# TODO: This is a mess. Need to refactor. the trade is changed to closed but not being committed for some reason.
+async def exit_expired_trade(trade: models.Trade):
+    db = next(get_db())
+    try:
+        trade = db.merge(trade)
+
         config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.id == trade.configuration_id).first()
         if not config:
             logger.error(f"Configuration for trade {trade.trade_id} not found.")
             return
 
         # Set exit price to max loss
-        exit_price = 0 if trade.trade_type.lower() in ["long", "buy to open"] else trade.strike * 2
+        exit_price = 0
 
         trade.status = models.TradeStatusEnum.CLOSED
         trade.exit_price = exit_price
@@ -310,6 +347,7 @@ async def exit_expired_trade(trade):
         trade.win_loss = models.WinLossEnum.LOSS
 
         db.commit()
+        db.refresh(trade)
 
         '''
         TODO: We are commenting this out for now. Fix this.
@@ -466,7 +504,7 @@ async def get_open_trade_ids(ctx: discord.AutocompleteContext):
                 display = f"{symbol} {strike_display} {expiration.strftime('%m/%d/%y')}"
                 sort_key = (symbol, expiration, strike)
             else:
-                display = f"{symbol} COMMON OPENED: {trade.created_at.strftime('%m/%d/%y')}"
+                display = f"{symbol} COMMON"
                 sort_key = (symbol, datetime.max, 0)  # Put non-option trades at the bottom of their symbol group
             
             trade_info.append((trade.trade_id, display, sort_key))
@@ -1499,7 +1537,7 @@ async def exit_trade(
             trade.win_loss = models.WinLossEnum.BREAKEVEN
 
         if trade.average_exit_price:
-            trade.average_exit_price = (trade.average_exit_price * total_trim_size + Decimal(exit_price) * current_size) / (total_trim_size + current_size)
+            trade.average_exit_price = (trade.average_exit_price * total_trimmed_size + exit_price * current_size) / (total_trimmed_size + current_size)
         else:
             trade.average_exit_price = exit_price
 
@@ -2167,3 +2205,27 @@ async def transaction_send(interaction: discord.Interaction, transaction_id: dis
 
         channel = interaction.guild.get_channel(int(config.update_channel_id))
         await channel.send(embed=embed)
+
+
+@bot.slash_command(name="add_note", description="Add a note to a trade")
+async def add_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)), note: discord.Option(str, description="The note to add")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
+    if not trade:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
+        return
+    
+    config = get_configuration(db, trade.configuration.name)
+    if not config:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
+        return
+    
+    channel = interaction.guild.get_channel(int(config.update_channel_id))
+    embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
+    embed.description = create_trade_oneliner(trade)
+    embed.add_field(name="Note", value=note, inline=False)
+    embed.set_footer(text=f"Posted by {interaction.user.name}")
+    await channel.send(embed=embed)
+
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
