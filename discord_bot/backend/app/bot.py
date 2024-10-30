@@ -1537,7 +1537,7 @@ async def exit_trade(
             trade.win_loss = models.WinLossEnum.BREAKEVEN
 
         if trade.average_exit_price:
-            trade.average_exit_price = (trade.average_exit_price * total_trimmed_size + exit_price * current_size) / (total_trimmed_size + current_size)
+            trade.average_exit_price = (float(trade.average_exit_price) * float(total_trimmed_size) + float(exit_price) * float(current_size)) / (float(total_trimmed_size) + float(current_size))
         else:
             trade.average_exit_price = exit_price
 
@@ -2203,7 +2203,7 @@ async def transaction_send(interaction: discord.Interaction, transaction_id: dis
         # Set the footer to include the trade ID
         embed.set_footer(text=f"Trade ID: {trade.trade_id}")
 
-        channel = interaction.guild.get_channel(int(config.update_channel_id))
+        channel = interaction.guild.get_channel(int(config.channel_id))
         await channel.send(embed=embed)
 
 
