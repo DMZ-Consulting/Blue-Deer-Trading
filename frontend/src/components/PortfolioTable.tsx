@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { PortfolioTrade } from '../utils/types'
+import { PortfolioEndpoint, PortfolioTrade } from '../utils/types'
 import { ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -11,13 +11,20 @@ import { Card, CardContent } from "@/components/ui/card"
 type SortField = 'oneliner' | 'expiration' | 'type' | 'avg_price' | 'size' | 'avg_exit'
 type SortOrder = 'asc' | 'desc'
 
-const HighlightedNumber = ({ value, decimals = 2 }: { value: number, decimals?: number }) => {
+const HighlightedNumber = ({ value, decimals = 2, highlight = false }: { value: number, decimals?: number, highlight?: boolean }) => {
   const formattedValue = value.toFixed(decimals);
-  const className = value >= 0 ? "text-green-500" : "text-red-500";
-  return <span className={className}>{formattedValue}</span>;
-};
+  if (highlight) {
+    const className = value >= 0 ? "text-green-500" : "text-red-500";
+    return <span className={className}>{formattedValue}</span>;
+  }
+  return <span>{formattedValue}</span>;
+}
 
-export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTrade[] }) {
+const formatOneliner = (oneliner: string) => {
+    return oneliner.replace(/^###\s*/, '');
+}
+
+const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
   const [sortField, setSortField] = useState<SortField>('oneliner')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
 
@@ -30,9 +37,22 @@ export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTra
     }
   }
 
-  const sortedPortfolio = [...portfolio].sort((a, b) => {
-    const aValue = a.trade[sortField as keyof PortfolioTrade['trade']] ?? '';
-    const bValue = b.trade[sortField as keyof PortfolioTrade['trade']] ?? '';
+  const sortedTrades = [...trades].sort((a, b) => {
+    let aValue, bValue;
+
+    switch (sortField) {
+      case 'oneliner':
+        aValue = a.oneliner;
+        bValue = b.oneliner;
+        break;
+      case 'type':
+        aValue = 'trade' in a ? (a.trade.trade_type || '') : 'strategy';
+        bValue = 'trade' in b ? (b.trade.trade_type || '') : 'strategy';
+        break;
+      default:
+        aValue = a[sortField as keyof PortfolioTrade] ?? '';
+        bValue = b[sortField as keyof PortfolioTrade] ?? '';
+    }
     
     if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
@@ -47,76 +67,70 @@ export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioTra
   }
 
   return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost" onClick={() => handleSort('oneliner')}>
+              Trade {renderSortIcon('oneliner')}
+            </Button>
+          </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">Type</Button>
+          </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">Avg Price</Button>
+          </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">Size</Button>
+          </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">Avg Exit</Button>
+          </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">Pct Change</Button>
+          </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">Unit P/L</Button>
+          </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">Realized P/L</Button>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sortedTrades.map((item, index) => {
+          const tradeType = 'trade' in item ? 
+            (item.trade.trade_type || 'regular') : 
+            'strategy';
+
+          return (
+            <TableRow key={index} className={tradeType === 'strategy' ? 'bg-slate-50' : ''}>
+              <TableCell className="text-center whitespace-nowrap">{formatOneliner(item.oneliner)}</TableCell>
+              <TableCell className="text-center whitespace-nowrap">{tradeType}</TableCell>
+              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
+              <TableCell className="text-center whitespace-nowrap">{item.realized_size}</TableCell>
+              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_exit_price} /></TableCell>
+              <TableCell className="text-center whitespace-nowrap"><HighlightedNumber value={item.pct_change} highlight={true} />%</TableCell>
+              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl / item.realized_size} highlight={true} /></TableCell>
+              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl} highlight={true} /></TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  )
+}
+
+export function PortfolioTableComponent({ portfolio }: { portfolio: PortfolioEndpoint }) {
+  const allTrades = [...portfolio.regular_trades, ...portfolio.strategy_trades];
+  
+  return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Portfolio</h2>
       <Card>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost" onClick={() => handleSort('oneliner')}>
-                    Trade {renderSortIcon('oneliner')}
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Expiration
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Type
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Avg Price
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Size
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Avg Exit
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Pct Change
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Unit P/L
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center whitespace-nowrap">
-                  <Button variant="ghost">
-                    Realized P/L
-                  </Button>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedPortfolio.map((item, index) => (
-                <TableRow key={index}>
-                  <TableCell className="text-center whitespace-nowrap">{item.oneliner}</TableCell>
-                  <TableCell className="text-center whitespace-nowrap">{item.trade.expiration_date ? new Date(item.trade.expiration_date).toLocaleDateString() : 'N/A'}</TableCell>
-                  <TableCell className="text-center whitespace-nowrap">{item.trade.trade_type}</TableCell>
-                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
-                  <TableCell className="text-center whitespace-nowrap">{item.realized_size}</TableCell>
-                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_exit_price} /></TableCell>
-                  <TableCell className="text-center whitespace-nowrap"><HighlightedNumber value={item.pct_change} />%</TableCell>
-                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl / item.realized_size} /></TableCell>
-                  <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl} /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <TradeTable trades={allTrades} />
         </CardContent>
       </Card>
     </div>

@@ -89,16 +89,22 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
 
   const formatDateTime = (dateString: string | null): string => {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString + 'Z');
-    return date.toLocaleString('en-US', {
+    
+    // Parse the UTC date string
+    const utcDate = new Date(dateString + 'Z');
+    
+    // Create options for EST time formatting
+    const options: Intl.DateTimeFormatOptions = {
       year: '2-digit',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-      timeZone: 'UTC'
-    });
+      timeZone: 'America/New_York'  // Set timezone to EST/EDT
+    };
+
+    return utcDate.toLocaleString('en-US', options);
   }
 
   const isDevelopment = process.env.NODE_ENV === 'development'
@@ -144,15 +150,26 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
 
   // Add a function to create the oneliner
   const createTradeOneliner = (trade: Trade): string => {
+    const upperSymbol = trade.symbol.toUpperCase();
     if (trade.option_type) {
       const optionType = trade.option_type.startsWith("C") ? "CALL" : "PUT";
-      const expiration = trade.expiration_date ? new Date(trade.expiration_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : "No Exp";
+      const expiration = trade.expiration_date ? 
+        trade.expiration_date ? new Date(trade.expiration_date).toLocaleDateString('en-US', { 
+          year: '2-digit', 
+          month: '2-digit', 
+          day: '2-digit',
+          timeZone: 'UTC'
+        }) : "No Exp" : "";
       const strike = trade.strike ? `$${trade.strike.toFixed(2)}` : "";
-      return `${expiration} ${trade.symbol} ${strike} ${optionType}`;
+      return `${expiration} ${upperSymbol} ${strike} ${optionType}`;
     } else {
-      return `${trade.symbol} @ $${trade.entry_price.toFixed(2)} ${trade.current_size} size`;
+      return `${upperSymbol} @ $${trade.entry_price.toFixed(2)} ${trade.current_size} Size`;
     }
   };
+
+  const getTradeType = (trade: Trade) => {
+    return trade.trade_type === 'Buy to Open' ? 'BTO' : trade.trade_type === 'Sell to Open' ? 'STO' : trade.trade_type === 'BTO' ? 'BTO' : trade.trade_type === 'STO' ? 'STO' : '';
+  }
 
   return (
     <div className="space-y-4">
@@ -194,127 +211,135 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
       {loading ? (
         <p>Loading trades...</p>
       ) : (
-        <div className="rounded-md border">
-          <Table style={{ tableLayout: 'auto', width: '100%' }}>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]"></TableHead>
-                {isDevelopment && debugMode && <TableHead>Trade ID</TableHead>}
-                <TableHead className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                  <Button variant="ghost" onClick={() => handleSort('symbol')}>
-                    Symbol {renderSortIcon('symbol')}
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                  <Button variant="ghost" onClick={() => handleSort('trade_type')}>
-                    Type {renderSortIcon('trade_type')}
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                  <Button variant="ghost" onClick={() => handleSort('status')}>
-                    Status {renderSortIcon('status')}
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                  <Button variant="ghost" onClick={() => handleSort('entry_price')}>
-                    Entry Price {renderSortIcon('entry_price')}
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                  <Button variant="ghost" onClick={() => handleSort('current_size')}>
-                    Size {renderSortIcon('current_size')}
-                  </Button>
-                </TableHead>
-                <TableHead className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                  <Button variant="ghost" onClick={() => handleSort('created_at')}>
-                    Opened At {renderSortIcon('created_at')}
-                  </Button>
-                </TableHead>
-                {statusFilter !== 'open' && (
-                  <TableHead className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                    <Button variant="ghost" onClick={() => handleSort('closed_at')}>
-                      Closed At {renderSortIcon('closed_at')}
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-center whitespace-nowrap w-[50px]">
+                    <Button variant="ghost" size="sm">
+                      {/* Expand/Collapse column */}
                     </Button>
                   </TableHead>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedTrades.map(trade => (
-                <React.Fragment key={trade.trade_id}>
-                  <TableRow>
-                    <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleTradeExpansion(trade.trade_id)}
-                      >
-                        {expandedTrades.has(trade.trade_id) ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </TableCell>
-                    {isDevelopment && debugMode && <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>{trade.trade_id}</TableCell>}
-                    <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>{createTradeOneliner(trade)}</TableCell>
-                    <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>{trade.trade_type}</TableCell>
-                    <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>
-                      <span className={`px-2 py-1 rounded-full text-xs ${trade.status === 'open' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-                        {trade.status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>${trade.entry_price.toFixed(2)}</TableCell>
-                    <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>{trade.current_size}</TableCell>
-                    <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>{formatDateTime(trade.created_at)}</TableCell>
-                    {statusFilter !== 'open' && (
-                      <TableCell className="text-center" style={{ whiteSpace: 'nowrap' }}>{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
-                    )}
-                  </TableRow>
-                  {expandedTrades.has(trade.trade_id) && (
-                    <TableRow>
-                      <TableCell colSpan={isDevelopment && debugMode ? 9 : 8}>
-                        <Card>
-                          <CardHeader>
-                            <CardTitle>Transactions</CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  {isDevelopment && debugMode && <TableHead>Transaction ID</TableHead>}
-                                  <TableHead>Type</TableHead>
-                                  <TableHead>Price</TableHead>
-                                  <TableHead>Size</TableHead>
-                                  <TableHead>Date</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {trade.transactions?.map(transaction => (
-                                  <TableRow key={transaction.id}>
-                                    {isDevelopment && debugMode && <TableCell>{transaction.id}</TableCell>}
-                                    <TableCell>
-                                      <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
-                                        {transaction.transaction_type}
-                                      </span>
-                                    </TableCell>
-                                    <TableCell>${transaction.amount.toFixed(2)}</TableCell>
-                                    <TableCell>{transaction.size}</TableCell>
-                                    <TableCell>{new Date(transaction.created_at).toLocaleString()}</TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </CardContent>
-                        </Card>
-                      </TableCell>
-                    </TableRow>
+                  {isDevelopment && debugMode && (
+                    <TableHead className="text-center whitespace-nowrap">Trade ID</TableHead>
                   )}
-                </React.Fragment>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                  <TableHead className="text-center whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => handleSort('symbol')}>
+                      Symbol {renderSortIcon('symbol')}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-center whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => handleSort('trade_type')}>
+                      Type {renderSortIcon('trade_type')}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-center whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => handleSort('status')}>
+                      Status {renderSortIcon('status')}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-center whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => handleSort('entry_price')}>
+                      Entry Price {renderSortIcon('entry_price')}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-center whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => handleSort('current_size')}>
+                      Size {renderSortIcon('current_size')}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-center whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => handleSort('created_at')}>
+                      Opened At {renderSortIcon('created_at')}
+                    </Button>
+                  </TableHead>
+                  {statusFilter !== 'open' && (
+                    <TableHead className="text-center whitespace-nowrap">
+                      <Button variant="ghost" onClick={() => handleSort('closed_at')}>
+                        Closed At {renderSortIcon('closed_at')}
+                      </Button>
+                    </TableHead>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedTrades.map(trade => (
+                  <React.Fragment key={trade.trade_id}>
+                    <TableRow>
+                      <TableCell className="text-center whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleTradeExpansion(trade.trade_id)}
+                        >
+                          {expandedTrades.has(trade.trade_id) ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                      {isDevelopment && debugMode && <TableCell className="text-center whitespace-nowrap">{trade.trade_id}</TableCell>}
+                      <TableCell className="text-center whitespace-nowrap">{createTradeOneliner(trade)}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">{getTradeType(trade)}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">
+                        <span className={`px-2 py-1 rounded-full text-xs ${trade.status === 'open' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                          {trade.status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center whitespace-nowrap">${trade.average_price?.toFixed(2)}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
+                      {statusFilter !== 'open' && (
+                        <TableCell className="text-center whitespace-nowrap">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
+                      )}
+                    </TableRow>
+                    {expandedTrades.has(trade.trade_id) && (
+                      <TableRow>
+                        <TableCell colSpan={isDevelopment && debugMode ? 9 : 8}>
+                          <Card>
+                            <CardHeader>
+                              <CardTitle>Transactions</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    {isDevelopment && debugMode && <TableHead>Transaction ID</TableHead>}
+                                    <TableHead>Type</TableHead>
+                                    <TableHead>Price</TableHead>
+                                    <TableHead>Size</TableHead>
+                                    <TableHead>Date</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {trade.transactions?.map(transaction => (
+                                    <TableRow key={transaction.id}>
+                                      {isDevelopment && debugMode && <TableCell>{transaction.id}</TableCell>}
+                                      <TableCell>
+                                        <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
+                                          {transaction.transaction_type}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell>${transaction.amount.toFixed(2)}</TableCell>
+                                      <TableCell>{transaction.size}</TableCell>
+                                      <TableCell>{new Date(transaction.created_at).toLocaleString()}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </CardContent>
+                          </Card>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

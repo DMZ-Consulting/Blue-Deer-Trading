@@ -1,15 +1,19 @@
 'use client'
 
-import { PortfolioTrade } from '../utils/types'
+import { PortfolioEndpoint } from '../utils/types'
 
 interface ReportAreaProps {
-  portfolio: PortfolioTrade[]
+  portfolio: PortfolioEndpoint
 }
 
 export function ReportAreaComponent({ portfolio }: ReportAreaProps) {
-  const totalPL = portfolio.reduce((sum, trade) => sum + trade.realized_pl, 0)
-  const closedTrades = portfolio.length
-  const winningTrades = portfolio.filter(trade => trade.realized_pl > 0).length
+  const allTrades = [
+    ...(portfolio.regular_trades || []),
+    ...(portfolio.strategy_trades || [])
+  ];
+  const totalPL = allTrades.reduce((sum, trade) => sum + trade.realized_pl, 0)
+  const closedTrades = allTrades.length
+  const winningTrades = allTrades.filter(trade => trade.realized_pl > 0).length
   const winRate = closedTrades > 0 ? (winningTrades / closedTrades) * 100 : 0
 
   return (

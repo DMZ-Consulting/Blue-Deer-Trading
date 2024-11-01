@@ -50,7 +50,7 @@ class Trade(Base):
     average_price = Column(Float, nullable=True)
     current_size = Column(String, nullable=True)
     size = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
     closed_at = Column(DateTime, nullable=True)
     exit_price = Column(Float, nullable=True)
     average_exit_price = Column(Float, nullable=True)

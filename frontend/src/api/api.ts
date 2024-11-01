@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Trade, PortfolioTrade } from '../utils/types';
+import { Trade, PortfolioEndpoint } from '../utils/types';
 
 const API_BASE_URL = 'http://localhost:8000'; // Update this with your API URL
 
@@ -57,7 +57,7 @@ export async function getTradesByConfiguration(configName: string, filterOptions
   }
 }
 
-export async function getPortfolio(configName: string, filterOptions: FilterOptions): Promise<PortfolioTrade[]> {
+export async function getPortfolio(configName: string, filterOptions: FilterOptions): Promise<PortfolioEndpoint> {
   const queryParams = new URLSearchParams();
   
   queryParams.append('configName', configName);

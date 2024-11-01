@@ -15,7 +15,7 @@ export default function Page() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
+      <div className="z-10 w-full max-w-5xl items-center justify-between text-sm lg:flex">
         <div className={`flex-grow ${isReportsVisible ? 'w-3/4' : 'w-full'}`}>
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-3xl font-bold">Trades</h1>

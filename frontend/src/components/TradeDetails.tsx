@@ -30,7 +30,7 @@ export function TradeDetailsComponent({ trade, transactions }: TradeDetailsProps
               {trade.status}
             </span>
           </p>
-          <p><span className="font-semibold">Entry Price:</span> ${trade.entry_price.toFixed(2)}</p>
+          <p><span className="font-semibold">Avg Entry Price:</span> ${trade.entry_price.toFixed(2)}</p>
           <p><span className="font-semibold">Current Size:</span> {trade.current_size}</p>
         </div>
         <div>

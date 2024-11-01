@@ -1089,11 +1089,13 @@ async def get_verification_log_channel(guild):
     return None
 
 async def log_to_channel(guild, message):
-    log_channel = await get_verification_log_channel(guild)
-    if log_channel:
-        await log_channel.send(message)
-    else:
-        print(f"Warning: Verification log channel not found. Message: {message}")
+    try:
+        log_channel = await get_verification_log_channel(guild)
+        if log_channel:
+            await log_channel.send(message)
+    except Exception as e:
+        print(f"Error logging to channel: {str(e)}")
+        print(traceback.format_exc())
 
 
 # ================= Options Strategy Functions =================

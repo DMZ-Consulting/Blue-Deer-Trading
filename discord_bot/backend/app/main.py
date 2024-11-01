@@ -6,7 +6,7 @@ import os
 import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 from enum import Enum
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -17,6 +17,7 @@ from . import crud, models, schemas
 from .bot import run_bot
 from .database import get_db, engine, SessionLocal
 from .models import create_tables
+from .schemas import RegularPortfolioTrade, StrategyPortfolioTrade
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -108,19 +109,18 @@ def read_trades(
     finally:
         print("Exiting read_trades function")
 
-@app.get("/portfolio", response_model=List[schemas.PortfolioTrade])
+@app.get("/portfolio")
 def read_portfolio(
-    skip: int = Query(0, ge=0, description="Number of trades to skip"),
-    limit: int = Query(500, ge=1, le=1000, description="Maximum number of trades to return"),
-    sortBy: Optional[str] = Query(None, description="Field to sort trades by"),
-    sortOrder: Optional[str] = Query("desc", regex="^(asc|desc)$", description="Sort order (ascending or descending)"),
-    configName: Optional[str] = Query(None, description="Filter trades by configuration name"),
-    weekFilter: Optional[str] = Query(None, description="Filter trades by week"),
-    db: Session = Depends(get_db)   
+    skip: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=1000),
+    sortBy: Optional[str] = Query(None),
+    sortOrder: Optional[str] = Query("desc", regex="^(asc|desc)$"),
+    configName: Optional[str] = Query(None),
+    weekFilter: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
 ):
-    print("Entering read_trades function")
     try:
-        trades = crud.get_portfolio_trades(
+        regular_trades, strategy_trades = crud.get_portfolio_trades(
             db,
             skip=skip,
             limit=limit,
@@ -129,13 +129,12 @@ def read_portfolio(
             config_name=configName,
             week_filter=weekFilter,
         )
-        print(f"Retrieved {len(trades)} trades")
-        return trades
+        return {
+            "regular_trades": regular_trades,
+            "strategy_trades": strategy_trades
+        }
     except ValueError as e:
-        print(f"Error in read_trades: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        print("Exiting read_trades function")
 
 
 @app.get("/trades/{trade_id}", response_model=schemas.Trade)

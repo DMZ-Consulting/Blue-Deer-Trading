@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union, Dict
 from .models import TradeStatusEnum, WinLossEnum, TransactionTypeEnum, OptionsStrategyStatusEnum
 
 model_config = ConfigDict(from_attributes=True)
@@ -59,14 +59,55 @@ class Trade(TradeBase):
 
     model_config = model_config
 
-class PortfolioTrade(BaseModel):
-    trade: Trade
+class OptionsStrategyTransactionBase(BaseModel):
+    transaction_type: TransactionTypeEnum
+    net_cost: float
+    size: str
+    created_at: datetime
+
+class OptionsStrategyTransaction(OptionsStrategyTransactionBase):
+    id: str
+    strategy_id: str
+
+    model_config = model_config
+
+class OptionsStrategyTrade(BaseModel):
+    id: str
+    name: str
+    underlying_symbol: str
+    status: OptionsStrategyStatusEnum
+    created_at: datetime
+    closed_at: Optional[datetime]
+    configuration_id: Optional[str]
+    transactions: List[OptionsStrategyTransaction]
+    trade_group: Optional[str] = None
+    trade_id: str
+    legs: str
+    net_cost: float
+    average_net_cost: float
+    size: str
+    current_size: str
+
+    model_config = model_config
+
+class PortfolioTradeBase(BaseModel):
     oneliner: str
     realized_pl: float
     realized_size: float
     avg_entry_price: float
     avg_exit_price: float
     pct_change: float
+    trade_type: str
+
+class RegularPortfolioTrade(PortfolioTradeBase):
+    trade: Trade
+    model_config = model_config
+
+class StrategyPortfolioTrade(PortfolioTradeBase):
+    trade: OptionsStrategyTrade
+    model_config = model_config
+
+PortfolioTrade = Union[RegularPortfolioTrade, StrategyPortfolioTrade]
 
 class OptionsStrategyTradeBase(BaseModel):
     name: str
@@ -81,16 +122,6 @@ class OptionsStrategyTradeBase(BaseModel):
 
 class OptionsStrategyTradeCreate(OptionsStrategyTradeBase):
     pass
-
-class OptionsStrategyTrade(OptionsStrategyTradeBase):
-    id: int
-    trade_id: str
-    created_at: datetime
-    closed_at: Optional[datetime]
-    configuration_id: Optional[int]
-    transactions: List[Transaction]
-
-    model_config = model_config
 
 class Performance(BaseModel):
     total_trades: int
