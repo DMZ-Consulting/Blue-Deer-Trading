@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Trade, PortfolioEndpoint } from '../utils/types';
+import { Trade, PortfolioEndpoint, StrategyTrade, OptionsStrategyTrade } from '../utils/types';
 
 const API_BASE_URL = 'http://localhost:8000'; // Update this with your API URL
 
@@ -35,6 +35,7 @@ interface FilterOptions {
   weekFilter?: string;
   monthFilter?: string;
   yearFilter?: string;
+  isOptions?: boolean;
 }
 
 export async function getTradesByConfiguration(configName: string, filterOptions: FilterOptions): Promise<Trade[]> {
@@ -57,6 +58,18 @@ export async function getTradesByConfiguration(configName: string, filterOptions
   }
 }
 
+export async function getStrategyTradesByConfiguration(configName: string, filterOptions: FilterOptions): Promise<StrategyTrade[]> {
+  const queryParams = new URLSearchParams();
+  queryParams.append('configName', configName);
+  Object.entries(filterOptions).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      queryParams.append(key, value);
+    }
+  });
+  const response = await api.get(`/strategy_trades?${queryParams.toString()}`);
+  return response.data;
+}
+
 export async function getPortfolio(configName: string, filterOptions: FilterOptions): Promise<PortfolioEndpoint> {
   const queryParams = new URLSearchParams();
   
@@ -74,4 +87,42 @@ export async function getPortfolio(configName: string, filterOptions: FilterOpti
   return response.data;
 }
 
+// Add a new function to handle data refresh
+export const refreshData = async (configName: string, filterOptions: FilterOptions) => {
+  try {
+    const [tradesResponse, portfolioResponse] = await Promise.all([
+      getTradesByConfiguration(configName, filterOptions),
+      getPortfolio(configName, filterOptions)
+    ]);
+    
+    return {
+      trades: tradesResponse,
+      portfolio: portfolioResponse
+    };
+  } catch (error) {
+    console.error('Error refreshing data:', error);
+    throw error;
+  }
+};
+
 // Add more API functions as needed
+
+export async function getOptionsStrategyTradesByConfiguration(
+  configName: string,
+  status: string,
+  date?: string
+): Promise<OptionsStrategyTrade[]> {
+  const params = new URLSearchParams({
+    config_name: configName,
+    status: status,
+    ...(date && { date: date }),
+  });
+
+  try {
+    const response = await api.get(`/strategy_trades?${params.toString()}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching options strategy trades:', error);
+    throw new Error('Failed to fetch options strategy trades');
+  }
+}

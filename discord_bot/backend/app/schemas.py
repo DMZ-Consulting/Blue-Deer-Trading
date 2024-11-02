@@ -66,27 +66,32 @@ class OptionsStrategyTransactionBase(BaseModel):
     created_at: datetime
 
 class OptionsStrategyTransaction(OptionsStrategyTransactionBase):
-    id: str
-    strategy_id: str
+    id: Union[str, int]
+    strategy_id: Union[str, int]
 
     model_config = model_config
 
 class OptionsStrategyTrade(BaseModel):
-    id: str
+    id: Union[str, int]
+    trade_id: str
     name: str
     underlying_symbol: str
     status: OptionsStrategyStatusEnum
     created_at: datetime
     closed_at: Optional[datetime]
-    configuration_id: Optional[str]
-    transactions: List[OptionsStrategyTransaction]
-    trade_group: Optional[str] = None
-    trade_id: str
+    configuration_id: Union[str, int]
+    trade_group: Optional[str]
     legs: str
     net_cost: float
     average_net_cost: float
     size: str
     current_size: str
+    transactions: List["OptionsStrategyTransaction"]
+
+    @field_validator('id', 'configuration_id', 'trade_id', mode='before')
+    @classmethod
+    def convert_ids_to_str(cls, v):
+        return str(v) if v is not None else None
 
     model_config = model_config
 
@@ -119,6 +124,7 @@ class OptionsStrategyTradeBase(BaseModel):
     size: str
     current_size: str
     legs: str  # This will be a JSON string
+    configuration_id: Optional[int]
 
 class OptionsStrategyTradeCreate(OptionsStrategyTradeBase):
     pass

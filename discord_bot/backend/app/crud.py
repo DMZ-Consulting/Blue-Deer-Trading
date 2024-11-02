@@ -10,6 +10,7 @@ from .bot import create_trade_oneliner, create_trade_oneliner_os
 import logging
 from datetime import datetime, timedelta
 import json
+import re
 from .bot import parse_option_symbol
 
 from .schemas import RegularPortfolioTrade, StrategyPortfolioTrade
@@ -56,7 +57,8 @@ def get_trades(
     config_name: Optional[str] = None,
     week_filter: Optional[str] = None,
     month_filter: Optional[str] = None,
-    year_filter: Optional[str] = None
+    year_filter: Optional[str] = None,
+    is_options: Optional[bool] = False
 ) -> List[models.Trade]:
     print("Entering get_trades function")
     query = db.query(models.Trade)
@@ -74,6 +76,8 @@ def get_trades(
             query = query.filter(models.Trade.configuration_id == trade_config.id)
         else:
             return []
+
+    query = query.filter(models.Trade.is_contract == is_options)
 
     if week_filter and status == models.TradeStatusEnum.CLOSED:
         # Find the friday of the week from the week_filter string
@@ -131,7 +135,9 @@ def get_portfolio_trades(
         )
 
     trades = trade_query.offset(skip).limit(limit).all()
-    
+
+    # only get closed trades
+    trades = [trade for trade in trades if trade.status == models.TradeStatusEnum.CLOSED]
     # Process regular trades
     for trade in trades:
         closed_size = 0
@@ -141,10 +147,17 @@ def get_portfolio_trades(
 
         total_realized_pl = (float(trade.average_exit_price) - float(trade.average_price)) * closed_size
 
+        # ES Is a futures contract with a multiplier of 50
         if trade.symbol == "ES":
             total_realized_pl *= 50
-        else:
+        else: # All other contracts are 100x
             total_realized_pl *= 100
+
+        pct_change = (float(trade.average_exit_price or 0) - float(trade.average_price or 0)) / float(trade.average_price or 1) * 100 if trade.average_price else 0
+
+        if trade.trade_type in ["STO", "Sell to Open"]:
+            total_realized_pl = -total_realized_pl
+            pct_change = -pct_change
 
         processed_trade = {
             "trade": trade,
@@ -153,7 +166,7 @@ def get_portfolio_trades(
             "realized_size": closed_size,
             "avg_entry_price": float(trade.average_price or 0),
             "avg_exit_price": float(trade.average_exit_price or 0),
-            "pct_change": float((trade.average_exit_price or 0) - (trade.average_price or 0)) / float(trade.average_price or 1) * 100 if trade.average_price else 0,
+            "pct_change": pct_change,
             "trade_type": "regular"
         }
         regular_trades.append(processed_trade)
@@ -174,6 +187,7 @@ def get_portfolio_trades(
     # Process strategy trades
     for strategy in strategies:
         realized_pl, avg_exit_price = calculate_strategy_pl(db, strategy)
+        pct_change = (avg_exit_price - float(strategy.average_net_cost)) / float(strategy.average_net_cost) * 100 if strategy.average_net_cost else 0
         processed_strategy = {
             "trade": strategy,
             "oneliner": create_trade_oneliner_os(strategy),
@@ -181,7 +195,7 @@ def get_portfolio_trades(
             "realized_size": float(strategy.size),
             "avg_entry_price": float(strategy.average_net_cost),
             "avg_exit_price": avg_exit_price,
-            "pct_change": (avg_exit_price - float(strategy.average_net_cost)) / float(strategy.average_net_cost) * 100,
+            "pct_change": pct_change,
             "trade_type": "strategy"
         }
         strategy_trades.append(processed_strategy)
@@ -201,6 +215,42 @@ def calculate_strategy_pl(db: Session, strategy: models.OptionsStrategyTrade):
         avg_exit_price += float(transaction.net_cost) * float(transaction.size)
 
     return total_pl * 100, avg_exit_price / closed_size
+
+def get_strategy_trades(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    sort_by: Optional[str] = None,
+    sort_order: str = "desc",
+    config_name: Optional[str] = None,
+    week_filter: Optional[str] = None,
+    status: Optional[models.OptionsStrategyStatusEnum] = None
+):
+    query = db.query(models.OptionsStrategyTrade)
+    if config_name:
+        trade_config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == config_name).first()
+        if trade_config:
+            query = query.filter(models.OptionsStrategyTrade.configuration_id == trade_config.id)
+
+    if status:
+        query = query.filter(models.OptionsStrategyTrade.status == status)
+
+    if week_filter:
+        day = datetime.strptime(week_filter, "%Y-%m-%d")
+        monday = day - timedelta(days=day.weekday())
+        sunday = monday + timedelta(days=6)
+        query = query.filter(
+            (models.OptionsStrategyTrade.closed_at >= monday) & (models.OptionsStrategyTrade.closed_at <= sunday + timedelta(days=1))
+        )
+    
+    trades = query.offset(skip).limit(limit).all()
+
+    for trade in trades:
+        trade.status = models.OptionsStrategyStatusEnum(trade.status)
+        for transaction in trade.transactions:
+            transaction.transaction_type = models.TransactionTypeEnum(transaction.transaction_type)
+
+    return trades
 
 def get_os_trades(
     db: Session,
@@ -279,7 +329,12 @@ def create_trade(db: Session, trade: schemas.TradeCreate):
     return db_trade
 
 def create_options_strategy(db: Session, strategy: schemas.OptionsStrategyTradeCreate):
-    parsed_legs = parse_option_symbol(strategy.legs)
+    parsed_legs = []
+    leg_symbols = re.findall(r'[+-]?\.?[A-Z]+\d+[CP]\d+', strategy.legs)
+    for symbol in leg_symbols:
+        parsed = parse_option_symbol(symbol)
+        parsed_legs.append(parsed)
+
     db_strategy = models.OptionsStrategyTrade(
         name=strategy.name,
         underlying_symbol=strategy.underlying_symbol,
@@ -571,3 +626,10 @@ def delete_trade(db: Session, trade_id: str):
     db.delete(trade)
     db.commit()
     return trade
+
+def get_strategy_trade_transactions(db: Session, strategy_id: str):
+    """Fetch all transactions for a specific options strategy trade."""
+    return db.query(models.OptionsStrategyTransaction)\
+        .filter(models.OptionsStrategyTransaction.strategy_id == strategy_id)\
+        .order_by(models.OptionsStrategyTransaction.created_at.desc())\
+        .all()

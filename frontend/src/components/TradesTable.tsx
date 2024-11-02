@@ -13,24 +13,33 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 import 'react-datepicker/dist/react-datepicker.css'
 
-interface TradesTableProps {
-  configName: string
+interface FilterOptions {
+  status: string;
+  startDate: string;
+  isOptions: boolean;
 }
 
+interface TradesTableProps {
+  configName: string;
+  filterOptions: FilterOptions;
+}
+
+// Add these type definitions at the top of the file
 type SortField = keyof Trade
 type SortOrder = 'asc' | 'desc'
 
-export function TradesTableComponent({ configName }: TradesTableProps) {
+// Update the Trade interface to ensure IDs are strings
+interface Transaction {
+  id: string;
+  strategy_id: string;
+  // ... other transaction fields
+}
+
+export function TradesTableComponent({ configName, filterOptions }: TradesTableProps) {
   const [trades, setTrades] = useState<Trade[]>([])
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [debugMode, setDebugMode] = useState(false)
-  const [dateFilter, setDateFilter] = useState(() => {
-    const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString().split('T')[0];
-  });
-  const [statusFilter, setStatusFilter] = useState('closed')
-  const [weekFilter, setWeekFilter] = useState(new Date().toISOString().split('T')[0])
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
@@ -38,8 +47,9 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
     setLoading(true)
     try {
       const fetchedTrades = await getTradesByConfiguration(configName, {
-        status: statusFilter,
-        weekFilter: weekFilter,
+        status: filterOptions.status,
+        weekFilter: filterOptions.startDate,
+        isOptions: filterOptions.isOptions
       })
       setTrades(fetchedTrades)
     } catch (error) {
@@ -47,16 +57,16 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
     } finally {
       setLoading(false)
     }
-  }, [configName, statusFilter, weekFilter]) // Removed monthFilter and yearFilter as they are not defined
+  }, [configName, filterOptions])
 
   useEffect(() => {
     fetchTrades()
   }, [fetchTrades])
 
   const getHeaderText = () => {
-    const date = new Date(dateFilter + 'T00:00:00Z');
+    const date = new Date(filterOptions.startDate + 'T00:00:00Z');
     const friday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + (5 - date.getUTCDay() + 7) % 7));
-    if (statusFilter === 'open') {
+    if (filterOptions.status === 'open') {
       return `Trades Remaining Open`
     } else {
       return `Trades Realized for the week of ${friday.toLocaleDateString(undefined, { timeZone: 'UTC' })}`
@@ -73,18 +83,6 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
       }
       return newExpanded
     })
-  }
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = e.target.value
-    setDateFilter(newDate)
-    setWeekFilter(newDate)
-    fetchTrades(); // Fetch trades when date changes
-  }
-
-  const handleStatusChange = (value: string) => {
-    setStatusFilter(value);
-    fetchTrades(); // Fetch trades when status changes
   }
 
   const formatDateTime = (dateString: string | null): string => {
@@ -133,8 +131,14 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
     }
   }
   const sortedTrades = [...trades].sort((a, b) => {
-    const aValue = (a[sortField] as unknown) ?? '';
-    const bValue = (b[sortField] as unknown) ?? '';
+    let aValue = a[sortField];
+    let bValue = b[sortField];
+    
+    // Convert ID fields to strings if they're numbers
+    if (sortField.includes('id')) {
+      aValue = String(aValue);
+      bValue = String(bValue);
+    }
     
     if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
@@ -187,21 +191,6 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
               />
               <span>Debug Mode</span>
             </label>
-            <Input
-              type="date"
-              value={dateFilter}
-              onChange={handleDateChange}
-            />
-            <Select name="status-selector" value={statusFilter} onValueChange={handleStatusChange}> {/* Updated Select component */}
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem> {/* Updated SelectItem value */}
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
-              </SelectContent>
-            </Select>
           </CardContent>
         </Card>
       )}
@@ -254,7 +243,7 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
                       Opened At {renderSortIcon('created_at')}
                     </Button>
                   </TableHead>
-                  {statusFilter !== 'open' && (
+                  {filterOptions.status !== 'open' && (
                     <TableHead className="text-center whitespace-nowrap">
                       <Button variant="ghost" onClick={() => handleSort('closed_at')}>
                         Closed At {renderSortIcon('closed_at')}
@@ -288,10 +277,10 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
                           {trade.status}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center whitespace-nowrap">${trade.average_price?.toFixed(2)}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">${trade.average_price.toFixed(2)}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
-                      {statusFilter !== 'open' && (
+                      {filterOptions.status !== 'open' && (
                         <TableCell className="text-center whitespace-nowrap">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
                       )}
                     </TableRow>
@@ -315,8 +304,8 @@ export function TradesTableComponent({ configName }: TradesTableProps) {
                                 </TableHeader>
                                 <TableBody>
                                   {trade.transactions?.map(transaction => (
-                                    <TableRow key={transaction.id}>
-                                      {isDevelopment && debugMode && <TableCell>{transaction.id}</TableCell>}
+                                    <TableRow key={String(transaction.id)}>
+                                      {isDevelopment && debugMode && <TableCell>{String(transaction.id)}</TableCell>}
                                       <TableCell>
                                         <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
                                           {transaction.transaction_type}

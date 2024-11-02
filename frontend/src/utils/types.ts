@@ -81,3 +81,16 @@ export interface RegularPortfolioTrade extends PortfolioTrade {
 export interface PortfolioStrategyTrade extends PortfolioTrade {
   trade: StrategyTrade
 }
+
+export interface OptionsStrategyTrade {
+  trade_id: string;
+  name: string;
+  underlying_symbol: string;
+  status: 'OPEN' | 'CLOSED';
+  net_cost: number;
+  average_net_cost: number;
+  size: string;
+  current_size: string;
+  created_at: string;
+  closed_at?: string;
+}

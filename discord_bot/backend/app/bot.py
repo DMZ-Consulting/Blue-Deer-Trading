@@ -558,8 +558,11 @@ def convert_to_two_digit_year(date_string):
         # If it's already in MM/DD/YY format, return as is
         return date_string
 
-def determine_trade_group(expiration_date: str, trade_type: str) -> str:
+def determine_trade_group(expiration_date: str, trade_type: str, symbol: str) -> str:
     print("determine_trade_group called")
+    if symbol == "ES":
+        return TradeGroupEnum.DAY_TRADER
+    
     if not expiration_date and (trade_type == "sto" or trade_type == "bto"):
         return TradeGroupEnum.SWING_TRADER
     
@@ -702,7 +705,7 @@ async def options_strategy(
             elif parsed['symbol'] != underlying_symbol:
                 raise ValueError("All legs must have the same underlying symbol")
 
-        trade_group = determine_trade_group(parsed_legs[0]['expiration_date'].strftime('%m/%d/%y'), "os")
+        trade_group = determine_trade_group(parsed_legs[0]['expiration_date'].strftime('%m/%d/%y'), "os", underlying_symbol)
         config = get_configuration(db, trade_group)
 
         if not config:
@@ -805,7 +808,7 @@ async def create_trade(
             expiration_date = convert_to_two_digit_year(expiration_date)
         
         if not trade_group:
-            trade_group = determine_trade_group(expiration_date, trade_type.lower())
+            trade_group = determine_trade_group(expiration_date, trade_type.lower(), symbol)
         
         config = get_configuration(db, trade_group)
         if not config:
@@ -1519,6 +1522,10 @@ async def exit_trade(
         exit_profit_loss = (Decimal(exit_price) - average_cost) * current_size
         
         # Total profit/loss
+        if trade.trade_type in ["STO", "Sell to Open"]:
+            trim_profit_loss = -trim_profit_loss
+            exit_profit_loss = -exit_profit_loss
+
         total_profit_loss = trim_profit_loss + exit_profit_loss
         trade.profit_loss = float(total_profit_loss)
 
@@ -1726,6 +1733,9 @@ async def trim_trade(
         average_cost = total_cost / total_size if total_size > 0 else Decimal('0')
         
         trim_profit_loss = (Decimal(trim_price) - average_cost)
+
+        if trade.trade_type in ["STO", "Sell to Open"]:
+            trim_profit_loss = -trim_profit_loss
 
         if trade.is_contract:
             trim_profit_loss = trim_profit_loss * 100

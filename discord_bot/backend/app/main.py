@@ -83,6 +83,7 @@ def read_trades(
     weekFilter: Optional[str] = Query(None, description="Filter trades by week"),
     monthFilter: Optional[str] = Query(None, description="Filter trades by month"),
     yearFilter: Optional[str] = Query(None, description="Filter trades by year"),
+    isOptions: Optional[bool] = Query(False, description="Filter trades by whether they are options"),
     db: Session = Depends(get_db)   
 ):
     print("Entering read_trades function")
@@ -99,7 +100,8 @@ def read_trades(
             config_name=configName,
             week_filter=weekFilter,
             month_filter=monthFilter,
-            year_filter=yearFilter
+            year_filter=yearFilter,
+            is_options=isOptions
         )
         print(f"Retrieved {len(trades)} trades")
         return trades
@@ -136,6 +138,24 @@ def read_portfolio(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.get("/strategy_trades", response_model=List[schemas.OptionsStrategyTrade])
+def read_strategy_trades(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=1000),
+    sortBy: Optional[str] = Query(None),
+    sortOrder: Optional[str] = Query("desc", regex="^(asc|desc)$"),
+    configName: Optional[str] = Query(None),
+    weekFilter: Optional[str] = Query(None),
+    status: Optional[models.OptionsStrategyStatusEnum] = Query(None),
+    db: Session = Depends(get_db)
+):
+    print("Entering read_strategy_trades function")
+    print(f"Status: {status}")
+    try:
+        strategy_trades = crud.get_strategy_trades(db, skip=skip, limit=limit, sort_by=sortBy, sort_order=sortOrder, config_name=configName, week_filter=weekFilter, status=status)
+        return strategy_trades
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/trades/{trade_id}", response_model=schemas.Trade)
 def read_trade(trade_id: str, db: Session = Depends(get_db)):

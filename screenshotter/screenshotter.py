@@ -13,21 +13,14 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
 
 def setup_driver():
-    """Set up Chrome WebDriver with headless mode and VPS-friendly options"""
+    """Set up Firefox WebDriver with headless mode and VPS-friendly options"""
     options = Options()
-    options.add_argument('--headless=new')  # Enable new headless mode
+    options.add_argument('--headless')  # Enable headless mode
     options.add_argument('--no-sandbox')  # Required for running as root on VPS
     options.add_argument('--disable-dev-shm-usage')  # Handle limited shared memory on VPS
-    options.add_argument('--disable-gpu')  # Disable GPU hardware acceleration
     options.add_argument('--window-size=1920,1080')  # Set a standard resolution
-    options.add_argument('--disable-infobars')
-    options.add_argument('--disable-extensions')
-    options.add_argument('--remote-debugging-port=9222')
-    options.add_argument('--start-maximized')  # Ensure maximum viewport
-    options.add_argument('--force-device-scale-factor=1')  # Prevent scaling issues
 
-
-    return webdriver.Chrome(options=options)
+    return webdriver.Firefox(options=options)
 
 def take_table_screenshot(driver, filename):
     """Take a screenshot of the trades table"""

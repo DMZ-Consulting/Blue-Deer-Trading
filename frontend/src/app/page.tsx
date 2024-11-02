@@ -1,44 +1,114 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Button } from "@/components/ui/button"
-import { PanelRightOpen, PanelRightClose } from 'lucide-react'
+import { useState } from 'react'
 import { TradesTableComponent } from '@/components/TradesTable'
+import { OptionsStrategyTableComponent } from '@/components/OptionsStrategyTable'
 
-export default function Page() {
-  const [isReportsVisible, setIsReportsVisible] = useState(true)
-  const [configName, setConfigName] = useState('day_trader')
+// Import shadcn components
+import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
-  const toggleReportsVisibility = () => {
-    setIsReportsVisible(prev => !prev)
-  }
+type TradeViewType = 'regular' | 'options' | 'strategy'
+
+export default function Home() {
+  const [tradeView, setTradeView] = useState<TradeViewType>('regular')
+  const [configName, setConfigName] = useState('swing_trader')
+  const [statusFilter, setStatusFilter] = useState('open')
+  const [dateFilter, setDateFilter] = useState(() => {
+    const now = new Date()
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString().split('T')[0]
+  })
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between text-sm lg:flex">
-        <div className={`flex-grow ${isReportsVisible ? 'w-3/4' : 'w-full'}`}>
-          <div className="flex justify-between items-center mb-4">
-            <h1 className="text-3xl font-bold">Trades</h1>
-            <Button onClick={toggleReportsVisibility} variant="outline">
-              {isReportsVisible ? <PanelRightClose className="w-4 h-4 mr-2" /> : <PanelRightOpen className="w-4 h-4 mr-2" />}
-              {isReportsVisible ? "Hide Reports" : "Show Reports"}
-            </Button>
-          </div>
-          <select
-            id="trade-group-selector"
-            value={configName}
-            onChange={(e) => setConfigName(e.target.value)}
-            className="mb-4 border p-2 rounded"
+    <main className="container mx-auto p-4 space-y-4">
+      <div className="flex justify-between items-center">
+        <div className="flex gap-2">
+          <Button 
+            variant={tradeView === 'regular' ? "default" : "outline"}
+            onClick={() => setTradeView('regular')}
           >
-            <option value="day_trader">Day Trader</option>
-            <option value="swing_trader">Swing Trader</option>
-            <option value="long_term_trader">Long Term Trader</option>
-          </select>
-          <TradesTableComponent 
-            configName={configName}
+            Regular Trades
+          </Button>
+          <Button 
+            variant={tradeView === 'options' ? "default" : "outline"}
+            onClick={() => setTradeView('options')}
+          >
+            Options Trades
+          </Button>
+          <Button 
+            variant={tradeView === 'strategy' ? "default" : "outline"}
+            onClick={() => setTradeView('strategy')}
+          >
+            Options Strategies
+          </Button>
+        </div>
+
+        <div className="flex gap-4">
+          <Select value={configName} onValueChange={setConfigName}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Select trader type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="day_trader">Day Trader</SelectItem>
+              <SelectItem value="swing_trader">Swing Trader</SelectItem>
+              <SelectItem value="long_term_trader">Long Term Trader</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="closed">Closed</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="px-3 py-2 border rounded-md"
           />
         </div>
       </div>
+
+      {tradeView === 'regular' && (
+        <TradesTableComponent 
+          configName={configName}
+          filterOptions={{
+            status: statusFilter,
+            startDate: dateFilter,
+            isOptions: false
+          }}
+        />
+      )}
+
+      {tradeView === 'options' && (
+        <TradesTableComponent 
+          configName={configName}
+          filterOptions={{
+            status: statusFilter,
+            startDate: dateFilter,
+            isOptions: true
+          }}
+        />
+      )}
+
+      {tradeView === 'strategy' && (
+        <OptionsStrategyTableComponent 
+          configName={configName}
+          statusFilter={statusFilter}
+          dateFilter={dateFilter}
+        />
+      )}
     </main>
   )
 }
