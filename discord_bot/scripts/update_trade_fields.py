@@ -66,7 +66,8 @@ trades_to_delete = [
     "e5Rmeygt",
     "gqm9fMGR",
     "oTgQWrMH",
-    "3EWQ8WQd"
+    "3EWQ8WQd",
+    "XwVJfGHq"
 ]
 
 os_trades_to_delete = [

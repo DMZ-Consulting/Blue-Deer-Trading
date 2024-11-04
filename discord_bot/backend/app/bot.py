@@ -830,11 +830,12 @@ async def create_trade(
             except ValueError:
                 await log_to_channel(interaction.guild, "Invalid expiration date format. Please use MM/DD/YY.")
                 return
-            
-        expiration_date = expiration_date.strftime("%m/%d/%y") if expiration_date else None
+        if type(expiration_date) is datetime:
+            expiration_date = expiration_date.strftime("%m/%d/%y")
         if expiration_date:
             # set to 10PM UTC time
             expiration_date = (datetime.strptime(expiration_date, "%m/%d/%y") + timedelta(hours=22)).strftime("%m/%d/%y")
+            print("exp : ")
         new_trade = models.Trade(
             symbol=symbol.upper(),
             trade_type=trade_type,
@@ -860,6 +861,7 @@ async def create_trade(
         db.add(new_trade)
         db.commit()
         db.refresh(new_trade)
+        print(f"new_trade: {new_trade}")
 
         open_transaction = models.Transaction(
             trade_id=new_trade.trade_id,
@@ -899,6 +901,10 @@ async def create_trade(
                 await channel.send(embed=note_embed)
 
         return new_trade
+    except Exception as e:
+        print(f"Error creating trade: {str(e)}")
+        print(traceback.format_exc())
+        await log_to_channel(interaction.guild, f"Error in trade command by {interaction.user.name}: {str(e)}")
     finally:
         db.close()
 
@@ -1359,13 +1365,20 @@ async def open_trade(
 
     try:
         parsed = parse_option_symbol(trade_string)
+        print(parsed)
+        if type(parsed['expiration_date']) is str:
+            expiration_date = parsed['expiration_date']
+        else:
+            expiration_date = parsed['expiration_date'].strftime("%m/%d/%y")
+
+        print(f"Expiration date: {expiration_date}")
         new_trade = await create_trade(
             interaction=interaction,
             symbol=parsed['symbol'],
             entry_price=price,
             size=size,
             trade_type=parsed['trade_type'],
-            expiration_date=parsed['expiration_date'].strftime("%m/%d/%y"),
+            expiration_date=expiration_date,
             strike=parsed['strike'],
             option_type=parsed['option_type'],
             note=note
