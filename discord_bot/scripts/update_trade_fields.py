@@ -83,8 +83,7 @@ def update_trade_fields():
             #check if time is 00:00:00, if so, set to 10PM that day
             date_string = trade.expiration_date.strftime("%m/%d/%y")
             #if trade.expiration_date == datetime(trade.expiration_date.year, trade.expiration_date.month, trade.expiration_date.day).time():
-            trade.expiration_date = datetime.strptime(date_string + " 22:00", "%m/%d/%y %H:%M")
-            print()
+            trade.expiration_date = datetime.strptime(date_string + " 21:15", "%m/%d/%y %H:%M")
             print(f"TradeID: {trade.trade_id} - Updating expiration_date to {trade.expiration_date}")
 
         if trade.trade_id in trades_to_update:

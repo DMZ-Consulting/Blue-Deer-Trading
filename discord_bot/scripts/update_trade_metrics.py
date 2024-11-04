@@ -101,6 +101,7 @@ def update_trade_metrics():
     trades = session.query(Trade).all()
 
     for trade in trades:
+        print(f"Trade {trade.trade_id} updating metrics")
         transactions = session.query(Transaction).filter(Transaction.trade_id == trade.trade_id).all()
         
         open_transactions = [t for t in transactions if t.transaction_type in [TransactionTypeEnum.OPEN, TransactionTypeEnum.ADD]]

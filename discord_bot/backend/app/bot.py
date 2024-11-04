@@ -244,7 +244,7 @@ async def log_action(guild, message):
     finally:
         db.close()
 
-@tasks.loop(time=time(hour=23, minute=45))
+@tasks.loop(time=time(hour=16, minute=30))
 async def check_and_exit_expired_trades():
     db = next(get_db())
     try:
@@ -855,7 +855,7 @@ async def create_trade(
             is_contract=is_contract,
             is_day_trade=is_day_trade,
             strike=strike,
-            expiration_date=datetime.strptime(expiration_date, "%m/%d/%y") if expiration_date else None,
+            expiration_date=datetime.strptime(f"{expiration_date} 21:15", "%m/%d/%y %H:%M") if expiration_date else None,
             option_type=option_type.upper() if option_type else None
         )
         db.add(new_trade)

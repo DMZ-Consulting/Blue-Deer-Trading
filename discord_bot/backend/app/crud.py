@@ -157,9 +157,11 @@ def get_portfolio_trades(
         for transaction in transactions:
             closed_size += float(transaction.size)
 
-        if trade.average_exit_price:
+        if trade.average_exit_price is not None:
+            print(f"Trade {trade.trade_id} average_exit_price: {trade.average_exit_price}, average_price: {trade.average_price}")
             total_realized_pl = (float(trade.average_exit_price) - float(trade.average_price)) * closed_size
         else:
+            print(f"Trade {trade.trade_id} no average_exit_price")
             total_realized_pl = 0
 
         # ES Is a futures contract with a multiplier of 50
