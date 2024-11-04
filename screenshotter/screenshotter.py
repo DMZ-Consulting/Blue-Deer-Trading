@@ -226,10 +226,14 @@ DISCORD_WEBHOOKS = {
     "full_portfolio": "https://discord.com/api/webhooks/1300088766354165820/dDOy-rbyWXHlwZbQ2TbJRDdtGNuauRN5cQHzqkj_6lBtrcE6Oo4ZQWQbcslIZSLH_rj8"
 }
 
+DEBUG_WEBHOOKS = {
+    "debug": "https://discord.com/api/webhooks/1300088766354165820/dDOy-rbyWXHlwZbQ2TbJRDdtGNuauRN5cQHzqkj_6lBtrcE6Oo4ZQWQbcslIZSLH_rj8"
+}
+
 DISCORD_FILE_ORDER = ['day_trader_open.png', 'day_trader_portfolio.png', 'swing_trader_open.png', 'swing_trader_portfolio.png', 'long_term_trader_open.png', 'long_term_trader_portfolio.png']
 
 
-def send_screenshot_to_discord():
+def send_screenshot_to_discord(debug=False):
     """Send a screenshot to the Discord channel"""
     # For every screenshot in the screenshots directory, send it to the Discord channel
     # I want to order it as Open then portfolio for each group
@@ -349,7 +353,7 @@ def main():
         # Capture portfolio view for each trade group
         capture_portfolio_for_all_groups(driver)
 
-        send_screenshot_to_discord()
+        send_screenshot_to_discord(debug=True)
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")

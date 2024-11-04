@@ -8,7 +8,6 @@ import { getTradesByConfiguration } from '../api/api'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 import 'react-datepicker/dist/react-datepicker.css'
@@ -16,26 +15,24 @@ import 'react-datepicker/dist/react-datepicker.css'
 interface FilterOptions {
   status: string;
   startDate: string;
-  isOptions: boolean;
+  optionType?: string;
+  symbol?: string;
+  tradeGroup?: string;
+  minEntryPrice?: number;
+  maxEntryPrice?: number;
 }
 
 interface TradesTableProps {
   configName: string;
   filterOptions: FilterOptions;
+  showAllTrades?: boolean;
 }
 
 // Add these type definitions at the top of the file
 type SortField = keyof Trade
 type SortOrder = 'asc' | 'desc'
 
-// Update the Trade interface to ensure IDs are strings
-interface Transaction {
-  id: string;
-  strategy_id: string;
-  // ... other transaction fields
-}
-
-export function TradesTableComponent({ configName, filterOptions }: TradesTableProps) {
+export function TradesTableComponent({ configName, filterOptions, showAllTrades = false }: TradesTableProps) {
   const [trades, setTrades] = useState<Trade[]>([])
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -46,10 +43,26 @@ export function TradesTableComponent({ configName, filterOptions }: TradesTableP
   const fetchTrades = useCallback(async () => {
     setLoading(true)
     try {
+      console.log("Fetching trades with options:", {
+        status: filterOptions.status,
+        weekFilter: filterOptions.startDate,
+        optionType: filterOptions.optionType,
+        symbol: filterOptions.symbol,
+        tradeGroup: filterOptions.tradeGroup,
+        minEntryPrice: filterOptions.minEntryPrice,
+        maxEntryPrice: filterOptions.maxEntryPrice,
+        showAllTrades
+      });
+
       const fetchedTrades = await getTradesByConfiguration(configName, {
         status: filterOptions.status,
         weekFilter: filterOptions.startDate,
-        isOptions: filterOptions.isOptions
+        optionType: filterOptions.optionType,
+        symbol: filterOptions.symbol,
+        tradeGroup: filterOptions.tradeGroup,
+        minEntryPrice: filterOptions.minEntryPrice,
+        maxEntryPrice: filterOptions.maxEntryPrice,
+        showAllTrades
       })
       setTrades(fetchedTrades)
     } catch (error) {
@@ -57,7 +70,7 @@ export function TradesTableComponent({ configName, filterOptions }: TradesTableP
     } finally {
       setLoading(false)
     }
-  }, [configName, filterOptions])
+  }, [configName, filterOptions, showAllTrades])
 
   useEffect(() => {
     fetchTrades()
@@ -99,7 +112,7 @@ export function TradesTableComponent({ configName, filterOptions }: TradesTableP
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-      timeZone: 'America/New_York'  // Set timezone to EST/EDT
+      timeZone: 'America/New_York'
     };
 
     return utcDate.toLocaleString('en-US', options);
@@ -162,7 +175,7 @@ export function TradesTableComponent({ configName, filterOptions }: TradesTableP
           year: '2-digit', 
           month: '2-digit', 
           day: '2-digit',
-          timeZone: 'UTC'
+          timeZone: 'America/New_York'
         }) : "No Exp" : "";
       const strike = trade.strike ? `$${trade.strike.toFixed(2)}` : "";
       return `${expiration} ${upperSymbol} ${strike} ${optionType}`;
@@ -239,6 +252,11 @@ export function TradesTableComponent({ configName, filterOptions }: TradesTableP
                     </Button>
                   </TableHead>
                   <TableHead className="text-center whitespace-nowrap">
+                    <Button variant="ghost" onClick={() => handleSort('expiration_date')}>
+                      Expiration Date {renderSortIcon('expiration_date')}
+                    </Button>
+                  </TableHead>
+                  <TableHead className="text-center whitespace-nowrap">
                     <Button variant="ghost" onClick={() => handleSort('created_at')}>
                       Opened At {renderSortIcon('created_at')}
                     </Button>
@@ -279,6 +297,7 @@ export function TradesTableComponent({ configName, filterOptions }: TradesTableP
                       </TableCell>
                       <TableCell className="text-center whitespace-nowrap">${trade.average_price.toFixed(2)}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">{trade.expiration_date ? formatDateTime(trade.expiration_date) : ''}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
                       {filterOptions.status !== 'open' && (
                         <TableCell className="text-center whitespace-nowrap">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>

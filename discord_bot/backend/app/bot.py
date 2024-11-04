@@ -271,6 +271,7 @@ async def expire_trades(interaction: discord.Interaction):
         
         for trade in open_trades:
             if trade.expiration_date and trade.expiration_date.date() <= today:
+                logger.info(f"Exiting expired trade {trade.trade_id} with expiration date {trade.expiration_date}")
                 await exit_expired_trade(trade)
         
     except Exception as e:
@@ -345,6 +346,8 @@ async def exit_expired_trade(trade: models.Trade):
 
         # Determine win/loss
         trade.win_loss = models.WinLossEnum.LOSS
+
+        logger.info(f"Exiting expired trade {trade.trade_id} with exit price {exit_price} and current size {current_size}")
 
         db.commit()
         db.refresh(trade)
@@ -583,9 +586,12 @@ def determine_trade_group(expiration_date: str, trade_type: str, symbol: str) ->
     if days_to_expiration <= 3:
         print(f"Returning DAY_TRADER for {expiration_date}")
         return TradeGroupEnum.DAY_TRADER
-    else:
+    elif days_to_expiration <= 90:
         print(f"Returning SWING_TRADER for {expiration_date}")
         return TradeGroupEnum.SWING_TRADER
+    else:
+        print(f"Returning LONG_TERM_TRADER for {expiration_date}")
+        return TradeGroupEnum.LONG_TERM_TRADER
 
 def get_configuration(db: Session, trade_group: str) -> models.TradeConfiguration:
     """
@@ -824,7 +830,11 @@ async def create_trade(
             except ValueError:
                 await log_to_channel(interaction.guild, "Invalid expiration date format. Please use MM/DD/YY.")
                 return
-
+            
+        expiration_date = expiration_date.strftime("%m/%d/%y") if expiration_date else None
+        if expiration_date:
+            # set to 10PM UTC time
+            expiration_date = (datetime.strptime(expiration_date, "%m/%d/%y") + timedelta(hours=22)).strftime("%m/%d/%y")
         new_trade = models.Trade(
             symbol=symbol.upper(),
             trade_type=trade_type,
@@ -833,7 +843,7 @@ async def create_trade(
             average_price=entry_price,
             size=size,
             current_size=size,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(),
             closed_at=None,
             exit_price=None,
             average_exit_price=None,

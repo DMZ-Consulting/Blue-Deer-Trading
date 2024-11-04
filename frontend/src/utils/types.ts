@@ -93,4 +93,5 @@ export interface OptionsStrategyTrade {
   current_size: string;
   created_at: string;
   closed_at?: string;
+  legs: string
 }

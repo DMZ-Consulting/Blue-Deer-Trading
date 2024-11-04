@@ -40,6 +40,12 @@ export function Header() {
             >
               Portfolio View
             </Link>
+            <Link
+              href="/search"
+              className={pathname === "/search" ? "text-foreground" : "text-foreground/60 transition-colors hover:text-foreground"}
+            >
+              Search
+            </Link>
           </nav>
         </div>
         <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">

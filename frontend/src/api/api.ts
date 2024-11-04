@@ -35,26 +35,66 @@ interface FilterOptions {
   weekFilter?: string;
   monthFilter?: string;
   yearFilter?: string;
-  isOptions?: boolean;
+  optionType?: string;
 }
 
-export async function getTradesByConfiguration(configName: string, filterOptions: FilterOptions): Promise<Trade[]> {
-  const queryParams = new URLSearchParams();
-  
-  queryParams.append('configName', configName);
-  
-  Object.entries(filterOptions).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      queryParams.append(key, value);
-    }
-  });
-
+export async function getTradesByConfiguration(configName: string, options: {
+  status: string;
+  weekFilter: string;
+  optionType?: string;
+  symbol?: string;
+  tradeGroup?: string;
+  minEntryPrice?: number;
+  maxEntryPrice?: number;
+  showAllTrades?: boolean;
+}) {
   try {
+    const queryParams = new URLSearchParams();
+
+    if (configName !== "all") {
+      queryParams.append('configName', configName);
+    }
+    
+    if (options.status !== "all") {
+      queryParams.append('status', options.status);
+    }
+    
+    if (options.weekFilter) {
+      queryParams.append('weekFilter', options.weekFilter);
+    }
+    
+    // Only append optionType if it's defined
+    if (options.optionType) {
+      queryParams.append('optionType', options.optionType);
+      console.log("Setting option_type to:", options.optionType);
+    }
+    
+    if (options.symbol) {
+      queryParams.append('symbol', options.symbol);
+    }
+    
+    if (options.tradeGroup) {
+      queryParams.append('configName', options.tradeGroup);
+    }
+    
+    if (options.minEntryPrice) {
+      queryParams.append('minEntryPrice', String(options.minEntryPrice));
+    }
+    
+    if (options.maxEntryPrice) {
+      queryParams.append('maxEntryPrice', String(options.maxEntryPrice));
+    }
+    
+    if (options.showAllTrades) {
+      queryParams.append('showAllTrades', String(options.showAllTrades));
+    }
+
+    console.log("API Request URL:", `/trades?${queryParams.toString()}`);
     const response = await api.get(`/trades?${queryParams.toString()}`);
     return response.data;
   } catch (error) {
     console.error('Error fetching trades:', error);
-    throw new Error('Failed to fetch trades');
+    throw error;
   }
 }
 

@@ -83,10 +83,13 @@ def read_trades(
     weekFilter: Optional[str] = Query(None, description="Filter trades by week"),
     monthFilter: Optional[str] = Query(None, description="Filter trades by month"),
     yearFilter: Optional[str] = Query(None, description="Filter trades by year"),
-    isOptions: Optional[bool] = Query(False, description="Filter trades by whether they are options"),
+    optionType: Optional[str] = Query(None, description="Filter trades by option type"),
+    maxEntryPrice: Optional[float] = Query(None, description="Filter trades by max entry price"),
+    minEntryPrice: Optional[float] = Query(None, description="Filter trades by min entry price"),
     db: Session = Depends(get_db)   
 ):
     print("Entering read_trades function")
+    print(f"optionType: {optionType}")
     try:
         trades = crud.get_trades(
             db,
@@ -101,7 +104,9 @@ def read_trades(
             week_filter=weekFilter,
             month_filter=monthFilter,
             year_filter=yearFilter,
-            is_options=isOptions
+            option_type=optionType,
+            max_entry_price=maxEntryPrice,
+            min_entry_price=minEntryPrice
         )
         print(f"Retrieved {len(trades)} trades")
         return trades
@@ -189,21 +194,21 @@ async def backup_database():
             # Get the current date for the backup file name
             current_date = datetime.now().strftime("%Y-%m-%d")
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            source_db = os.path.join(current_dir, "../db/sql_app.db")
+            source_db = "/home/dzeller/Blue-Deer-Trading/discord_bot/db/sql_app.db"
             
-            backup_dir = os.path.join(current_dir, "../db/backups")
-            backup_db = os.path.join(backup_dir, f"backup_{current_date}.db")
-            
+            #backup_dir = os.path.join(current_dir, "../db/backups")
+            #backup_db = os.path.join(backup_dir, f"backup_{current_date}.db")
+            backup_db = f"/home/dzeller/Blue-Deer-Trading/discord_bot/db/backups/backup_{current_date}.db"
             # Create backup directory if it doesn't exist
-            os.makedirs(backup_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(backup_db), exist_ok=True)
             
             # Create a copy of the database file
             shutil.copy2(source_db, backup_db)
-            
+
             logger.info(f"Database backup created: {backup_db}")
             
             # Clean up old backups
-            cleanup_old_backups(backup_dir)
+            cleanup_old_backups(os.path.dirname(backup_db))
             
             # Wait for 24 hours before the next backup
             await asyncio.sleep(24 * 60 * 60)

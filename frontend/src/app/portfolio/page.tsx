@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button"
 import { PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { getPortfolio } from '@/api/api'
 import { PortfolioTrade } from '@/utils/types'
-import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Card, CardContent } from "@/components/ui/card"
+
+const TRADE_GROUPS = [
+  { value: "day_trader", label: "Day Trader" },
+  { value: "swing_trader", label: "Swing Trader" },
+  { value: "long_term_trader", label: "Long Term Trader" }
+] as const;
 
 export default function PortfolioPage() {
   const [configName, setConfigName] = useState('day_trader')
@@ -16,7 +23,10 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true)
   const [dateFilter, setDateFilter] = useState(() => {
     const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString().split('T')[0];
+    // Get the Monday of the current week
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - now.getDay() + 1);
+    return monday.toISOString().split('T')[0];
   });
 
   const toggleReportsVisibility = () => {
@@ -42,8 +52,41 @@ export default function PortfolioPage() {
     fetchPortfolio()
   }, [configName, dateFilter])
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDateFilter(e.target.value)
+  const handleDateChange = (newDate: string) => {
+    // Convert the selected date to the Monday of that week
+    const selectedDate = new Date(newDate);
+    const monday = new Date(selectedDate);
+    monday.setDate(selectedDate.getDate() - selectedDate.getDay() + 1);
+    setDateFilter(monday.toISOString().split('T')[0]);
+  }
+
+  // Generate week options for the last 12 weeks
+  const getWeekOptions = () => {
+    const options = [];
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - today.getDay() + 1);
+
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() - (7 * i));
+      const friday = new Date(date);
+      friday.setDate(date.getDate() + 4);
+
+      options.push({
+        value: date.toISOString().split('T')[0],
+        label: `Week of ${friday.toLocaleDateString()}`
+      });
+    }
+    return options;
+  }
+
+  // Get the label for the current selected date
+  const getSelectedWeekLabel = () => {
+    const selectedDate = new Date(dateFilter);
+    const friday = new Date(selectedDate);
+    friday.setDate(selectedDate.getDate() + 4); // Get to Friday from Monday
+    return `Week of ${friday.toLocaleDateString()}`;
   }
 
   return (
@@ -57,27 +100,48 @@ export default function PortfolioPage() {
       </div>
       <div className="flex flex-col lg:flex-row gap-8">
         <div className={`lg:${isReportsVisible ? 'w-2/3' : 'w-full'}`}>
-          <div className="mb-4 flex flex-wrap gap-4 items-center">
-            <label className="block text-sm font-medium text-gray-700" htmlFor="trade-group">
-              Select Trade Group
-            </label>
-            <select
-              id="trade-group-selector"
-              value={configName}
-              onChange={(e) => setConfigName(e.target.value)}
-              className="border p-2 rounded"
-            >
-              <option value="day_trader">Day Trader</option>
-              <option value="swing_trader">Swing Trader</option>
-              <option value="long_term_trader">Long Term Trader</option>
-            </select>
-            <Input
-              type="date"
-              value={dateFilter}
-              onChange={handleDateChange}
-              className="ml-4"
-            />
-          </div>
+          <Card className="mb-4">
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap gap-4 items-center">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Trade Group</label>
+                  <Select value={configName} onValueChange={setConfigName}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue>
+                        {TRADE_GROUPS.find(group => group.value === configName)?.label}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TRADE_GROUPS.map((group) => (
+                        <SelectItem key={group.value} value={group.value}>
+                          {group.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Week</label>
+                  <Select value={dateFilter} onValueChange={handleDateChange}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue>
+                        {getSelectedWeekLabel()}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getWeekOptions().map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {loading ? (
             <p>Loading portfolio...</p>
           ) : (

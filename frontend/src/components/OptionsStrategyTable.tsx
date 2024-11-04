@@ -25,6 +25,7 @@ interface Leg {
   expiration_date: string;
   strike: number;
   option_type: string;
+  trade_type: string;
 }
 
 export function OptionsStrategyTableComponent({ configName, statusFilter, dateFilter }: OptionsStrategyTableProps) {
@@ -117,7 +118,16 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
       let oneliner = `${trade.underlying_symbol} - ${trade.name} `;
       
       // Add date from first leg
-      if (legs.length > 0) {
+      const exp_date = legs[0].expiration_date;
+      let multiple_exp_dates = false;
+      for (const leg of legs) {
+        if (leg.expiration_date !== exp_date) {
+          multiple_exp_dates = true;
+          break;
+        }
+      }
+    
+      if (legs.length > 0 && !multiple_exp_dates) {
         const date = new Date(legs[0].expiration_date);
         oneliner += `(${date.toLocaleDateString('en-US', { 
           month: '2-digit', 
@@ -125,13 +135,27 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
           year: '2-digit',
           timeZone: 'UTC'
         })}) `;
+      } else {
+        let oneliner_exp_date = '(';
+        for (const leg of legs) {
+          if (oneliner_exp_date !== '(') {
+            oneliner_exp_date += leg.trade_type.startsWith('BTO') ? '+' : '-';
+          }
+          oneliner_exp_date += `${new Date(leg.expiration_date).toLocaleDateString('en-US', { 
+            month: '2-digit', 
+            day: '2-digit', 
+            year: '2-digit',
+            timeZone: 'UTC'
+          })}`;
+        }
+        oneliner += oneliner_exp_date + ') ';
       }
 
       // Add each leg
       legs.forEach((leg, index) => {
         if (index > 0) {
           // Add + for calls, - for puts after the first leg
-          oneliner += leg.option_type.startsWith('C') ? '+' : '-';
+          oneliner += leg.trade_type.startsWith('BTO') ? '+' : '-';
         }
         oneliner += `${leg.strike}${leg.option_type[0]}`;
       });

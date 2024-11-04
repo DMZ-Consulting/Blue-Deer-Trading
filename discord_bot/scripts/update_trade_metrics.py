@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend.app.models import Trade, Transaction, TransactionTypeEnum, OptionsStrategyTrade, OptionsStrategyTransaction
 from backend.app.database import Base, get_database_url
+#from backend.app.bot import manually_expire_trades
 from decimal import Decimal, InvalidOperation
 
 # Create engine and session
@@ -17,6 +18,7 @@ engine = create_engine(db_path)
 Session = sessionmaker(bind=engine)
 session = Session()
 
+
 def decimal_or_zero(value):
     try:
         return Decimal(value)
@@ -25,9 +27,14 @@ def decimal_or_zero(value):
         return Decimal('0')
 
 def update_trade_metrics():
+    #manually_expire_trades()
+
     trades = session.query(Trade).all()
 
     for trade in trades:
+        if trade.symbol.upper() == "ES":
+            trade.configuration_id = 1
+
         if str(trade.size).upper() == "MAX" or str(trade.current_size).upper() == "MAX":
             trade.current_size = 6
             trade.size = 6
@@ -125,7 +132,8 @@ def update_trade_metrics():
     strategies = session.query(OptionsStrategyTrade).all()
     for strategy in strategies:
         open_transactions = session.query(OptionsStrategyTransaction).filter(OptionsStrategyTransaction.strategy_id == strategy.id, OptionsStrategyTransaction.transaction_type == TransactionTypeEnum.OPEN).all()
-        avg_cost = sum(float(t.net_cost) for t in open_transactions) / sum(float(t.size) for t in open_transactions) if open_transactions else 0
+        
+        avg_cost = sum(float(t.net_cost)*float(t.size) for t in open_transactions) / sum(float(t.size) for t in open_transactions) if open_transactions else 0
         strategy.average_net_cost = avg_cost
         session.commit()
         print(f"Strategy {strategy.id}: {strategy.name}")

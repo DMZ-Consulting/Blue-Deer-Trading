@@ -6,7 +6,7 @@ from .schemas import TransactionTypeEnum
 from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, field_validator
-from .bot import create_trade_oneliner, create_trade_oneliner_os
+from .bot import create_trade_oneliner, create_trade_oneliner_os, serialize_legs, deserialize_legs
 import logging
 from datetime import datetime, timedelta
 import json
@@ -58,7 +58,9 @@ def get_trades(
     week_filter: Optional[str] = None,
     month_filter: Optional[str] = None,
     year_filter: Optional[str] = None,
-    is_options: Optional[bool] = False
+    option_type: Optional[str] = None,
+    max_entry_price: Optional[float] = None,
+    min_entry_price: Optional[float] = None
 ) -> List[models.Trade]:
     print("Entering get_trades function")
     query = db.query(models.Trade)
@@ -77,7 +79,17 @@ def get_trades(
         else:
             return []
 
-    query = query.filter(models.Trade.is_contract == is_options)
+    print(f"option_type: {option_type}")
+    if option_type:
+        if option_type == "options":
+            query = query.filter(models.Trade.is_contract == True)
+        elif option_type == "common":
+            query = query.filter(models.Trade.is_contract == False)
+
+    if max_entry_price:
+        query = query.filter(models.Trade.average_price <= max_entry_price)
+    if min_entry_price:
+        query = query.filter(models.Trade.average_price >= min_entry_price)
 
     if week_filter and status == models.TradeStatusEnum.CLOSED:
         # Find the friday of the week from the week_filter string
@@ -145,7 +157,10 @@ def get_portfolio_trades(
         for transaction in transactions:
             closed_size += float(transaction.size)
 
-        total_realized_pl = (float(trade.average_exit_price) - float(trade.average_price)) * closed_size
+        if trade.average_exit_price:
+            total_realized_pl = (float(trade.average_exit_price) - float(trade.average_price)) * closed_size
+        else:
+            total_realized_pl = 0
 
         # ES Is a futures contract with a multiplier of 50
         if trade.symbol == "ES":
@@ -340,7 +355,7 @@ def create_options_strategy(db: Session, strategy: schemas.OptionsStrategyTradeC
         underlying_symbol=strategy.underlying_symbol,
         status=models.OptionsStrategyStatusEnum.OPEN,
         trade_group=strategy.trade_group,
-        legs=json.dumps(parsed_legs),
+        legs=serialize_legs(parsed_legs),
         net_cost=strategy.net_cost,
         average_net_cost=strategy.net_cost,
         size=strategy.size,

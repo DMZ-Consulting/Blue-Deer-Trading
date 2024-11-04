@@ -86,7 +86,7 @@ export default function Home() {
           filterOptions={{
             status: statusFilter,
             startDate: dateFilter,
-            isOptions: false
+            optionType: 'common'
           }}
         />
       )}
@@ -97,7 +97,7 @@ export default function Home() {
           filterOptions={{
             status: statusFilter,
             startDate: dateFilter,
-            isOptions: true
+            optionType: 'options'
           }}
         />
       )}

@@ -1,10 +1,11 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from backend.app.models import Trade, Transaction, TransactionTypeEnum
+from backend.app.models import Trade, Transaction, TransactionTypeEnum, OptionsStrategyTrade
 from backend.app.database import Base, get_database_url
 from decimal import Decimal, InvalidOperation
 from datetime import timedelta
@@ -45,7 +46,8 @@ trades_to_update = {
     "WrNzyKvT": { "option_type": "PUT" },
     "ebhrMqyc": { "option_type": "PUT" },
     "fzDSpXzE": { "option_type": "PUT" },
-    "e5Rmeygt": { "option_type": "PUT" }
+    "e5Rmeygt": { "option_type": "PUT" },
+    "BbVjheZQ": { "configuration_id": "3" }
 
 }
 
@@ -61,13 +63,29 @@ os_transactions_to_update = {
 }
 
 trades_to_delete = [
-    "e5Rmeygt"
+    "e5Rmeygt",
+    "gqm9fMGR",
+    "oTgQWrMH",
+    "3EWQ8WQd"
+]
+
+os_trades_to_delete = [
+    "cmQXMsYj"
 ]
 
 def update_trade_fields():
     trades = session.query(Trade).all()
 
     for trade in trades:
+        # If trade has expiration date, set it to 10PM UTC time of the same date
+        if trade.expiration_date:
+            #check if time is 00:00:00, if so, set to 10PM that day
+            date_string = trade.expiration_date.strftime("%m/%d/%y")
+            #if trade.expiration_date == datetime(trade.expiration_date.year, trade.expiration_date.month, trade.expiration_date.day).time():
+            trade.expiration_date = datetime.strptime(date_string + " 22:00", "%m/%d/%y %H:%M")
+            print()
+            print(f"TradeID: {trade.trade_id} - Updating expiration_date to {trade.expiration_date}")
+
         if trade.trade_id in trades_to_update:
             for key, value in trades_to_update[trade.trade_id].items():
                 print(f"TradeID: {trade.trade_id} - Updating {key} to {value}")
@@ -93,6 +111,15 @@ def update_trade_fields():
                 print(f"TransactionID: {transaction.id} - Updating {key} to {value}")
                 setattr(transaction, key, value)
 
+
+    session.commit()
+
+    os_trades = session.query(OptionsStrategyTrade).all()
+    for trade in os_trades:
+        print(trade.trade_id)
+        if trade.trade_id in os_trades_to_delete:
+            print(f"OptionsStrategyTradeID: {trade.trade_id} - Deleting trade")
+            session.delete(trade)
 
     session.commit()
     
