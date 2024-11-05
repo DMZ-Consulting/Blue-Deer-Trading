@@ -9,23 +9,31 @@ import os
 import requests
 import json
 from contextlib import ExitStack
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.firefox.service import Service
 
 def setup_driver():
     """Set up Firefox WebDriver with headless mode and VPS-friendly options"""
+    # Set up Firefox options
     options = Options()
-    options.add_argument('--headless')  # Enable headless mode
-    options.add_argument('--no-sandbox')  # Required for running as root on VPS
-    options.add_argument('--disable-dev-shm-usage')  # Handle limited shared memory on VPS
-    options.add_argument('--window-size=1920,1080')  # Set a standard resolution
+    #options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--window-size=1400,1080')
+    
+    if os.path.exists("/usr/local/bin/geckodriver"):
+        service = Service('/usr/local/bin/geckodriver')
+    else:
+        service = Service('/opt/homebrew/bin/geckodriver')
 
-    return webdriver.Firefox(options=options)
+    # Return Firefox webdriver with options and service
+    return webdriver.Firefox(service=service, options=options)
 
 def take_table_screenshot(driver, filename):
     """Take a screenshot of the trades table"""
     table = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
+        EC.presence_of_element_located((By.CSS_SELECTOR, "main")) # Can change this to table if needed, but this is a better view. 
     )
     # Scroll table into view
     driver.execute_script("arguments[0].scrollIntoView();", table)
@@ -60,91 +68,98 @@ def wait_for_element(driver, by, selector, timeout=10, condition="presence"):
 
 
 def change_status_to_open(driver):
-    """Change all closed statuses to open with enhanced error handling"""
+    """Change status to open using the correct button selectors"""
     try:
         # Wait for page to be completely loaded
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 20).until(
             lambda d: d.execute_script("return document.readyState") == "complete"
         )
         
-        # First try the combobox button
-        try:
-            button = wait_for_element(
-                driver, 
-                By.CSS_SELECTOR, 
-                "button[role='combobox']", 
-                condition="clickable"
-            )
-            
-            # Scroll into view with offset to ensure it's fully visible
-            driver.execute_script(
-                "arguments[0].scrollIntoView({behavior: 'instant', block: 'center'});", 
-                button
-            )
-            time.sleep(0.5)
-            
-            # Try multiple click methods
-            try:
-                button.click()
-            except:
-                ActionChains(driver).move_to_element(button).click().perform()
-            
-            # Wait for and click the Open option
-            open_option = wait_for_element(
-                driver,
-                By.XPATH,
-                "//span[text()='Open']",
-                condition="clickable"
-            )
-            open_option.click()
-            
-        except Exception as e:
-            print(f"Combobox approach failed, trying select element: {str(e)}")
-            # Fallback to select element if combobox fails
-            status_selector = wait_for_element(
+        # Wait for and find the status dropdown using the specific role and attributes
+        dropdown = wait_for_element(
             driver,
             By.CSS_SELECTOR,
-            "select[name='status-selector']",
-            condition="presence"
-            )
-            Select(status_selector).select_by_visible_text("Open")
-            
-        # Wait for any loading indicators to disappear
-        time.sleep(2)
+            "button[role='combobox'][aria-autocomplete='none']",
+            timeout=20,
+            condition="clickable"
+        )
+        
+        # Scroll the dropdown into view
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", dropdown)
+        time.sleep(1)
+        
+        # Click using JavaScript to avoid pointer-events issues
+        driver.execute_script("arguments[0].click();", dropdown)
+        time.sleep(1)
+        
+        # Find and click the "Open" option in the dropdown menu
+        open_option = wait_for_element(
+            driver,
+            By.XPATH,
+            "//div[@role='option' and text()='Open']",
+            timeout=20,
+            condition="clickable"
+        )
+        
+        # Click using JavaScript
+        driver.execute_script("arguments[0].click();", open_option)
+        time.sleep(2)  # Wait for any updates
 
     except Exception as e:
         print(f"Error changing status to open: {str(e)}")
-        driver.save_screenshot("screenshots/status_change_error.png")
-        raise   
+        driver.save_screenshot("screenshots/debug_status_change_error.png")
+        raise
 
-def select_trade_group(driver, group_value):
-    """Safely select a trade group with retry logic"""
-    max_attempts = 3
-    for attempt in range(max_attempts):
-        try:
-            # Wait for and get fresh reference to select element
-            trade_group_select = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "trade-group-selector"))
-            )
-            select = Select(trade_group_select)
-            
-            # Get current selection
-            current_value = select.first_selected_option.get_attribute('value')
-            if current_value == group_value:
-                print(f"Already on {group_value}")
-                return True
-                
-            select.select_by_value(group_value)
-            print(f"Selected trade group: {group_value}")
-            time.sleep(2)  # Wait for page update
-            return True
-            
-        except Exception as e:
-            if attempt == max_attempts - 1:
-                print(f"Failed to select trade group {group_value}: {str(e)}")
-                return False
-            time.sleep(1)
-            continue
+def select_trade_group(driver, group_name):
+    """Select a specific trade group from the dropdown"""
+    try:
+        # Find and click the trade group dropdown
+        group_dropdown = wait_for_element(
+            driver,
+            By.CSS_SELECTOR,
+            "button[role='combobox'] span",
+            timeout=20,
+            condition="presence"
+        )
+        
+        # Scroll into view and click using JavaScript
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", group_dropdown.find_element(By.XPATH, ".."))
+        time.sleep(1)
+        driver.execute_script("arguments[0].click();", group_dropdown.find_element(By.XPATH, ".."))
+        
+        # Wait for the dropdown content to appear
+        content_wrapper = wait_for_element(
+            driver,
+            By.CSS_SELECTOR,
+            "[data-radix-popper-content-wrapper]",
+            timeout=10,
+            condition="presence"
+        )
+        
+        # Find and click the specific trade group option
+        group_option = wait_for_element(
+            driver,
+            By.XPATH,
+            f"//span[contains(text(), '{group_name}')]",
+            timeout=10,
+            condition="clickable"
+        )
+        group_option = wait_for_element(
+            driver,
+            By.XPATH,
+            f"//div[data-radix-popper-content-wrapper]",
+            timeout=10,
+            condition="clickable"
+        )
+        print(group_option.get_attribute("innerHTML"))
+        
+        driver.execute_script("arguments[0].click();", group_option)
+        time.sleep(1)  # Wait for UI update
+        
+    except Exception as e:
+        print(f"Error selecting trade group {group_name}: {str(e)}")
+        driver.save_screenshot(f"screenshots/debug_select_group_{group_name}.png")
+        raise
 
 def capture_trade_groups(driver):
     """Take screenshots for each trade group in the Day Trader selector"""
@@ -204,15 +219,34 @@ def capture_portfolio_for_all_groups(driver):
             raise Exception("Failed to navigate to Portfolio View")
         
         # List of trade groups
-        groups = ['day_trader', 'swing_trader', 'long_term_trader']
+        groups = ['swing_trader', 'day_trader', 'long_term_trader']
         
-        # Take screenshot for each group
-        for group in groups:
-            print(f"\nProcessing trade group: {group}")
-            if select_trade_group(driver, group):
-                take_portfolio_screenshot(driver, f"{group}_portfolio.png")
-            else:
-                print(f"Skipping screenshot for {group} due to selection failure")
+        for trader_group in groups:
+            trader_group_name = trader_group.replace("_", " ").title()
+            print(f"\nProcessing trade group: {trader_group_name}")
+            # Find and click the trader group dropdown
+            group_dropdown = wait_for_element(
+                driver,
+                By.CSS_SELECTOR,
+                "button[role='combobox']",
+                condition="clickable"
+            )
+            group_dropdown.click()
+            
+            # Select the trader group
+            group_option = wait_for_element(
+                driver,
+                By.XPATH,
+                f"//span[contains(text(), '{trader_group_name}')]",
+                condition="clickable"
+            )
+            #group_option.find_element(By.XPATH, "..").click()
+            driver.execute_script("arguments[0].click();", group_option)
+            time.sleep(1)  # Wait for view to update
+            
+            # Take screenshot
+            filename = f"{trader_group.lower().replace(' ', '_')}_portfolio.png"
+            take_table_screenshot(driver, filename)
 
     except Exception as e:
         print(f"Error in capture_portfolio_for_all_groups: {str(e)}")
@@ -227,7 +261,10 @@ DISCORD_WEBHOOKS = {
 }
 
 DEBUG_WEBHOOKS = {
-    "debug": "https://discord.com/api/webhooks/1300088766354165820/dDOy-rbyWXHlwZbQ2TbJRDdtGNuauRN5cQHzqkj_6lBtrcE6Oo4ZQWQbcslIZSLH_rj8"
+    "day_trader": "https://discord.com/api/webhooks/1300084058507841577/85ZnFh1mR0cbuWqrwhWrSaFZfBiSpGS6KLg6Avg2am_sf8UyY8gkkA4VA1viKe7TAUiY",
+    "swing_trader": "https://discord.com/api/webhooks/1300084058507841577/85ZnFh1mR0cbuWqrwhWrSaFZfBiSpGS6KLg6Avg2am_sf8UyY8gkkA4VA1viKe7TAUiY",
+    "long_term_trader": "https://discord.com/api/webhooks/1300084058507841577/85ZnFh1mR0cbuWqrwhWrSaFZfBiSpGS6KLg6Avg2am_sf8UyY8gkkA4VA1viKe7TAUiY",
+    "full_portfolio": "https://discord.com/api/webhooks/1300084058507841577/85ZnFh1mR0cbuWqrwhWrSaFZfBiSpGS6KLg6Avg2am_sf8UyY8gkkA4VA1viKe7TAUiY"
 }
 
 DISCORD_FILE_ORDER = ['day_trader_open.png', 'day_trader_portfolio.png', 'swing_trader_open.png', 'swing_trader_portfolio.png', 'long_term_trader_open.png', 'long_term_trader_portfolio.png']
@@ -237,6 +274,7 @@ def send_screenshot_to_discord(debug=False):
     """Send a screenshot to the Discord channel"""
     # For every screenshot in the screenshots directory, send it to the Discord channel
     # I want to order it as Open then portfolio for each group
+    webhooks = DISCORD_WEBHOOKS if not debug else DEBUG_WEBHOOKS
     for file in DISCORD_FILE_ORDER:
         message = "ERROR"
         if file.endswith("open.png"):
@@ -245,15 +283,15 @@ def send_screenshot_to_discord(debug=False):
             message = f"# {file.split('_')[0].capitalize()} Trader Portfolio"
         
         if file.startswith("day_trader"):
-            send_discord_message(DISCORD_WEBHOOKS["day_trader"], message, f"screenshots/{file}")
+            send_discord_message(webhooks["day_trader"], message, f"screenshots/{file}")
         elif file.startswith("swing_trader"):
-            send_discord_message(DISCORD_WEBHOOKS["swing_trader"], message, f"screenshots/{file}")
+            send_discord_message(webhooks["swing_trader"], message, f"screenshots/{file}")
         elif file.startswith("long_term_trader"):
-            send_discord_message(DISCORD_WEBHOOKS["long_term_trader"], message, f"screenshots/{file}")
+            send_discord_message(webhooks["long_term_trader"], message, f"screenshots/{file}")
         else:
             print(f"Unknown file: {file}")
 
-        send_discord_message(DISCORD_WEBHOOKS["full_portfolio"], message, f"screenshots/{file}")
+        send_discord_message(webhooks["full_portfolio"], message, f"screenshots/{file}")
 
 def send_discord_message(webhook_url, message, image_path=None, avatar_path=None):
     """
@@ -318,39 +356,65 @@ def send_discord_message(webhook_url, message, image_path=None, avatar_path=None
         except Exception as e:
             print(f"Error sending message: {str(e)}")
 
-def main2():
-    send_screenshot_to_discord()
+def capture_all_trade_views(driver):
+    trade_types = ["Regular Trades", "Options Trades", "Options Strategies"]
+    trader_groups = ["Day Trader", "Swing Trader", "Long Term Trader"]
+    
+    for trade_type in trade_types:
+        # Click the trade type button
+        trade_button = wait_for_element(
+            driver,
+            By.XPATH,
+            f"//button[text()='{trade_type}']",
+            condition="clickable"
+        )
+        trade_button.click()
+        time.sleep(1)  # Wait for view to update
+
+        for trader_group in trader_groups:
+            # Find and click the trader group dropdown
+            group_dropdown = wait_for_element(
+                driver,
+                By.CSS_SELECTOR,
+                "button[role='combobox']",
+                condition="clickable"
+            )
+            group_dropdown.click()
+            
+            # Select the trader group
+            group_option = wait_for_element(
+                driver,
+                By.XPATH,
+                f"//span[contains(text(), '{trader_group}')]",
+                condition="clickable"
+            )
+            group_option.click()
+            time.sleep(1)  # Wait for view to update
+            
+            # Take screenshot
+            filename = f"{trade_type.lower().replace(' ', '_')}_{trader_group.lower().replace(' ', '_')}.png"
+            take_table_screenshot(driver, filename)
 
 def main():
-    # Create screenshots directory if it doesn't exist
     if not os.path.exists("screenshots"):
         os.makedirs("screenshots")
 
     driver = setup_driver()
     
     try:
-        # Load the webpage (replace with actual URL)
         driver.get("http://localhost:3000")
-
-                # Wait for initial page load
         WebDriverWait(driver, 10).until(
             lambda d: d.execute_script("return document.readyState") == "complete"
         )
-        time.sleep(2)  # Additional wait for dynamic content
+        time.sleep(2)
 
-        # Take initial screenshot of table
-        take_table_screenshot(driver, "initial_table.png")
+        # Change status to open
+        #change_status_to_open(driver)
+        time.sleep(1)
 
-        # Change status from closed to open
-        change_status_to_open(driver)
+        # Capture all combinations
+        #capture_all_trade_views(driver)
 
-        # Take screenshot after status change
-        take_table_screenshot(driver, "table_status_open.png")
-
-        # Capture screenshots for each Day Trader group
-        capture_trade_groups(driver)
-
-        # Capture portfolio view for each trade group
         capture_portfolio_for_all_groups(driver)
 
         send_screenshot_to_discord(debug=True)

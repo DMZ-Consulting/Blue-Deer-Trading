@@ -90,58 +90,52 @@ export default function PortfolioPage() {
   }
 
   return (
-    <div id="portfolio-page" className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Blue Deer Trading Dashboard</h1>
-        <Button onClick={toggleReportsVisibility} variant="outline">
-          {isReportsVisible ? <PanelRightClose className="w-4 h-4 mr-2" /> : <PanelRightOpen className="w-4 h-4 mr-2" />}
-          {isReportsVisible ? "Hide Reports" : "Show Reports"}
-        </Button>
+    <main className="container mx-auto p-4 space-y-4">
+      <div className="flex justify-between items-center">
+        <div className="flex gap-2">
+          <h1 className="text-3xl font-bold">Blue Deer Trading Dashboard</h1>
+        </div>
+
+        <div className="flex gap-4 items-center">
+          <Select value={configName} onValueChange={setConfigName}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue>
+                {TRADE_GROUPS.find(group => group.value === configName)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {TRADE_GROUPS.map((group) => (
+                <SelectItem key={group.value} value={group.value}>
+                  {group.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={dateFilter} onValueChange={handleDateChange}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue>
+                {getSelectedWeekLabel()}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {getWeekOptions().map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Button onClick={toggleReportsVisibility} variant="outline">
+            {isReportsVisible ? <PanelRightClose className="w-4 h-4 mr-2" /> : <PanelRightOpen className="w-4 h-4 mr-2" />}
+            {isReportsVisible ? "Hide Reports" : "Show Reports"}
+          </Button>
+        </div>
       </div>
+
       <div className="flex flex-col lg:flex-row gap-8">
         <div className={`lg:${isReportsVisible ? 'w-2/3' : 'w-full'}`}>
-          <Card className="mb-4">
-            <CardContent className="pt-6">
-              <div className="flex flex-wrap gap-4 items-center">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Trade Group</label>
-                  <Select value={configName} onValueChange={setConfigName}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue>
-                        {TRADE_GROUPS.find(group => group.value === configName)?.label}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TRADE_GROUPS.map((group) => (
-                        <SelectItem key={group.value} value={group.value}>
-                          {group.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Week</label>
-                  <Select value={dateFilter} onValueChange={handleDateChange}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue>
-                        {getSelectedWeekLabel()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getWeekOptions().map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           {loading ? (
             <p>Loading portfolio...</p>
           ) : (
@@ -154,6 +148,6 @@ export default function PortfolioPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   )
 }
