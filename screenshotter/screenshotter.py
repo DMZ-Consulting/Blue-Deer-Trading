@@ -429,7 +429,7 @@ def main():
 
         capture_portfolio_for_all_groups(driver)
 
-        send_screenshot_to_discord(debug=True)
+        send_screenshot_to_discord(debug=False)
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
