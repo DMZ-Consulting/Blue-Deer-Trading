@@ -8,7 +8,6 @@ import { PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { getPortfolio } from '@/api/api'
 import { PortfolioTrade } from '@/utils/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent } from "@/components/ui/card"
 
 const TRADE_GROUPS = [
   { value: "day_trader", label: "Day Trader" },

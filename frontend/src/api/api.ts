@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Trade, PortfolioEndpoint, StrategyTrade, OptionsStrategyTrade } from '../utils/types';
+import { PortfolioEndpoint, StrategyTrade, OptionsStrategyTrade } from '../utils/types';
 
 const API_BASE_URL = 'http://localhost:8000'; // Update this with your API URL
 
