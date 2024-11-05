@@ -422,7 +422,7 @@ def main():
         time.sleep(1)
 
         # Capture all combinations
-        #capture_all_trade_views(driver)
+        capture_all_trade_views(driver)
 
         capture_portfolio_for_all_groups(driver)
 
