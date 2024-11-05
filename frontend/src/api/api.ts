@@ -128,7 +128,7 @@ export async function getPortfolio(configName: string, filterOptions: FilterOpti
 }
 
 // Add a new function to handle data refresh
-export const refreshData = async (configName: string, filterOptions: FilterOptions) => {
+/*export const refreshData = async (configName: string, filterOptions: FilterOptions) => {
   try {
     const [tradesResponse, portfolioResponse] = await Promise.all([
       getTradesByConfiguration(configName, filterOptions),
@@ -143,7 +143,7 @@ export const refreshData = async (configName: string, filterOptions: FilterOptio
     console.error('Error refreshing data:', error);
     throw error;
   }
-};
+};*/
 
 // Add more API functions as needed
 

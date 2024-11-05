@@ -46,8 +46,8 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
         bValue = b.oneliner;
         break;
       case 'type':
-        aValue = 'trade' in a ? (a.trade.trade_type || '') : 'strategy';
-        bValue = 'trade' in b ? (b.trade.trade_type || '') : 'strategy';
+        aValue = 'trade' in a && typeof a.trade === 'object' && a.trade && 'trade_type' in a.trade ? (a.trade.trade_type as string) || 'Unknown' : 'Strategy';
+        bValue = 'trade' in b && typeof b.trade === 'object' && b.trade && 'trade_type' in b.trade ? (b.trade.trade_type as string) || 'Unknown' : 'Strategy';
         break;
       default:
         aValue = a[sortField as keyof PortfolioTrade] ?? '';
@@ -100,9 +100,10 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
       </TableHeader>
       <TableBody>
         {sortedTrades.map((item, index) => {
-          const tradeType = 'trade' in item ? 
-            (item.trade.trade_type || 'regular') : 
-            'strategy';
+          let tradeType = 'Strategy';
+          if ('trade' in item && item.trade && typeof item.trade === 'object' && 'trade_type' in item.trade) {
+            tradeType = (item.trade.trade_type as string) || 'Unknown';
+          }
 
           return (
             <TableRow key={index} className={tradeType === 'strategy' ? 'bg-slate-50' : ''}>

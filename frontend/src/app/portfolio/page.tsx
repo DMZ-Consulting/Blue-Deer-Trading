@@ -6,7 +6,7 @@ import { ReportAreaComponent } from '@/components/ReportArea'
 import { Button } from "@/components/ui/button"
 import { PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { getPortfolio } from '@/api/api'
-import { PortfolioTrade } from '@/utils/types'
+import { PortfolioEndpoint } from '@/utils/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const TRADE_GROUPS = [
@@ -18,7 +18,10 @@ const TRADE_GROUPS = [
 export default function PortfolioPage() {
   const [configName, setConfigName] = useState('day_trader')
   const [isReportsVisible, setIsReportsVisible] = useState(true)
-  const [portfolio, setPortfolio] = useState<PortfolioTrade[]>([])
+  const [portfolio, setPortfolio] = useState<PortfolioEndpoint>({
+    regular_trades: [],
+    strategy_trades: []
+  })
   const [loading, setLoading] = useState(true)
   const [dateFilter, setDateFilter] = useState(() => {
     const now = new Date();

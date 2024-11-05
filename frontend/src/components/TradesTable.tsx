@@ -152,7 +152,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
       aValue = String(aValue);
       bValue = String(bValue);
     }
-    
+    if (aValue == null || bValue == null) return 0; // Handle undefined values
     if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
     return 0;
