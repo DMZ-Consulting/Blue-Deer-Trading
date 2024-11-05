@@ -12,23 +12,32 @@ from contextlib import ExitStack
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.firefox.service import Service
+from pyvirtualdisplay import Display
 
 def setup_driver():
-    """Set up Firefox WebDriver with headless mode and VPS-friendly options"""
-    # Set up Firefox options
+    """Set up Firefox WebDriver with virtual display for headless Linux"""
+    from selenium.webdriver.firefox.service import Service
+    from selenium.webdriver.firefox.options import Options
+    
+    # Start virtual display
+    display = Display(visible=0, size=(1920, 1080))
+    display.start()
+    
     options = Options()
-    #options.add_argument('--headless')
+    options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--window-size=1400,1080')
+    options.add_argument('--width=1920')
+    options.add_argument('--height=1080')
     
-    if os.path.exists("/usr/local/bin/geckodriver"):
-        service = Service('/usr/local/bin/geckodriver')
-    else:
-        service = Service('/opt/homebrew/bin/geckodriver')
-
-    # Return Firefox webdriver with options and service
-    return webdriver.Firefox(service=service, options=options)
+    service = Service('/usr/local/bin/geckodriver')
+    
+    try:
+        driver = webdriver.Firefox(service=service, options=options)
+        return driver
+    except Exception as e:
+        display.stop()
+        raise e
 
 def take_table_screenshot(driver, filename):
     """Take a screenshot of the trades table"""
