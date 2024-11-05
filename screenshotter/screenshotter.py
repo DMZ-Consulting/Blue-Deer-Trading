@@ -297,7 +297,7 @@ def send_screenshot_to_discord(debug=False):
         for file in DISCORD_FILE_GROUPS[group]["open"]:
             send_discord_message(webhooks[group], "", f"screenshots/{file}")
         for file in DISCORD_FILE_GROUPS[group]["portfolio"]:
-            message += f"# Realized Trades for {group.replace('_', ' ').title()}"
+            message = f"# {group.replace('_', ' ').title()} Realized Trades"
             send_discord_message(webhooks[group], message, f"screenshots/{file}")
 
 #send_discord_message(webhooks["full_portfolio"], message, f"screenshots/{file}")
