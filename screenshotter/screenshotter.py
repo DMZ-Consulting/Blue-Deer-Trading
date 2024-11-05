@@ -278,29 +278,31 @@ DEBUG_WEBHOOKS = {
 
 DISCORD_FILE_ORDER = ['day_trader_open.png', 'day_trader_portfolio.png', 'swing_trader_open.png', 'swing_trader_portfolio.png', 'long_term_trader_open.png', 'long_term_trader_portfolio.png']
 
+DISCORD_FILE_GROUPS = {
+    "day_trader": { "open": ["day_trader_regular_trades.png", "day_trader_options_trades.png", "day_trader_options_strategies.png"], "portfolio": ["day_trader_portfolio.png"] },
+    "swing_trader": { "open": ["swing_trader_regular_trades.png", "swing_trader_options_trades.png", "swing_trader_options_strategies.png"], "portfolio": ["swing_trader_portfolio.png"] },
+    "long_term_trader": { "open": ["long_term_trader_regular_trades.png", "long_term_trader_options_trades.png", "long_term_trader_options_strategies.png"], "portfolio": ["long_term_trader_portfolio.png"] }
+}
+
 
 def send_screenshot_to_discord(debug=False):
     """Send a screenshot to the Discord channel"""
     # For every screenshot in the screenshots directory, send it to the Discord channel
     # I want to order it as Open then portfolio for each group
     webhooks = DISCORD_WEBHOOKS if not debug else DEBUG_WEBHOOKS
-    for file in DISCORD_FILE_ORDER:
-        message = "ERROR"
-        if file.endswith("open.png"):
-            message = f"# Open Trades for {file.split('_')[0].capitalize()} Trader"
-        elif file.endswith("portfolio.png"):
-            message = f"# {file.split('_')[0].capitalize()} Trader Portfolio"
-        
-        if file.startswith("day_trader"):
-            send_discord_message(webhooks["day_trader"], message, f"screenshots/{file}")
-        elif file.startswith("swing_trader"):
-            send_discord_message(webhooks["swing_trader"], message, f"screenshots/{file}")
-        elif file.startswith("long_term_trader"):
-            send_discord_message(webhooks["long_term_trader"], message, f"screenshots/{file}")
-        else:
-            print(f"Unknown file: {file}")
 
-        send_discord_message(webhooks["full_portfolio"], message, f"screenshots/{file}")
+    for group in DISCORD_FILE_GROUPS:
+        message = f"# {group.replace('_', ' ').title()} Open Trades"
+        send_discord_message(webhooks[group], message)
+        for file in DISCORD_FILE_GROUPS[group]["open"]:
+            send_discord_message(webhooks[group], "", f"screenshots/{file}")
+        for file in DISCORD_FILE_GROUPS[group]["portfolio"]:
+            message += f"# Realized Trades for {group.replace('_', ' ').title()}"
+            send_discord_message(webhooks[group], message, f"screenshots/{file}")
+
+#send_discord_message(webhooks["full_portfolio"], message, f"screenshots/{file}")
+
+        
 
 def send_discord_message(webhook_url, message, image_path=None, avatar_path=None):
     """
@@ -401,7 +403,7 @@ def capture_all_trade_views(driver):
             time.sleep(1)  # Wait for view to update
             
             # Take screenshot
-            filename = f"{trade_type.lower().replace(' ', '_')}_{trader_group.lower().replace(' ', '_')}.png"
+            filename = f"{trader_group.lower().replace(' ', '_')}_{trade_type.lower().replace(' ', '_')}.png"
             take_table_screenshot(driver, filename)
 
 def main():
