@@ -314,6 +314,7 @@ def send_discord_message(webhook_url, message, image_path=None, avatar_path=None
     image_path (str): Path to message image file (optional)
     avatar_path (str): Path to avatar image file (optional)
     """
+    time.sleep(0.5)
     
     # Use ExitStack to manage multiple file contexts
     with ExitStack() as stack:
