@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Get the directory of the current script
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+#SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # Navigate to the screenshotter directory
-cd "$SCRIPT_DIR"
+#cd "$SCRIPT_DIR"
 
-sudo apt-get install -y firefox-geckodriver
+#sudo apt-get install -y firefox-geckodriver
 
 # Check if virtual environment exists, if not create one
 if [ ! -d "venv" ]; then
