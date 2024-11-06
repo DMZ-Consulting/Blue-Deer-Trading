@@ -335,6 +335,10 @@ async def exit_expired_trade(trade: models.Trade):
         total_open_size = sum(Decimal(t.size) for t in open_transactions)
         
         average_cost = total_cost / total_open_size if total_open_size > 0 else 0
+
+        close_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.CLOSE])
+        avg_exit_price = sum(Decimal(t.amount) * Decimal(t.size) for t in close_transactions) / sum(Decimal(t.size) for t in close_transactions) if close_transactions else 0
+        trade.average_exit_price = float(avg_exit_price)
         
         trim_profit_loss = 0
         if trim_transactions:
@@ -1706,6 +1710,7 @@ async def trim_trade(
 ):
     db = next(get_db())
     try:
+        print(trade_id)
         trade = crud.get_trade(db, trade_id)
         if not trade:
             await log_to_channel(interaction.guild, f"User {interaction.user.name} executed TRIM command: Trade {trade_id} not found.")

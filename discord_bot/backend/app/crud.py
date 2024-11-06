@@ -154,6 +154,7 @@ def get_portfolio_trades(
     for trade in trades:
         closed_size = 0
         transactions = get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.CLOSE, models.TransactionTypeEnum.TRIM])
+        open_transactions = get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.OPEN, models.TransactionTypeEnum.ADD])
         for transaction in transactions:
             closed_size += float(transaction.size)
 
@@ -161,8 +162,8 @@ def get_portfolio_trades(
             print(f"Trade {trade.trade_id} average_exit_price: {trade.average_exit_price}, average_price: {trade.average_price}")
             total_realized_pl = (float(trade.average_exit_price) - float(trade.average_price)) * closed_size
         else:
-            print(f"Trade {trade.trade_id} no average_exit_price")
-            total_realized_pl = 0
+            print(f"Trade {trade.trade_id} no average_exit_price, assuming 0")
+            total_realized_pl = sum((float(t.amount) - float(trade.average_price)) * float(t.size) for t in open_transactions) * -1
 
         # ES Is a futures contract with a multiplier of 50
         if trade.symbol == "ES":
