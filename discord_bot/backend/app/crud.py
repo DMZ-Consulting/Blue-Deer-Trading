@@ -220,19 +220,141 @@ def get_portfolio_trades(
 
     return regular_trades, strategy_trades
 
-def calculate_strategy_pl(db: Session, strategy: models.OptionsStrategyTrade):
+def get_portfolio_trades_relevant_to_week(
+    db: Session,
+    skip: int = 0,
+    limit: int = 500,
+    sort_by: Optional[str] = None,
+    sort_order: str = "desc",
+    config_name: Optional[str] = None,
+    week_filter: Optional[str] = None
+):
+    # Process regular trades
+    regular_trades = []
+    strategy_trades = []
+
+    # Get regular trades
+    trade_query = db.query(models.Trade)
+    if config_name:
+        trade_config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == config_name).first()
+        if trade_config:
+            trade_query = trade_query.filter(models.Trade.configuration_id == trade_config.id)
+
+    if week_filter:
+        # TODO: Add support for any trade  that was also trimmed this week and is still open!
+        day = datetime.strptime(week_filter, "%Y-%m-%d")
+        monday = day - timedelta(days=day.weekday())
+        sunday = monday + timedelta(days=6)
+        #trade_query = trade_query.filter(
+        #    (models.Trade.closed_at >= monday) & (models.Trade.closed_at <= sunday + timedelta(days=1))
+        #)
+
+    trades = trade_query.offset(skip).limit(limit).all()
+    print(trades)
+
+    # only get closed trades
+    #trades = [trade for trade in trades if trade.status == models.TradeStatusEnum.CLOSED]
+    # Process regular trades
+    for trade in trades:
+
+        if trade.trade_id == "NitcL6G8":
+            print(trade)
+
+        closed_size = 0
+        transactions = get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.CLOSE, models.TransactionTypeEnum.TRIM], start_date=monday, end_date=sunday)
+
+        if len(transactions) == 0:
+            continue
+
+        
+
+        avg_exit_price = sum(float(t.amount) * float(t.size) for t in transactions) / sum(float(t.size) for t in transactions) if transactions else 0
+        for transaction in transactions:
+            closed_size += float(transaction.size)
+
+        if avg_exit_price != 0:
+            print(f"Trade {trade.trade_id} average_exit_price: {avg_exit_price}, average_price: {trade.average_price}")
+            total_realized_pl = (float(avg_exit_price) - float(trade.average_price)) * closed_size
+        else:
+            print(f"Trade {trade.trade_id} no average_exit_price, assuming 0")
+            total_realized_pl = sum((float(t.amount) - float(trade.average_price)) * float(t.size) for t in transactions)
+
+        # ES Is a futures contract with a multiplier of 50
+        if trade.symbol == "ES":
+            total_realized_pl *= 50
+        else: # All other contracts are 100x
+            total_realized_pl *= 100
+
+        pct_change = (float(avg_exit_price or 0) - float(trade.average_price or 0)) / float(trade.average_price or 1) * 100 if trade.average_price else 0
+
+        if trade.trade_type in ["STO", "Sell to Open"]:
+            total_realized_pl = -total_realized_pl
+            pct_change = -pct_change
+
+        processed_trade = {
+            "trade": trade,
+            "oneliner": create_trade_oneliner(trade),
+            "realized_pl": total_realized_pl,
+            "realized_size": closed_size,
+            "avg_entry_price": float(trade.average_price or 0),
+            "avg_exit_price": float(trade.average_exit_price or 0),
+            "pct_change": pct_change,
+            "trade_type": "regular"
+        }
+        regular_trades.append(processed_trade)
+
+    # Get strategy trades
+    strategy_query = db.query(models.OptionsStrategyTrade)
+    if config_name and trade_config:
+        strategy_query = strategy_query.filter(models.OptionsStrategyTrade.configuration_id == trade_config.id)
+
+    if week_filter:
+        strategy_query = strategy_query.filter(
+            (models.OptionsStrategyTrade.closed_at >= monday) & 
+            (models.OptionsStrategyTrade.closed_at <= sunday + timedelta(days=1))
+        )
+
+    strategies = strategy_query.offset(skip).limit(limit).all()
+
+    # Process strategy trades
+    for strategy in strategies:
+        realized_pl, avg_exit_price, pct_change = calculate_strategy_pl(db, strategy, start_date=monday, end_date=sunday)
+        processed_strategy = {
+            "trade": strategy,
+            "oneliner": create_trade_oneliner_os(strategy),
+            "realized_pl": realized_pl,
+            "realized_size": float(strategy.size),
+            "avg_entry_price": float(strategy.average_net_cost),
+            "avg_exit_price": avg_exit_price,
+            "pct_change": pct_change,
+            "trade_type": "strategy"
+        }
+        strategy_trades.append(processed_strategy)
+
+    return regular_trades, strategy_trades
+
+def calculate_strategy_pl(db: Session, strategy: models.OptionsStrategyTrade, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None):
     total_pl = 0
     avg_exit_price = 0
     transactions = db.query(models.OptionsStrategyTransaction).filter(
         models.OptionsStrategyTransaction.strategy_id == strategy.id,
         models.OptionsStrategyTransaction.transaction_type.in_([models.TransactionTypeEnum.CLOSE, models.TransactionTypeEnum.TRIM])
-    ).all()
+    )
+    if start_date:
+        transactions = transactions.filter(models.OptionsStrategyTransaction.created_at >= start_date)
+    if end_date:
+        transactions = transactions.filter(models.OptionsStrategyTransaction.created_at <= end_date)
+    
+    transactions = transactions.all()
     closed_size = sum(float(t.size) for t in transactions)
     for transaction in transactions:
         total_pl += (float(transaction.net_cost) - float(strategy.average_net_cost)) * float(transaction.size)
-        avg_exit_price += float(transaction.net_cost) * float(transaction.size)
+    
+    avg_exit_price = sum(float(t.net_cost) * float(t.size) for t in transactions) / closed_size
 
-    return total_pl * 100, avg_exit_price / closed_size
+    pct_change = (avg_exit_price - float(strategy.average_net_cost)) / float(strategy.average_net_cost) * 100 if strategy.average_net_cost else 0
+
+    return total_pl * 100, avg_exit_price, pct_change
 
 def get_strategy_trades(
     db: Session,
@@ -314,10 +436,16 @@ def get_performance(db: Session):
         average_risk_reward_ratio=average_risk_reward_ratio
     )
 
-def get_transactions_for_trade(db: Session, trade_id: str, transaction_types: List[TransactionTypeEnum] = None):
+def get_transactions_for_trade(db: Session, trade_id: str, transaction_types: List[TransactionTypeEnum] = None, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None):
     query = db.query(models.Transaction).filter(models.Transaction.trade_id == trade_id)
     if transaction_types:
         query = query.filter(models.Transaction.transaction_type.in_(transaction_types))
+
+    if start_date:
+        query = query.filter(models.Transaction.created_at >= start_date)
+    if end_date:
+        query = query.filter(models.Transaction.created_at <= end_date)
+
     return query.all()
 
 def create_trade(db: Session, trade: schemas.TradeCreate):

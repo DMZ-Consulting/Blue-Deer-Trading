@@ -127,7 +127,12 @@ def read_portfolio(
     db: Session = Depends(get_db)
 ):
     try:
-        regular_trades, strategy_trades = crud.get_portfolio_trades(
+        if weekFilter is None:
+            # Set weekFilter to this week
+            weekFilter = datetime.now().strftime("%Y-%m-%d")
+
+        #Changing this to do the trades only based on transactions in the week
+        regular_trades, strategy_trades = crud.get_portfolio_trades_relevant_to_week(
             db,
             skip=skip,
             limit=limit,
