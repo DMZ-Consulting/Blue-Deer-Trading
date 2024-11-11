@@ -534,8 +534,12 @@ async def get_open_os_trade_ids(ctx: discord.AutocompleteContext):
         for trade in open_trades:
             symbol = trade.underlying_symbol
             name = trade.name
+            expiration_date = None
+            for leg in deserialize_legs(trade.legs):
+                if not expiration_date or leg['expiration_date'] > expiration_date:
+                    expiration_date = leg['expiration_date']
 
-            display = f"{symbol} - {name}"
+            display = f"{symbol} {expiration_date.strftime('%m/%d/%y')} @ {trade.average_net_cost:.2f}- {name}"
             sort_key = (symbol, name)
             
             trade_info.append((trade.trade_id, display, sort_key))
@@ -2247,8 +2251,31 @@ async def transaction_send(interaction: discord.Interaction, transaction_id: dis
         await channel.send(embed=embed)
 
 
-@bot.slash_command(name="add_note", description="Add a note to a trade")
+@bot.slash_command(name="note", description="Add a note to a trade")
 async def add_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)), note: discord.Option(str, description="The note to add")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
+    if not trade:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
+        return
+    
+    config = get_configuration(db, trade.configuration.name)
+    if not config:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
+        return
+    
+    channel = interaction.guild.get_channel(int(config.channel_id))
+    embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
+    embed.description = create_trade_oneliner(trade)
+    embed.add_field(name="Note", value=note, inline=False)
+    embed.set_footer(text=f"Posted by {interaction.user.name}")
+    await channel.send(embed=embed)
+
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
+
+@bot.slash_command(name="os_note", description="Add a note to a trade")
+async def add_os_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)), note: discord.Option(str, description="The note to add")):
     await kill_interaction(interaction)
     db = next(get_db())
     trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
