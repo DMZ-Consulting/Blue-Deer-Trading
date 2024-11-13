@@ -244,7 +244,7 @@ async def log_action(guild, message):
     finally:
         db.close()
 
-@tasks.loop(time=time(hour=16, minute=30))
+@tasks.loop(time=time(hour=21, minute=30))
 async def check_and_exit_expired_trades():
     db = next(get_db())
     try:
@@ -540,7 +540,7 @@ async def get_open_os_trade_ids(ctx: discord.AutocompleteContext):
                     expiration_date = leg['expiration_date']
 
             display = f"{symbol} {expiration_date.strftime('%m/%d/%y')} @ {trade.average_net_cost:.2f}- {name}"
-            sort_key = (symbol, name)
+            sort_key = (symbol, expiration_date, name)
             
             trade_info.append((trade.trade_id, display, sort_key))
         
