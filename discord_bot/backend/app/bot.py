@@ -1108,6 +1108,52 @@ async def scrape_channel(
         logger.error(traceback.format_exc())
 
 
+@bot.slash_command(name="scrape_channel_for_images", description="Scrape all messages from a channel and save images to a directory")
+async def scrape_channel_for_images(
+    interaction: discord.Interaction,
+    channel: discord.Option(discord.TextChannel, description="The channel to scrape"),
+    directory: discord.Option(str, description="The directory to save the images")
+):
+    await log_command_usage(interaction, "scrape_channel_for_images", {
+        "channel": channel.name,
+        "directory": directory
+    })
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        os.makedirs(directory, exist_ok=True)
+        message_count = 0
+        image_count = 0
+
+        async for message in channel.history(limit=None):
+            date_time = message.created_at.strftime("%Y%m%d_%H%M%S")
+            for attachment in message.attachments:
+                if attachment.content_type.startswith('image/'):
+                    image_count += 1
+                    image_path = os.path.join(directory, f"{date_time}_{attachment.filename}")
+                    await attachment.save(image_path)
+                    print(f"Saved image {image_path}")
+
+            message_count += 1
+            if message_count % 1000 == 0:
+                await interaction.followup.send(f"Processed {message_count} messages...", ephemeral=True)
+        
+        await interaction.followup.send(f"Scraping complete. {image_count} images saved to {directory}", ephemeral=True)
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed SCRAPE_CHANNEL_FOR_IMAGES command: {image_count} images saved from {channel.name} to {directory}")
+    
+    except HTTPException as e:
+        error_message = f"Discord API error: {str(e)}"
+        await interaction.followup.send(error_message, ephemeral=True)
+        await log_to_channel(interaction.guild, f"Error in SCRAPE_CHANNEL_FOR_IMAGES command by {interaction.user.name}: {error_message}")
+    
+    except Exception as e:
+        error_message = f"An error occurred while scraping the channel: {str(e)}"
+        await interaction.followup.send(error_message, ephemeral=True)
+        await log_to_channel(interaction.guild, f"Error in SCRAPE_CHANNEL_FOR_IMAGES command by {interaction.user.name}: {error_message}")
+        logger.error(f"Error in scrape_channel_for_images: {str(e)}")
+        logger.error(traceback.format_exc())
+
+
 async def get_verification_log_channel(guild):
     db = next(get_db())
     try:
