@@ -23,6 +23,6 @@ pip install -r requirements.txt
 
 # Run the screenshotter and log output
 echo "Starting the screenshotter..."
-python screenshotter.py > screenshotter.log 2>&1 &
+python screenshotter.py > screenshotter.log
 
 echo "Screenshotter started successfully! Logs are being written to screenshotter.log."
