@@ -153,7 +153,7 @@ export async function getOptionsStrategyTradesByConfiguration(
   date?: string
 ): Promise<OptionsStrategyTrade[]> {
   const params = new URLSearchParams({
-    config_name: configName,
+    configName: configName,
     status: status,
     ...(date && { date: date }),
   });

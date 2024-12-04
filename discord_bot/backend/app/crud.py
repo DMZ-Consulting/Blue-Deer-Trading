@@ -367,8 +367,10 @@ def get_strategy_trades(
     status: Optional[models.OptionsStrategyStatusEnum] = None
 ):
     query = db.query(models.OptionsStrategyTrade)
+    print(f"Config name: {config_name}")
     if config_name:
         trade_config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == config_name).first()
+        print(f"Trade config: {trade_config}")
         if trade_config:
             query = query.filter(models.OptionsStrategyTrade.configuration_id == trade_config.id)
 

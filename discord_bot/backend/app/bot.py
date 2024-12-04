@@ -77,6 +77,8 @@ async def on_ready():
     if os.getenv("LOCAL_TEST", "false").lower() != "true":
         check_and_update_roles.start()
         check_and_exit_expired_trades.start()
+
+    await manually_expire_trades()
     
     # Check if we need to sync commands
     if last_sync_time is None or datetime.now() - last_sync_time > SYNC_COOLDOWN:
@@ -254,6 +256,14 @@ async def check_and_exit_expired_trades():
         for trade in open_trades:
             if trade.expiration_date and trade.expiration_date.date() <= today:
                 await exit_expired_trade(trade)
+
+        open_os_trades = crud.get_os_trades(db, status=models.OptionsStrategyStatusEnum.OPEN)
+        for trade in open_os_trades:
+            legs = deserialize_legs(trade.legs)
+            for leg in legs:
+                if leg['expiration_date'] and leg['expiration_date'].date() <= today:
+                    await exit_expired_os_trade(trade)
+                    break
         
     except Exception as e:
         logger.error(f"Error in check_and_exit_expired_trades: {str(e)}")
@@ -290,13 +300,22 @@ async def manually_expire_trades():
             print(f"Checking trade {trade.trade_id} with expiration date {trade.expiration_date} and today's date {today}")
             if trade.expiration_date and trade.expiration_date.date() <= today:
                 await exit_expired_trade(trade)
+
+        open_os_trades = crud.get_os_trades(db, status=models.OptionsStrategyStatusEnum.OPEN)
+        for trade in open_os_trades:
+            
+            legs = deserialize_legs(trade.legs)
+            print(f"Checking OS trade {trade.trade_id} with expiration date {legs[0]['expiration_date']} and today's date {today}")
+            for leg in legs:
+                if leg['expiration_date'] and leg['expiration_date'] <= today:
+                    await exit_expired_os_trade(trade)
+                    break
         
     except Exception as e:
         logger.error(f"Error in check_and_exit_expired_trades: {str(e)}")
         logger.error(traceback.format_exc())
     finally:
         db.close()
-
 
 # TODO: This is a mess. Need to refactor. the trade is changed to closed but not being committed for some reason.
 async def exit_expired_trade(trade: models.Trade):
@@ -352,6 +371,87 @@ async def exit_expired_trade(trade: models.Trade):
         trade.win_loss = models.WinLossEnum.LOSS
 
         logger.info(f"Exiting expired trade {trade.trade_id} with exit price {exit_price} and current size {current_size}")
+
+        db.commit()
+        db.refresh(trade)
+
+        '''
+        TODO: We are commenting this out for now. Fix this.
+
+        # Create an embed with the closed trade information
+        embed = discord.Embed(title="Trade Expired and Closed", color=discord.Color.red())
+        embed.description = create_trade_oneliner(trade)
+        embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
+        embed.add_field(name="Final Size", value=current_size, inline=True)
+        embed.add_field(name="Total Profit/Loss", value=f"${total_profit_loss:.2f}", inline=True)
+        embed.add_field(name="Result", value="Loss (Expired)", inline=True)
+        embed.set_footer(text=f"Trade ID: {trade.trade_id}")
+
+        # Send the embed to the configured channel with role ping
+        channel = bot.get_channel(int(config.channel_id))
+        role = channel.guild.get_role(int(config.role_id))
+        await channel.send(content=f"{role.mention}", embed=embed)
+        '''
+
+    except Exception as e:
+        logger.error(f"Error exiting expired trade {trade.trade_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        db.close()
+
+async def exit_expired_os_trade(trade: models.OptionsStrategyTrade):
+    db = next(get_db())
+    try:
+        trade = db.merge(trade)
+
+        config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.id == trade.configuration_id).first()
+        if not config:
+            logger.error(f"Configuration for trade {trade.trade_id} not found.")
+            return
+
+        # Set exit price to max loss
+        exit_price = 0
+
+        trade.status = models.OptionsStrategyStatusEnum.CLOSED
+        trade.exit_price = exit_price
+        trade.closed_at = datetime.now()
+        
+        current_size = Decimal(trade.current_size)
+        
+        new_transaction = models.OptionsStrategyTransaction(
+            strategy_id=trade.id,
+            transaction_type=models.TransactionTypeEnum.CLOSE,
+            net_cost=exit_price,
+            size=str(current_size),
+            created_at=datetime.now()
+        )
+        db.add(new_transaction)
+
+        """# Calculate profit/loss
+        open_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.OPEN, models.TransactionTypeEnum.ADD])
+        trim_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.TRIM])
+        
+        total_cost = sum(Decimal(t.amount) * Decimal(t.size) for t in open_transactions)
+        total_open_size = sum(Decimal(t.size) for t in open_transactions)
+        
+        average_cost = total_cost / total_open_size if total_open_size > 0 else 0
+
+        close_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.CLOSE])
+        avg_exit_price = sum(Decimal(t.amount) * Decimal(t.size) for t in close_transactions) / sum(Decimal(t.size) for t in close_transactions) if close_transactions else 0
+        trade.average_exit_price = float(avg_exit_price)
+        
+        trim_profit_loss = 0
+        if trim_transactions:
+            trim_profit_loss = sum((Decimal(t.amount) - average_cost) * Decimal(t.size) for t in trim_transactions)
+        exit_profit_loss = (Decimal(exit_price) - average_cost) * current_size
+        
+        total_profit_loss = trim_profit_loss + exit_profit_loss
+        trade.profit_loss = float(total_profit_loss)
+
+        # Determine win/loss
+        trade.win_loss = models.WinLossEnum.LOSS"""
+
+        logger.info(f"Exiting expired OS trade {trade.trade_id} with exit price {exit_price} and current size {current_size}")
 
         db.commit()
         db.refresh(trade)
