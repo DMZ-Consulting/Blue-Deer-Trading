@@ -2442,7 +2442,7 @@ async def add_os_note(interaction: discord.Interaction, trade_id: discord.Option
     
     channel = interaction.guild.get_channel(int(config.channel_id))
     embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
-    embed.description = create_trade_oneliner(trade)
+    embed.description = create_trade_oneliner_os(trade)
     embed.add_field(name="Note", value=note, inline=False)
     embed.set_footer(text=f"Posted by {interaction.user.name}")
     await channel.send(embed=embed)
