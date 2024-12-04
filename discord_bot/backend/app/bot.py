@@ -2430,7 +2430,7 @@ async def add_note(interaction: discord.Interaction, trade_id: discord.Option(st
 async def add_os_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)), note: discord.Option(str, description="The note to add")):
     await kill_interaction(interaction)
     db = next(get_db())
-    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
+    trade = db.query(models.OptionsStrategyTrade).filter(models.OptionsStrategyTrade.trade_id == trade_id).first()
     if not trade:
         await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
         return
