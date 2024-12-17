@@ -166,3 +166,23 @@ export async function getOptionsStrategyTradesByConfiguration(
     throw new Error('Failed to fetch options strategy trades');
   }
 }
+
+export interface MonthlyPL {
+  month: string;
+  profit_loss: number;
+}
+
+export async function getMonthlyPL(configName: string): Promise<MonthlyPL[]> {
+  const queryParams = new URLSearchParams();
+  if (configName) {
+    queryParams.append('configName', configName);
+  }
+
+  try {
+    const response = await api.get(`/portfolio/monthly-pl?${queryParams.toString()}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching monthly P/L:', error);
+    throw error;
+  }
+}

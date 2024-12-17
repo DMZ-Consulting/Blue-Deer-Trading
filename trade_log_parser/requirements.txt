@@ -1,0 +1,6 @@
+pandas
+pillow
+pytesseract
+opencv-python
+anthropic
+openai

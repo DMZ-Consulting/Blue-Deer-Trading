@@ -781,3 +781,11 @@ def get_strategy_trade_transactions(db: Session, strategy_id: str):
         .filter(models.OptionsStrategyTransaction.strategy_id == strategy_id)\
         .order_by(models.OptionsStrategyTransaction.created_at.desc())\
         .all()
+
+def get_strategy_transactions(db: Session, strategy_id: int):
+    """
+    Get all transactions for a given options strategy.
+    """
+    return db.query(models.OptionsStrategyTransaction).filter(
+        models.OptionsStrategyTransaction.strategy_id == strategy_id
+    ).order_by(models.OptionsStrategyTransaction.created_at.asc()).all()

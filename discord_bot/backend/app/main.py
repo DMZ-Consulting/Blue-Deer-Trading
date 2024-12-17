@@ -54,10 +54,11 @@ app = FastAPI(lifespan=lifespan)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Add your frontend URL
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Add both localhost variations
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 def get_db():
@@ -335,3 +336,86 @@ def exit_options_strategy(strategy_id: str, action_input: crud.StrategyTradeActi
 @app.post("/trades/{trade_id}/delete")
 def delete_trade(trade_id: str, db: Session = Depends(get_db)):
     return crud.delete_trade(db, trade_id)
+
+@app.get("/portfolio/monthly-pl")
+def read_monthly_pl(
+    configName: Optional[str] = Query(None, description="Filter trades by configuration name"),
+    db: Session = Depends(get_db)
+):
+    try:
+        # Get trades for the configuration
+        trade_query = db.query(models.Trade)
+        strategy_query = db.query(models.OptionsStrategyTrade)
+        
+        if configName:
+            trade_config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == configName).first()
+            if trade_config:
+                trade_query = trade_query.filter(models.Trade.configuration_id == trade_config.id)
+                strategy_query = strategy_query.filter(models.OptionsStrategyTrade.configuration_id == trade_config.id)
+
+        trades = trade_query.all()
+        strategies = strategy_query.all()
+        
+        # Initialize monthly P/L dictionary
+        monthly_pl = {}
+        
+        # Process regular trade transactions
+        for trade in trades:
+            # Get all TRIM and CLOSE transactions
+            transactions = crud.get_transactions_for_trade(
+                db, 
+                trade.trade_id, 
+                [models.TransactionTypeEnum.CLOSE, models.TransactionTypeEnum.TRIM]
+            )
+            
+            for transaction in transactions:
+                # Calculate P/L for this transaction
+                pl = 0
+                size = float(transaction.size)
+                
+                if trade.trade_type in ["STO", "Sell to Open"]:
+                    # For short trades, profit is reversed
+                    pl = (float(trade.average_price) - float(transaction.amount)) * size
+                else:
+                    # For long trades
+                    pl = (float(transaction.amount) - float(trade.average_price)) * size
+                
+                # Apply contract multiplier
+                if trade.symbol == "ES":
+                    pl *= 50  # ES futures contract multiplier
+                else:
+                    pl *= 100  # Standard options contract multiplier
+                
+                # Add to monthly P/L
+                month_key = transaction.created_at.strftime("%Y-%m")
+                if month_key not in monthly_pl:
+                    monthly_pl[month_key] = 0
+                monthly_pl[month_key] += pl
+        
+        # Process strategy trade transactions
+        for strategy in strategies:
+            # Get all transactions for the strategy
+            transactions = crud.get_strategy_transactions(db, strategy.id)
+            
+            for transaction in transactions:
+                if transaction.transaction_type in [models.TransactionTypeEnum.CLOSE, models.TransactionTypeEnum.TRIM]:
+                    # Calculate P/L for this transaction
+                    size = float(transaction.size)
+                    pl = (float(transaction.net_cost) - float(strategy.average_net_cost)) * size * 100  # Standard options multiplier
+                    
+                    # Add to monthly P/L
+                    month_key = transaction.created_at.strftime("%Y-%m")
+                    if month_key not in monthly_pl:
+                        monthly_pl[month_key] = 0
+                    monthly_pl[month_key] += pl
+        
+        # Convert to list of objects and sort by month
+        result = [
+            {"month": month, "profit_loss": pl}
+            for month, pl in monthly_pl.items()
+        ]
+        result.sort(key=lambda x: x["month"], reverse=True)
+        
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

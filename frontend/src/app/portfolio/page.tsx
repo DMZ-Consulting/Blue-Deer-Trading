@@ -146,7 +146,7 @@ export default function PortfolioPage() {
         </div>
         {isReportsVisible && (
           <div className="lg:w-1/3">
-            <ReportAreaComponent portfolio={portfolio} />
+            <ReportAreaComponent portfolio={portfolio} configName={configName} />
           </div>
         )}
       </div>
