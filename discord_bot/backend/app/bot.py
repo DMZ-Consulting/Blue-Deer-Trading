@@ -757,7 +757,7 @@ def create_transaction_oneliner(trade, type, size, price):
         strike = f"{trade.strike:.2f}"
         return f"### {type} {expiration} {trade.symbol} {strike} {option_type} @ {price:.2f} {size} {risk_identifier}"
     else:
-        return f"### {type} {trade.symbol} @ {trade.entry_price:.2f} {size} {risk_identifier}"
+        return f"### {type} {trade.symbol} @ {price:.2f} {size} {risk_identifier}"
     
 def serialize_legs(legs):
     """Serialize the legs data for storage in the database."""
