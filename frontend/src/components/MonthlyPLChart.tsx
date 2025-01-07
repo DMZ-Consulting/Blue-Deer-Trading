@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getMonthlyPL } from '../../lib/portfolio'
+import { getMonthlyPL } from '@/api/api'
 import {
   BarChart,
   Bar,
@@ -8,6 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Cell,
 } from 'recharts'
 
 interface MonthlyPL {
@@ -62,12 +63,14 @@ export default function MonthlyPLChart({ configName }: MonthlyPLChartProps) {
           <Tooltip
             formatter={(value: number) => [`$${value.toFixed(2)}`, 'P/L']}
           />
-          <Bar
-            dataKey="profit_loss"
-            fill={(data: MonthlyPL) =>
-              data.profit_loss >= 0 ? '#34D399' : '#EF4444'
-            }
-          />
+          <Bar dataKey="profit_loss">
+            {monthlyPL.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.profit_loss >= 0 ? '#34D399' : '#EF4444'}
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

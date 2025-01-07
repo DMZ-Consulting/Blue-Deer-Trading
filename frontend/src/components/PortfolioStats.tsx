@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { calculatePortfolioStats } from '../../lib/portfolio'
+import { api } from '@/api/api'
 
 interface PortfolioStats {
   totalTrades: number
@@ -27,7 +27,12 @@ export default function PortfolioStats({ configName, status, weekFilter, optionT
     const fetchStats = async () => {
       try {
         setLoading(true)
-        const data = await calculatePortfolioStats(configName, status, weekFilter, optionType)
+        const data = await api.portfolio.getStats({
+          configName,
+          status,
+          weekFilter,
+          optionType
+        })
         setStats(data)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch portfolio stats')

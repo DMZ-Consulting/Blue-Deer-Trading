@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Database } from '../../lib/database.types'
+import { OptionsStrategyTrade as UtilsOptionsStrategyTrade } from '@/utils/types'
 
 const supabase = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,7 +11,7 @@ type Trade = Database['public']['Tables']['trades']['Row'] & {
   trade_configurations: Database['public']['Tables']['trade_configurations']['Row'] | null
 }
 
-type OptionsStrategyTrade = Database['public']['Tables']['options_strategy_trades']['Row'] & {
+type DatabaseOptionsStrategyTrade = Database['public']['Tables']['options_strategy_trades']['Row'] & {
   trade_configurations: Database['public']['Tables']['trade_configurations']['Row'] | null
 }
 
@@ -38,7 +39,7 @@ interface TradeFilters {
 interface StrategyFilters {
   skip?: number
   limit?: number
-  status?: string
+  status?: 'OPEN' | 'CLOSED'
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
   configName?: string
@@ -52,6 +53,58 @@ interface PortfolioFilters {
   sortOrder?: 'asc' | 'desc'
   configName?: string
   weekFilter?: string
+}
+
+export interface MonthlyPL {
+  month: string
+  profit_loss: number
+}
+
+interface PortfolioStats {
+  totalTrades: number
+  winRate: number
+  averageWin: number
+  averageLoss: number
+  profitFactor: number
+  totalProfitLoss: number
+  averageRiskRewardRatio: number
+}
+
+interface PortfolioStatsFilters {
+  configName: string
+  status: string
+  weekFilter?: string
+  optionType?: string
+}
+
+// Helper functions
+export const getTradesByConfiguration = async (filters: TradeFilters): Promise<Trade[]> => {
+  return api.trades.getByFilters(filters)
+}
+
+export const getOptionsStrategyTradesByConfiguration = async (filters: StrategyFilters): Promise<UtilsOptionsStrategyTrade[]> => {
+  const data = await api.optionsStrategyTrades.getByFilters(filters)
+  return data.map(trade => ({
+    trade_id: trade.id.toString(),
+    name: trade.name,
+    underlying_symbol: trade.underlying_symbol,
+    status: trade.status as 'OPEN' | 'CLOSED',
+    net_cost: trade.net_cost,
+    average_net_cost: trade.average_net_cost,
+    size: trade.size,
+    current_size: trade.current_size,
+    created_at: trade.created_at,
+    closed_at: trade.closed_at || undefined,
+    legs: trade.legs
+  }))
+}
+
+export const getPortfolio = async (filters: PortfolioFilters) => {
+  return api.portfolio.getTrades(filters)
+}
+
+export const getMonthlyPL = async (configName: string) => {
+  return api.portfolio.getMonthlyPL(configName)
 }
 
 export const api = {
@@ -117,7 +170,7 @@ export const api = {
   },
 
   optionsStrategyTrades: {
-    getAll: async (): Promise<OptionsStrategyTrade[]> => {
+    getAll: async (): Promise<DatabaseOptionsStrategyTrade[]> => {
       const { data, error } = await supabase.functions.invoke('options-strategies', {
         body: { action: 'getAll' }
       })
@@ -125,7 +178,7 @@ export const api = {
       return data
     },
 
-    getByFilters: async (filters: StrategyFilters): Promise<OptionsStrategyTrade[]> => {
+    getByFilters: async (filters: StrategyFilters): Promise<DatabaseOptionsStrategyTrade[]> => {
       const { data, error } = await supabase.functions.invoke('options-strategies', {
         body: { action: 'getStrategyTrades', filters }
       })
@@ -141,7 +194,7 @@ export const api = {
       size: string
       trade_group?: string
       configuration_id?: number
-    }): Promise<OptionsStrategyTrade> => {
+    }): Promise<DatabaseOptionsStrategyTrade> => {
       const { data, error } = await supabase.functions.invoke('options-strategies', {
         body: { action: 'createOptionsStrategy', input }
       })
@@ -149,7 +202,7 @@ export const api = {
       return data
     },
 
-    addToStrategy: async (strategy_id: number, net_cost: number, size: string): Promise<OptionsStrategyTrade> => {
+    addToStrategy: async (strategy_id: number, net_cost: number, size: string): Promise<DatabaseOptionsStrategyTrade> => {
       const { data, error } = await supabase.functions.invoke('options-strategies', {
         body: { action: 'addToStrategy', strategy_id, net_cost, size }
       })
@@ -157,7 +210,7 @@ export const api = {
       return data
     },
 
-    trimStrategy: async (strategy_id: number, net_cost: number, size: string): Promise<OptionsStrategyTrade> => {
+    trimStrategy: async (strategy_id: number, net_cost: number, size: string): Promise<DatabaseOptionsStrategyTrade> => {
       const { data, error } = await supabase.functions.invoke('options-strategies', {
         body: { action: 'trimStrategy', strategy_id, net_cost, size }
       })
@@ -165,7 +218,7 @@ export const api = {
       return data
     },
 
-    exitStrategy: async (strategy_id: number, net_cost: number): Promise<OptionsStrategyTrade> => {
+    exitStrategy: async (strategy_id: number, net_cost: number): Promise<DatabaseOptionsStrategyTrade> => {
       const { data, error } = await supabase.functions.invoke('options-strategies', {
         body: { action: 'exitStrategy', strategy_id, net_cost }
       })
@@ -186,6 +239,14 @@ export const api = {
     getMonthlyPL: async (configName?: string) => {
       const { data, error } = await supabase.functions.invoke('portfolio', {
         body: { action: 'getMonthlyPL', configName }
+      })
+      if (error) throw error
+      return data
+    },
+
+    getStats: async (filters: PortfolioStatsFilters): Promise<PortfolioStats> => {
+      const { data, error } = await supabase.functions.invoke('portfolio', {
+        body: { action: 'getStats', filters }
       })
       if (error) throw error
       return data

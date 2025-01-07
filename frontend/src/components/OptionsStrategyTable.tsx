@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { OptionsStrategyTrade } from '../utils/types'
+import { OptionsStrategyTrade } from '@/utils/types'
 import { ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react'
-import { getOptionsStrategyTradesByConfiguration } from '../api/api'
+import { getOptionsStrategyTradesByConfiguration } from '@/api/api'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 
 interface OptionsStrategyTableProps {
   configName: string
-  statusFilter: string
+  statusFilter: 'OPEN' | 'CLOSED'
   dateFilter: string
 }
 
@@ -39,11 +39,11 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
     const fetchTrades = async () => {
       setLoading(true)
       try {
-        const fetchedTrades = await getOptionsStrategyTradesByConfiguration(
+        const fetchedTrades = await getOptionsStrategyTradesByConfiguration({
           configName,
-          statusFilter,
-          dateFilter
-        )
+          status: statusFilter,
+          weekFilter: dateFilter
+        })
         setTrades(fetchedTrades)
       } catch (error) {
         console.error('Error fetching trades:', error)
@@ -101,11 +101,11 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
     </Button>
   )
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'open':
+  const getStatusColor = (status: 'OPEN' | 'CLOSED') => {
+    switch (status) {
+      case 'OPEN':
         return 'bg-green-200 text-green-800';
-      case 'closed':
+      case 'CLOSED':
         return 'bg-red-200 text-red-800';
       default:
         return 'bg-gray-200 text-gray-800';
@@ -208,7 +208,7 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
                   <SortButton field="created_at" label="Date" />
                 </div>
               </TableHead>
-              {statusFilter === 'closed' && (
+              {statusFilter === 'CLOSED' && (
                 <TableHead><SortButton field="closed_at" label="Closed Date" /></TableHead>
               )}
             </TableRow>
@@ -240,7 +240,7 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
                 <TableCell className="text-center">${trade.average_net_cost.toFixed(2)}</TableCell>
                 <TableCell className="text-center">{trade.current_size}</TableCell>
                 <TableCell className="text-center">{new Date(trade.created_at).toLocaleDateString()}</TableCell>
-                {statusFilter === 'closed' && trade.closed_at && (
+                {statusFilter === 'CLOSED' && trade.closed_at && (
                   <TableCell className="text-center">{new Date(trade.closed_at).toLocaleDateString()}</TableCell>
                 )}
               </TableRow>

@@ -12,7 +12,32 @@ interface StrategyFilters {
   weekFilter?: string
 }
 
-serve(async (req) => {
+interface RequestPayload {
+  action: string
+  filters?: StrategyFilters
+  input?: {
+    name: string
+    underlying_symbol: string
+    legs: string
+    net_cost: number
+    size: string
+    trade_group?: string
+    configuration_id?: number
+  }
+  strategy_id?: string
+  net_cost?: number
+  size?: string
+}
+
+declare global {
+  const Deno: {
+    env: {
+      get(key: string): string | undefined
+    }
+  }
+}
+
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }

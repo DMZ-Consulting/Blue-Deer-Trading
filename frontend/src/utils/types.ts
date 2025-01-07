@@ -6,19 +6,23 @@ export interface Trade {
   trade_type: string
   status: string
   entry_price: number
-  average_price: number
-  current_size: number
+  average_price: number | null
+  current_size: string | null
+  size: string
   is_contract: boolean
   created_at: string
-  closed_at?: string
-  exit_price?: number
-  profit_loss?: number
-  risk_reward_ratio?: number
-  win_loss?: string
+  closed_at: string | null
+  exit_price: number | null
+  profit_loss: number | null
+  risk_reward_ratio: number | null
+  win_loss: string | null
   transactions?: Transaction[]
-  expiration_date?: string
-  option_type?: string
-  strike?: number
+  expiration_date: string | null
+  option_type: string | null
+  strike: number | null
+  trade_configurations?: {
+    name: string
+  } | null
 }
 
 export interface StrategyTransaction {
