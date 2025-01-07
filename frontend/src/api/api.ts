@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { Database } from '../../lib/database.types'
+import { Database } from '@/lib/database.types'
 import { OptionsStrategyTrade as UtilsOptionsStrategyTrade } from '@/utils/types'
 
 const supabase = createClient<Database>(
