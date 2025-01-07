@@ -15,12 +15,11 @@ import {
 } from "@/components/ui/select"
 
 type TradeViewType = 'regular' | 'options' | 'strategy'
-type StatusType = 'OPEN' | 'CLOSED'
 
 export default function Home() {
   const [tradeView, setTradeView] = useState<TradeViewType>('regular')
   const [configName, setConfigName] = useState('swing_trader')
-  const [statusFilter, setStatusFilter] = useState<StatusType>('OPEN')
+  const [statusFilter, setStatusFilter] = useState<'OPEN' | 'CLOSED'>('OPEN')
   const [dateFilter, setDateFilter] = useState(() => {
     const now = new Date()
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString().split('T')[0]
@@ -62,7 +61,7 @@ export default function Home() {
             </SelectContent>
           </Select>
 
-          <Select value={statusFilter} onValueChange={(value: StatusType) => setStatusFilter(value)}>
+          <Select value={statusFilter} onValueChange={(value: 'OPEN' | 'CLOSED') => setStatusFilter(value)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
@@ -85,7 +84,7 @@ export default function Home() {
         <TradesTableComponent 
           configName={configName}
           filterOptions={{
-            status: statusFilter.toLowerCase(),
+            status: statusFilter,
             startDate: dateFilter,
             optionType: 'common'
           }}
@@ -96,7 +95,7 @@ export default function Home() {
         <TradesTableComponent 
           configName={configName}
           filterOptions={{
-            status: statusFilter.toLowerCase(),
+            status: statusFilter,
             startDate: dateFilter,
             optionType: 'options'
           }}

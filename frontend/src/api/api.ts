@@ -22,6 +22,7 @@ type OptionsStrategyTransaction = Database['public']['Tables']['options_strategy
 type TradeConfiguration = Database['public']['Tables']['trade_configurations']['Row']
 
 interface TradeFilters {
+  configName: string
   skip?: number
   limit?: number
   status?: string
@@ -29,13 +30,14 @@ interface TradeFilters {
   tradeType?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
-  configName?: string
   weekFilter?: string
   monthFilter?: string
   yearFilter?: string
   optionType?: string
   maxEntryPrice?: number
   minEntryPrice?: number
+  tradeGroup?: string
+  showAllTrades?: boolean
 }
 
 interface StrategyFilters {

@@ -59,8 +59,11 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         status: filterOptions.status,
         weekFilter: filterOptions.startDate,
         optionType: filterOptions.optionType,
-        sortBy: sortField,
-        sortOrder
+        symbol: filterOptions.symbol,
+        tradeGroup: filterOptions.tradeGroup,
+        minEntryPrice: filterOptions.minEntryPrice,
+        maxEntryPrice: filterOptions.maxEntryPrice,
+        showAllTrades
       })
       setTrades(fetchedTrades)
     } catch (error) {
@@ -68,7 +71,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
     } finally {
       setLoading(false)
     }
-  }, [configName, filterOptions, showAllTrades, sortField, sortOrder])
+  }, [configName, filterOptions, showAllTrades])
 
   useEffect(() => {
     fetchTrades()
@@ -293,9 +296,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                           {trade.status}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center">
-                        {trade.average_price !== null ? `$${trade.average_price.toFixed(2)}` : 'N/A'}
-                      </TableCell>
+                      <TableCell className="text-center whitespace-nowrap">${trade.average_price?.toFixed(2) ?? 'N/A'}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{trade.expiration_date ? formatDateTime(trade.expiration_date) : ''}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>

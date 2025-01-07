@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { OptionsStrategyTrade } from '@/utils/types'
+import { OptionsStrategyTrade } from '../utils/types'
 import { ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react'
-import { getOptionsStrategyTradesByConfiguration } from '@/api/api'
+import { getOptionsStrategyTradesByConfiguration } from '../api/api'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -14,7 +14,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 interface OptionsStrategyTableProps {
   configName: string
   statusFilter: 'OPEN' | 'CLOSED'
-  dateFilter: string
+  dateFilter?: string
 }
 
 type SortField = keyof OptionsStrategyTrade
@@ -101,11 +101,11 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
     </Button>
   )
 
-  const getStatusColor = (status: 'OPEN' | 'CLOSED') => {
-    switch (status) {
-      case 'OPEN':
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'open':
         return 'bg-green-200 text-green-800';
-      case 'CLOSED':
+      case 'closed':
         return 'bg-red-200 text-red-800';
       default:
         return 'bg-gray-200 text-gray-800';

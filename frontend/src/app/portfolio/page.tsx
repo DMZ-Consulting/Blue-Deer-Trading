@@ -38,12 +38,14 @@ export default function PortfolioPage() {
   useEffect(() => {
     const fetchPortfolio = async () => {
       setLoading(true)
-      const filters = {
+      const filterOptions = {
         weekFilter: dateFilter,
-        configName
       }
       try {
-        const fetchedPortfolio = await getPortfolio(filters)
+        const fetchedPortfolio = await getPortfolio({
+          configName,
+          ...filterOptions
+        })
         setPortfolio(fetchedPortfolio)
       } catch (error) {
         console.error('Error fetching portfolio:', error)
