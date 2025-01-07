@@ -256,6 +256,9 @@ def get_portfolio_trades_relevant_to_week(
     #trades = [trade for trade in trades if trade.status == models.TradeStatusEnum.CLOSED]
     # Process regular trades
     for trade in trades:
+        # Only show the trades from the current year
+        if trade.closed_at.year != datetime.now().year:
+            continue
 
         if trade.trade_id == "NitcL6G8":
             print(trade)
