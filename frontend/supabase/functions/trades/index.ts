@@ -2,35 +2,91 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
+interface Transaction {
+  transaction_type: 'OPEN' | 'ADD' | 'TRIM' | 'CLOSE'
+  amount: number
+  size: string
+  net_cost?: number
+}
+
+interface ExitTrade {
+  transactions: Transaction[]
+  current_size: string
+}
+
+interface Trade {
+  trade_id: string
+  symbol: string
+  trade_type: string
+  status: string
+  entry_price: number
+  average_price: number
+  size: string
+  current_size: string
+  created_at: string
+  closed_at?: string
+  is_contract: boolean
+  strike?: number
+  option_type?: string
+  expiration_date?: string
+  average_exit_price?: number
+  profit_loss?: number
+  trade_configurations?: {
+    name: string
+  }
+  transactions: Transaction[]
+}
+
 interface TradeFilters {
-  skip?: number
-  limit?: number
-  status?: string
+  status?: 'OPEN' | 'CLOSED'
+  configName?: string
   symbol?: string
   tradeType?: string
-  sortBy?: string
-  sortOrder?: 'asc' | 'desc'
-  configName?: string
-  weekFilter?: string
-  monthFilter?: string
-  yearFilter?: string
   optionType?: string
   maxEntryPrice?: number
   minEntryPrice?: number
+  weekFilter?: string
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  skip?: number
+  limit?: number
 }
 
-serve(async (req) => {
+interface TradeInput {
+  symbol: string
+  trade_type: string
+  entry_price: number
+  size: string
+  expiration_date?: string
+  strike?: number
+  configuration_id?: number
+  is_contract?: boolean
+  is_day_trade?: boolean
+  option_type?: string
+}
+
+interface RequestPayload {
+  action: string
+  filters?: TradeFilters
+  input?: TradeInput
+  trade_id?: string
+  price?: number
+  size?: string
+}
+
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     const supabase = createClient(
-      Deno.env.get('DB_URL') ?? '',
-      Deno.env.get('SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { action, filters, input, trade_id, price, size } = await req.json()
+    const payload = await req.json() as RequestPayload
+    const { action, filters, input, trade_id, price, size } = payload
 
     let data
 
@@ -264,32 +320,33 @@ serve(async (req) => {
         if (exitTransactionError) throw exitTransactionError
 
         // Calculate profit/loss
-        const openTransactions = exitTrade.transactions.filter(t => 
+        const exitTrade = exitTrade as ExitTrade
+        const openTransactions = exitTrade.transactions.filter((t: Transaction) => 
           t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
         )
-        const trimTransactions = exitTrade.transactions.filter(t => 
+        const trimTransactions = exitTrade.transactions.filter((t: Transaction) => 
           t.transaction_type === 'TRIM'
         )
 
-        const totalCost = openTransactions.reduce((sum, t) => 
-          sum + (parseFloat(t.amount) * parseFloat(t.size)), 0
+        const totalCost = openTransactions.reduce((sum: number, t: Transaction) => 
+          sum + (parseFloat(t.amount.toString()) * parseFloat(t.size)), 0
         )
-        const totalOpenSize = openTransactions.reduce((sum, t) => 
+        const totalOpenSize = openTransactions.reduce((sum: number, t: Transaction) => 
           sum + parseFloat(t.size), 0
         )
         const averageCost = totalCost / totalOpenSize
 
-        const trimProfitLoss = trimTransactions.reduce((sum, t) => 
-          sum + ((parseFloat(t.amount) - averageCost) * parseFloat(t.size)), 0
+        const trimProfitLoss = trimTransactions.reduce((sum: number, t: Transaction) => 
+          sum + ((parseFloat(t.amount.toString()) - averageCost) * parseFloat(t.size)), 0
         )
         const exitProfitLoss = (price - averageCost) * parseFloat(exitTrade.current_size)
         const totalProfitLoss = trimProfitLoss + exitProfitLoss
 
         // Calculate average exit price
-        const totalExitValue = trimTransactions.reduce((sum, t) => 
-          sum + (parseFloat(t.amount) * parseFloat(t.size)), 0
+        const totalExitValue = trimTransactions.reduce((sum: number, t: Transaction) => 
+          sum + (parseFloat(t.amount.toString()) * parseFloat(t.size)), 0
         ) + (price * parseFloat(exitTrade.current_size))
-        const totalExitSize = trimTransactions.reduce((sum, t) => 
+        const totalExitSize = trimTransactions.reduce((sum: number, t: Transaction) => 
           sum + parseFloat(t.size), 0
         ) + parseFloat(exitTrade.current_size)
         const averageExitPrice = totalExitValue / totalExitSize
@@ -322,8 +379,9 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'An unknown error occurred'
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
     )
   }

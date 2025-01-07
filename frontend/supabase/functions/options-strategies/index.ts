@@ -2,28 +2,59 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
+interface Transaction {
+  transaction_type: 'OPEN' | 'ADD' | 'TRIM' | 'CLOSE'
+  amount: number
+  size: string
+  net_cost?: number
+}
+
+interface Strategy {
+  id: number
+  name: string
+  underlying_symbol: string
+  status: string
+  net_cost: number
+  average_net_cost: number
+  size: string
+  current_size: string
+  created_at: string
+  closed_at?: string
+  profit_loss?: number
+  trade_configurations?: {
+    name: string
+  }
+  options_strategy_transactions: Transaction[]
+}
+
 interface StrategyFilters {
-  skip?: number
-  limit?: number
-  status?: string
+  status?: 'OPEN' | 'CLOSED'
+  configName?: string
+  symbol?: string
+  strategyType?: string
+  maxEntryPrice?: number
+  minEntryPrice?: number
+  weekFilter?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
-  configName?: string
-  weekFilter?: string
+  skip?: number
+  limit?: number
+}
+
+interface StrategyInput {
+  name: string
+  underlying_symbol: string
+  legs: string
+  net_cost: number
+  size: string
+  trade_group?: string
+  configuration_id?: number
 }
 
 interface RequestPayload {
   action: string
   filters?: StrategyFilters
-  input?: {
-    name: string
-    underlying_symbol: string
-    legs: string
-    net_cost: number
-    size: string
-    trade_group?: string
-    configuration_id?: number
-  }
+  input?: StrategyInput
   strategy_id?: string
   net_cost?: number
   size?: string
@@ -44,11 +75,12 @@ serve(async (req: Request) => {
 
   try {
     const supabase = createClient(
-      Deno.env.get('DB_URL') ?? '',
-      Deno.env.get('SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { action, filters, input, strategy_id, net_cost, size } = await req.json()
+    const payload = await req.json() as RequestPayload
+    const { action, filters, input, strategy_id, net_cost, size } = payload
 
     let data
 
@@ -311,9 +343,10 @@ serve(async (req: Request) => {
       JSON.stringify(data),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'An unknown error occurred'
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
     )
   }
