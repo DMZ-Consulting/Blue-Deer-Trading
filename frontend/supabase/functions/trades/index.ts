@@ -150,8 +150,8 @@ serve(async (req: Request) => {
           }
 
           if (filters.symbol) {
-            console.log('Applying symbol filter:', filters.symbol)
-            query = query.eq('symbol', filters.symbol)
+            console.log('Applying symbol filter:', filters.symbol.toUpperCase())
+            query = query.ilike('symbol', `%${filters.symbol.toUpperCase()}%`)
           }
 
           if (filters.tradeType) {

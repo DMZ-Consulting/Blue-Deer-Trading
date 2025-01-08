@@ -35,6 +35,7 @@ interface StrategyFilters {
   sortOrder?: 'asc' | 'desc'
   configName?: string
   weekFilter?: string
+  symbol?: string
 }
 
 interface StrategyInput {
@@ -134,6 +135,11 @@ serve(async (req: Request) => {
               console.warn('No configuration found for name:', filters.configName)
               return []
             }
+          }
+
+          if (filters.symbol) {
+            console.log('Applying symbol filter:', filters.symbol.toUpperCase())
+            query = query.ilike('underlying_symbol', `%${filters.symbol.toUpperCase()}%`)
           }
 
           // Handle date filters
