@@ -4,7 +4,7 @@ export interface Trade {
   trade_id: string
   symbol: string
   trade_type: string
-  status: string
+  status: 'open' | 'closed'
   entry_price: number
   average_price: number | null
   current_size: string | null
@@ -90,7 +90,7 @@ export interface OptionsStrategyTrade {
   trade_id: string;
   name: string;
   underlying_symbol: string;
-  status: 'OPEN' | 'CLOSED';
+  status: 'open' | 'closed';
   net_cost: number;
   average_net_cost: number;
   size: string;

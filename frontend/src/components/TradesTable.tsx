@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import 'react-datepicker/dist/react-datepicker.css'
 
 interface FilterOptions {
-  status: string;
+  status: 'open' | 'closed';
   startDate: string;
   optionType?: string;
   symbol?: string;

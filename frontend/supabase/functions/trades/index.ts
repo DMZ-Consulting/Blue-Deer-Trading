@@ -38,7 +38,7 @@ interface Trade {
 }
 
 interface TradeFilters {
-  status?: 'OPEN' | 'CLOSED'
+  status?: 'open' | 'closed'
   configName?: string
   symbol?: string
   tradeType?: string
@@ -112,9 +112,17 @@ serve(async (req: Request) => {
           `)
 
         if (filters) {
+          console.log('Applying filters:', filters)
+          
           if (filters.status) {
-            query = query.eq('status', filters.status)
+            // Ensure lowercase status comparison
+            query = query.eq('status', filters.status.toLowerCase())
           }
+          
+          if (filters.configName && filters.configName !== 'all') {
+            query = query.eq('trade_configurations.name', filters.configName)
+          }
+
           if (filters.symbol) {
             query = query.eq('symbol', filters.symbol)
           }
@@ -134,7 +142,7 @@ serve(async (req: Request) => {
           }
 
           // Handle date filters
-          if (filters.weekFilter && filters.status === 'CLOSED') {
+          if (filters.weekFilter && filters.status === 'closed') {
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
             const friday = new Date(day.setDate(day.getDate() + 4))
@@ -169,7 +177,7 @@ serve(async (req: Request) => {
             trade_id: generateTradeId(),
             symbol: input.symbol,
             trade_type: input.trade_type,
-            status: 'OPEN',
+            status: 'open',
             entry_price: input.entry_price,
             average_price: input.entry_price,
             size: input.size,
@@ -295,7 +303,7 @@ serve(async (req: Request) => {
       case 'exitTrade':
         if (!trade_id || !price) throw new Error('trade_id and price are required')
         // Get current trade and all its transactions
-        const { data: exitTrade, error: exitTradeError } = await supabase
+        const { data: exitTradeData, error: exitTradeError } = await supabase
           .from('trades')
           .select(`
             *,
@@ -313,18 +321,18 @@ serve(async (req: Request) => {
             trade_id,
             transaction_type: 'CLOSE',
             amount: price,
-            size: exitTrade.current_size,
+            size: exitTradeData.current_size,
             created_at: new Date().toISOString()
           })
 
         if (exitTransactionError) throw exitTransactionError
 
         // Calculate profit/loss
-        const exitTrade = exitTrade as ExitTrade
-        const openTransactions = exitTrade.transactions.filter((t: Transaction) => 
+        const exitTradeWithTransactions = exitTradeData as ExitTrade
+        const openTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
           t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
         )
-        const trimTransactions = exitTrade.transactions.filter((t: Transaction) => 
+        const trimTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
           t.transaction_type === 'TRIM'
         )
 
@@ -339,23 +347,23 @@ serve(async (req: Request) => {
         const trimProfitLoss = trimTransactions.reduce((sum: number, t: Transaction) => 
           sum + ((parseFloat(t.amount.toString()) - averageCost) * parseFloat(t.size)), 0
         )
-        const exitProfitLoss = (price - averageCost) * parseFloat(exitTrade.current_size)
+        const exitProfitLoss = (price - averageCost) * parseFloat(exitTradeData.current_size)
         const totalProfitLoss = trimProfitLoss + exitProfitLoss
 
         // Calculate average exit price
         const totalExitValue = trimTransactions.reduce((sum: number, t: Transaction) => 
           sum + (parseFloat(t.amount.toString()) * parseFloat(t.size)), 0
-        ) + (price * parseFloat(exitTrade.current_size))
+        ) + (price * parseFloat(exitTradeData.current_size))
         const totalExitSize = trimTransactions.reduce((sum: number, t: Transaction) => 
           sum + parseFloat(t.size), 0
-        ) + parseFloat(exitTrade.current_size)
+        ) + parseFloat(exitTradeData.current_size)
         const averageExitPrice = totalExitValue / totalExitSize
 
         // Update trade
         const { data: closedTrade, error: closeUpdateError } = await supabase
           .from('trades')
           .update({
-            status: 'CLOSED',
+            status: 'closed',
             exit_price: price,
             average_exit_price: averageExitPrice,
             profit_loss: totalProfitLoss,
