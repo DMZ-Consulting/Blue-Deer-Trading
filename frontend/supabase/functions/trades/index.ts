@@ -38,18 +38,21 @@ interface Trade {
 }
 
 interface TradeFilters {
-  status?: 'open' | 'closed'
-  configName?: string
+  configName: string
+  status?: 'OPEN' | 'CLOSED'
+  skip?: number
+  limit?: number
   symbol?: string
   tradeType?: string
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  weekFilter?: string
+  monthFilter?: string
+  yearFilter?: string
   optionType?: string
   maxEntryPrice?: number
   minEntryPrice?: number
-  weekFilter?: string
-  sortBy?: string
-  sortOrder?: 'asc' | 'desc'
-  skip?: number
-  limit?: number
+  showAllTrades?: boolean
 }
 
 interface TradeInput {
@@ -142,7 +145,7 @@ serve(async (req: Request) => {
           }
 
           // Handle date filters
-          if (filters.weekFilter && filters.status === 'closed') {
+          if (filters.weekFilter && filters.status === 'CLOSED') {
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
             const friday = new Date(day.setDate(day.getDate() + 4))

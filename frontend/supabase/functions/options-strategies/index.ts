@@ -28,17 +28,13 @@ interface Strategy {
 }
 
 interface StrategyFilters {
-  configName: string
-  status?: 'open' | 'closed'
-  symbol?: string
-  strategyType?: string
-  maxEntryPrice?: number
-  minEntryPrice?: number
-  weekFilter?: string
-  sortBy?: string
-  sortOrder?: 'asc' | 'desc'
   skip?: number
   limit?: number
+  status?: 'OPEN' | 'CLOSED'
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  configName?: string
+  weekFilter?: string
 }
 
 interface StrategyInput {
@@ -115,7 +111,7 @@ serve(async (req: Request) => {
           }
 
           // Handle date filters
-          if (filters.weekFilter && filters.status === 'closed') {
+          if (filters.weekFilter && filters.status === 'CLOSED') {
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
             const friday = new Date(day.setDate(day.getDate() + 4))

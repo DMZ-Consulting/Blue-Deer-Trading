@@ -13,11 +13,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import 'react-datepicker/dist/react-datepicker.css'
 
 interface FilterOptions {
-  status: 'open' | 'closed';
+  status: 'OPEN' | 'CLOSED';
   startDate: string;
   optionType?: string;
   symbol?: string;
-  tradeGroup?: string;
   minEntryPrice?: number;
   maxEntryPrice?: number;
 }
@@ -48,7 +47,6 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         weekFilter: filterOptions.startDate,
         optionType: filterOptions.optionType,
         symbol: filterOptions.symbol,
-        tradeGroup: filterOptions.tradeGroup,
         minEntryPrice: filterOptions.minEntryPrice,
         maxEntryPrice: filterOptions.maxEntryPrice,
         showAllTrades
@@ -60,12 +58,11 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         weekFilter: filterOptions.startDate,
         optionType: filterOptions.optionType,
         symbol: filterOptions.symbol,
-        tradeGroup: filterOptions.tradeGroup,
         minEntryPrice: filterOptions.minEntryPrice,
         maxEntryPrice: filterOptions.maxEntryPrice,
         showAllTrades
       })
-      setTrades(fetchedTrades)
+      setTrades(fetchedTrades as Trade[])
     } catch (error) {
       console.error('Error fetching trades:', error)
     } finally {
@@ -80,7 +77,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   const getHeaderText = () => {
     const date = new Date(filterOptions.startDate + 'T00:00:00Z');
     const friday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + (5 - date.getUTCDay() + 7) % 7));
-    if (filterOptions.status === 'open') {
+    if (filterOptions.status === 'OPEN') {
       return `Trades Remaining Open`
     } else {
       return `Trades Realized for the week of ${friday.toLocaleDateString(undefined, { timeZone: 'UTC' })}`
@@ -121,15 +118,26 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
 
   const isDevelopment = process.env.NODE_ENV === 'development'
 
-  const getTransactionTypeColor = (type: string) => {
-    switch (type.toLowerCase()) {
-      case 'open':
+  const getStatusColor = (status: string) => {
+    switch (status.toUpperCase()) {
+      case 'OPEN':
         return 'bg-green-200 text-green-800';
-      case 'add':
+      case 'CLOSED':
+        return 'bg-red-200 text-red-800';
+      default:
+        return 'bg-gray-200 text-gray-800';
+    }
+  };
+
+  const getTransactionTypeColor = (type: string) => {
+    switch (type.toUpperCase()) {
+      case 'OPEN':
+        return 'bg-green-200 text-green-800';
+      case 'ADD':
         return 'bg-blue-200 text-blue-800';
-      case 'trim':
+      case 'TRIM':
         return 'bg-yellow-200 text-yellow-800';
-      case 'close':
+      case 'CLOSE':
         return 'bg-red-200 text-red-800';
       default:
         return 'bg-gray-200 text-gray-800';
@@ -187,6 +195,10 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
 
   const getTradeType = (trade: Trade) => {
     return trade.trade_type === 'Buy to Open' ? 'BTO' : trade.trade_type === 'Sell to Open' ? 'STO' : trade.trade_type === 'BTO' ? 'BTO' : trade.trade_type === 'STO' ? 'STO' : '';
+  }
+
+  const getTradeStatus = (trade: Trade) => {
+    return trade.status.toUpperCase() as 'OPEN' | 'CLOSED'
   }
 
   return (
@@ -262,7 +274,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                       Opened At {renderSortIcon('created_at')}
                     </Button>
                   </TableHead>
-                  {filterOptions.status !== 'open' && (
+                  {filterOptions.status !== 'OPEN' && (
                     <TableHead className="text-center whitespace-nowrap">
                       <Button variant="ghost" onClick={() => handleSort('closed_at')}>
                         Closed At {renderSortIcon('closed_at')}
@@ -292,15 +304,15 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                       <TableCell className="text-center whitespace-nowrap">{createTradeOneliner(trade)}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{getTradeType(trade)}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">
-                        <span className={`px-2 py-1 rounded-full text-xs ${trade.status === 'open' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-                          {trade.status}
+                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(getTradeStatus(trade))}`}>
+                          {getTradeStatus(trade)}
                         </span>
                       </TableCell>
                       <TableCell className="text-center whitespace-nowrap">${trade.average_price?.toFixed(2) ?? 'N/A'}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{trade.expiration_date ? formatDateTime(trade.expiration_date) : ''}</TableCell>
                       <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
-                      {filterOptions.status !== 'open' && (
+                      {filterOptions.status !== 'OPEN' && (
                         <TableCell className="text-center whitespace-nowrap">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
                       )}
                     </TableRow>

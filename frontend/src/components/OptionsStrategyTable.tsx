@@ -13,7 +13,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 
 interface OptionsStrategyTableProps {
   configName: string
-  statusFilter: 'open' | 'closed'
+  statusFilter: 'OPEN' | 'CLOSED'
   dateFilter?: string
 }
 
@@ -102,10 +102,10 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
   )
 
   const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'open':
+    switch (status.toUpperCase()) {
+      case 'OPEN':
         return 'bg-green-200 text-green-800';
-      case 'closed':
+      case 'CLOSED':
         return 'bg-red-200 text-red-800';
       default:
         return 'bg-gray-200 text-gray-800';

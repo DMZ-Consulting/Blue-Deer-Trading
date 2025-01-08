@@ -7,26 +7,48 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TradesTableComponent } from './TradesTable'
 
+type TradeConfig = {
+  value: "day_trader" | "swing_trader" | "long_term_trader";
+  label: string;
+}
+
+type TradeType = {
+  value: "all" | "options" | "common";
+  label: string;
+}
+
 // Define configuration options
-const TRADE_CONFIGS = [
+const TRADE_CONFIGS: TradeConfig[] = [
   { value: "day_trader", label: "Day Trader" },
   { value: "swing_trader", label: "Swing Trader" },
   { value: "long_term_trader", label: "Long Term Trader" }
-] as const;
+];
 
 // Define trade type options
-const TRADE_TYPES = [
+const TRADE_TYPES: TradeType[] = [
   { value: "all", label: "All" },
   { value: "options", label: "Options" },
   { value: "common", label: "Common" }
-] as const;
+];
 
 export function SearchComponent() {
-  type StatusType = 'all' | 'open' | 'closed'
+  type StatusType = 'all' | 'OPEN' | 'CLOSED'
+  type ConfigNameType = 'all' | TradeConfig['value']
+  type TradeTypeValue = TradeType['value']
   
-  const [filters, setFilters] = useState({
+  interface FilterState {
+    symbol: string;
+    status: StatusType;
+    configName: ConfigNameType;
+    minEntryPrice: string;
+    maxEntryPrice: string;
+    startDate: string;
+    tradeType: TradeTypeValue;
+  }
+
+  const [filters, setFilters] = useState<FilterState>({
     symbol: '',
-    status: 'all' as StatusType,
+    status: 'all',
     configName: 'all',
     minEntryPrice: '',
     maxEntryPrice: '',
@@ -34,7 +56,7 @@ export function SearchComponent() {
     tradeType: 'all'
   })
 
-  const handleFilterChange = (field: string, value: string) => {
+  const handleFilterChange = (field: keyof FilterState, value: string) => {
     setFilters(prev => ({
       ...prev,
       [field]: value
@@ -44,7 +66,7 @@ export function SearchComponent() {
   const handleReset = () => {
     setFilters({
       symbol: '',
-      status: 'all' as StatusType,
+      status: 'all',
       configName: 'all',
       minEntryPrice: '',
       maxEntryPrice: '',
@@ -54,7 +76,7 @@ export function SearchComponent() {
   }
 
   // Helper function to determine optionType
-  const getOptionType = (tradeType: string): string | undefined => {
+  const getOptionType = (tradeType: TradeTypeValue): 'options' | 'common' | undefined => {
     switch (tradeType) {
       case 'options':
         return 'options';
@@ -87,15 +109,15 @@ export function SearchComponent() {
               <label>Status</label>
               <Select
                 value={filters.status}
-                onValueChange={(value) => handleFilterChange('status', value)}
+                onValueChange={(value: StatusType) => handleFilterChange('status', value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="closed">Closed</SelectItem>
+                  <SelectItem value="OPEN">Open</SelectItem>
+                  <SelectItem value="CLOSED">Closed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -104,7 +126,7 @@ export function SearchComponent() {
               <label>Trade Type</label>
               <Select
                 value={filters.tradeType}
-                onValueChange={(value) => handleFilterChange('tradeType', value)}
+                onValueChange={(value: TradeTypeValue) => handleFilterChange('tradeType', value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select trade type" />
@@ -123,7 +145,7 @@ export function SearchComponent() {
               <label>Configuration</label>
               <Select
                 value={filters.configName}
-                onValueChange={(value) => handleFilterChange('configName', value)}
+                onValueChange={(value: ConfigNameType) => handleFilterChange('configName', value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select configuration" />
@@ -169,16 +191,16 @@ export function SearchComponent() {
       </Card>
 
       <TradesTableComponent
-        configName={filters.configName}
+        configName={filters.configName === 'all' ? '' : filters.configName}
         filterOptions={{
-          status: filters.status === 'all' ? 'open' : filters.status,
+          status: filters.status === 'all' ? 'OPEN' : filters.status,
           startDate: filters.startDate,
           optionType: getOptionType(filters.tradeType),
-          symbol: filters.symbol || undefined,
+          symbol: filters.symbol === '' ? undefined : filters.symbol,
           minEntryPrice: filters.minEntryPrice ? parseFloat(filters.minEntryPrice) : undefined,
           maxEntryPrice: filters.maxEntryPrice ? parseFloat(filters.maxEntryPrice) : undefined,
         }}
-        showAllTrades={true}
+        showAllTrades={filters.configName === 'all'}
       />
     </div>
   )

@@ -11,6 +11,17 @@ interface TradeDetailsProps {
 export function TradeDetailsComponent({ trade, transactions }: TradeDetailsProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
+  const getStatusColor = (status: string) => {
+    switch (status.toUpperCase()) {
+      case 'OPEN':
+        return 'bg-green-200 text-green-800';
+      case 'CLOSED':
+        return 'bg-red-200 text-red-800';
+      default:
+        return 'bg-gray-200 text-gray-800';
+    }
+  };
+
   return (
     <div className="mt-4 bg-white border border-gray-300 p-4 rounded shadow-sm">
       <div className="flex justify-between items-center mb-2">
@@ -26,8 +37,8 @@ export function TradeDetailsComponent({ trade, transactions }: TradeDetailsProps
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
           <p><span className="font-semibold">Status:</span> 
-            <span className={`ml-2 px-2 py-1 rounded-full text-xs ${trade.status === 'open' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-              {trade.status}
+            <span className={`ml-2 px-2 py-1 rounded-full text-xs ${getStatusColor(trade.status)}`}>
+              {trade.status.toUpperCase()}
             </span>
           </p>
           <p><span className="font-semibold">Avg Entry Price:</span> ${trade.entry_price.toFixed(2)}</p>

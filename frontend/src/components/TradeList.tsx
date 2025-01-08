@@ -4,7 +4,7 @@ import { Trade } from '@/utils/types'
 
 interface TradeListProps {
   configName: string
-  status: string
+  status: 'OPEN' | 'CLOSED'
   weekFilter?: string
 }
 
@@ -22,7 +22,7 @@ export default function TradeList({ configName, status, weekFilter }: TradeListP
           configName,
           weekFilter
         })
-        setTrades(data)
+        setTrades(data as Trade[])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch trades')
       } finally {
