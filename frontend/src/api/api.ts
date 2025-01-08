@@ -23,9 +23,9 @@ type TradeConfiguration = Database['public']['Tables']['trade_configurations']['
 
 interface TradeFilters {
   configName: string
+  status?: string
   skip?: number
   limit?: number
-  status?: string
   symbol?: string
   tradeType?: string
   sortBy?: string
@@ -36,7 +36,6 @@ interface TradeFilters {
   optionType?: string
   maxEntryPrice?: number
   minEntryPrice?: number
-  tradeGroup?: string
   showAllTrades?: boolean
 }
 

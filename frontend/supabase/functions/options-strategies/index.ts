@@ -28,8 +28,8 @@ interface Strategy {
 }
 
 interface StrategyFilters {
-  status?: 'OPEN' | 'CLOSED'
-  configName?: string
+  configName: string
+  status?: 'open' | 'closed'
   symbol?: string
   strategyType?: string
   maxEntryPrice?: number
@@ -107,11 +107,15 @@ serve(async (req: Request) => {
 
         if (filters) {
           if (filters.status) {
-            query = query.eq('status', filters.status)
+            query = query.eq('status', filters.status.toLowerCase())
+          }
+
+          if (filters.configName && filters.configName !== 'all') {
+            query = query.eq('trade_configurations.name', filters.configName)
           }
 
           // Handle date filters
-          if (filters.weekFilter && filters.status === 'CLOSED') {
+          if (filters.weekFilter && filters.status === 'closed') {
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
             const friday = new Date(day.setDate(day.getDate() + 4))

@@ -13,7 +13,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 
 interface OptionsStrategyTableProps {
   configName: string
-  statusFilter: 'OPEN' | 'CLOSED'
+  statusFilter: 'open' | 'closed'
   dateFilter?: string
 }
 

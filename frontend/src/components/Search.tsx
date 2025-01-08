@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TradesTableComponent } from './TradesTable'
 
-// Define trade group options
-const TRADE_GROUPS = [
+// Define configuration options
+const TRADE_CONFIGS = [
   { value: "day_trader", label: "Day Trader" },
   { value: "swing_trader", label: "Swing Trader" },
   { value: "long_term_trader", label: "Long Term Trader" }
@@ -22,10 +22,12 @@ const TRADE_TYPES = [
 ] as const;
 
 export function SearchComponent() {
+  type StatusType = 'all' | 'open' | 'closed'
+  
   const [filters, setFilters] = useState({
     symbol: '',
-    status: 'all',
-    tradeGroup: 'all',
+    status: 'all' as StatusType,
+    configName: 'all',
     minEntryPrice: '',
     maxEntryPrice: '',
     startDate: new Date().toISOString().split('T')[0],
@@ -42,8 +44,8 @@ export function SearchComponent() {
   const handleReset = () => {
     setFilters({
       symbol: '',
-      status: 'all',
-      tradeGroup: 'all',
+      status: 'all' as StatusType,
+      configName: 'all',
       minEntryPrice: '',
       maxEntryPrice: '',
       startDate: new Date().toISOString().split('T')[0],
@@ -118,19 +120,19 @@ export function SearchComponent() {
             </div>
 
             <div className="space-y-2">
-              <label>Trade Group</label>
+              <label>Configuration</label>
               <Select
-                value={filters.tradeGroup}
-                onValueChange={(value) => handleFilterChange('tradeGroup', value)}
+                value={filters.configName}
+                onValueChange={(value) => handleFilterChange('configName', value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select trade group" />
+                  <SelectValue placeholder="Select configuration" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Groups</SelectItem>
-                  {TRADE_GROUPS.map((group) => (
-                    <SelectItem key={group.value} value={group.value}>
-                      {group.label}
+                  <SelectItem value="all">All Configurations</SelectItem>
+                  {TRADE_CONFIGS.map((config) => (
+                    <SelectItem key={config.value} value={config.value}>
+                      {config.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -167,11 +169,12 @@ export function SearchComponent() {
       </Card>
 
       <TradesTableComponent
-        configName="all"
+        configName={filters.configName}
         filterOptions={{
-          ...filters,
+          status: filters.status === 'all' ? 'open' : filters.status,
+          startDate: filters.startDate,
           optionType: getOptionType(filters.tradeType),
-          tradeGroup: filters.tradeGroup === 'all' ? undefined : filters.tradeGroup,
+          symbol: filters.symbol || undefined,
           minEntryPrice: filters.minEntryPrice ? parseFloat(filters.minEntryPrice) : undefined,
           maxEntryPrice: filters.maxEntryPrice ? parseFloat(filters.maxEntryPrice) : undefined,
         }}
