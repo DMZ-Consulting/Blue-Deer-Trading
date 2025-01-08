@@ -15,7 +15,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 interface FilterOptions {
   status: 'OPEN' | 'CLOSED';
   startDate: string;
-  optionType?: string;
+  optionType?: 'options' | 'common';
   symbol?: string;
   minEntryPrice?: number;
   maxEntryPrice?: number;
@@ -42,7 +42,8 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   const fetchTrades = useCallback(async () => {
     setLoading(true)
     try {
-      console.log("Fetching trades with options:", {
+      const requestParams = {
+        configName: configName === '' ? 'all' : configName,
         status: filterOptions.status,
         weekFilter: filterOptions.startDate,
         optionType: filterOptions.optionType,
@@ -50,18 +51,15 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         minEntryPrice: filterOptions.minEntryPrice,
         maxEntryPrice: filterOptions.maxEntryPrice,
         showAllTrades
+      };
+
+      console.log("Fetching trades with request:", {
+        action: 'getTrades',
+        filters: requestParams
       });
 
-      const fetchedTrades = await getTradesByConfiguration({
-        configName,
-        status: filterOptions.status,
-        weekFilter: filterOptions.startDate,
-        optionType: filterOptions.optionType,
-        symbol: filterOptions.symbol,
-        minEntryPrice: filterOptions.minEntryPrice,
-        maxEntryPrice: filterOptions.maxEntryPrice,
-        showAllTrades
-      })
+      const fetchedTrades = await getTradesByConfiguration(requestParams)
+      console.log("Received trades response:", fetchedTrades);
       setTrades(fetchedTrades as Trade[])
     } catch (error) {
       console.error('Error fetching trades:', error)

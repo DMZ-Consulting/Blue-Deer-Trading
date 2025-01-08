@@ -23,7 +23,7 @@ type TradeConfiguration = Database['public']['Tables']['trade_configurations']['
 
 interface TradeFilters {
   configName: string
-  status?: string
+  status?: 'OPEN' | 'CLOSED'
   skip?: number
   limit?: number
   symbol?: string
@@ -33,7 +33,7 @@ interface TradeFilters {
   weekFilter?: string
   monthFilter?: string
   yearFilter?: string
-  optionType?: string
+  optionType?: 'options' | 'common'
   maxEntryPrice?: number
   minEntryPrice?: number
   showAllTrades?: boolean
