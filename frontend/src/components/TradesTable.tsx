@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import 'react-datepicker/dist/react-datepicker.css'
 
 interface FilterOptions {
-  status: 'OPEN' | 'CLOSED';
+  status: 'ALL' | 'OPEN' | 'CLOSED';
   startDate: string;
   optionType?: 'options' | 'common';
   symbol?: string;
@@ -77,8 +77,10 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
     const friday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + (5 - date.getUTCDay() + 7) % 7));
     if (filterOptions.status === 'OPEN') {
       return `Trades Remaining Open`
-    } else {
+    } else if (filterOptions.status === 'CLOSED') {
       return `Trades Realized for the week of ${friday.toLocaleDateString(undefined, { timeZone: 'UTC' })}`
+    } else {
+      return 'All Trades'
     }
   }
 

@@ -32,7 +32,7 @@ const TRADE_TYPES: TradeType[] = [
 ];
 
 export function SearchComponent() {
-  type StatusType = 'all' | 'OPEN' | 'CLOSED'
+  type StatusType = 'ALL' | 'OPEN' | 'CLOSED'
   type ConfigNameType = 'all' | TradeConfig['value']
   type TradeTypeValue = TradeType['value']
   
@@ -48,7 +48,7 @@ export function SearchComponent() {
 
   const [filters, setFilters] = useState<FilterState>({
     symbol: '',
-    status: 'all',
+    status: 'ALL',
     configName: 'all',
     minEntryPrice: '',
     maxEntryPrice: '',
@@ -66,7 +66,7 @@ export function SearchComponent() {
   const handleReset = () => {
     setFilters({
       symbol: '',
-      status: 'all',
+      status: 'ALL',
       configName: 'all',
       minEntryPrice: '',
       maxEntryPrice: '',
@@ -115,7 +115,7 @@ export function SearchComponent() {
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="ALL">All</SelectItem>
                   <SelectItem value="OPEN">Open</SelectItem>
                   <SelectItem value="CLOSED">Closed</SelectItem>
                 </SelectContent>
@@ -193,7 +193,7 @@ export function SearchComponent() {
       <TradesTableComponent
         configName={filters.configName === 'all' ? '' : filters.configName}
         filterOptions={{
-          status: filters.status === 'all' ? 'OPEN' : filters.status,
+          status: filters.status,
           startDate: filters.startDate,
           optionType: getOptionType(filters.tradeType),
           symbol: filters.symbol === '' ? undefined : filters.symbol,

@@ -30,7 +30,7 @@ interface Strategy {
 interface StrategyFilters {
   skip?: number
   limit?: number
-  status?: 'OPEN' | 'CLOSED'
+  status?: 'ALL' | 'OPEN' | 'CLOSED'
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
   configName?: string
@@ -78,10 +78,13 @@ serve(async (req: Request) => {
     const payload = await req.json() as RequestPayload
     const { action, filters, input, strategy_id, net_cost, size } = payload
 
+    console.log('Received request payload:', JSON.stringify(payload, null, 2))
+
     let data
 
     switch (action) {
       case 'getAll':
+        console.log('Fetching all strategy trades')
         const { data: allStrategies, error: allError } = await supabase
           .from('options_strategy_trades')
           .select(`
@@ -94,24 +97,48 @@ serve(async (req: Request) => {
         break
 
       case 'getStrategyTrades':
+        console.log('Fetching strategy trades with filters:', JSON.stringify(filters, null, 2))
         let query = supabase
           .from('options_strategy_trades')
           .select(`
             *,
-            trade_configurations (*)
+            trade_configurations (
+              id,
+              name
+            )
           `)
 
         if (filters) {
-          if (filters.status) {
+          if (filters.status && filters.status !== 'ALL') {
+            console.log('Applying status filter:', filters.status.toLowerCase())
             query = query.eq('status', filters.status.toLowerCase())
           }
 
           if (filters.configName && filters.configName !== 'all') {
-            query = query.eq('trade_configurations.name', filters.configName)
+            console.log('Applying configuration filter:', filters.configName)
+            const { data: configData, error: configError } = await supabase
+              .from('trade_configurations')
+              .select('id')
+              .eq('name', filters.configName)
+              .single()
+
+            if (configError) {
+              console.error('Error fetching configuration:', configError)
+              throw configError
+            }
+
+            if (configData) {
+              console.log('Found configuration ID:', configData.id)
+              query = query.eq('configuration_id', configData.id)
+            } else {
+              console.warn('No configuration found for name:', filters.configName)
+              return []
+            }
           }
 
           // Handle date filters
-          if (filters.weekFilter && filters.status === 'CLOSED') {
+          if (filters.weekFilter && filters.status?.toLowerCase() === 'closed') {
+            console.log('Applying week filter for closed trades:', filters.weekFilter)
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
             const friday = new Date(day.setDate(day.getDate() + 4))
@@ -122,6 +149,7 @@ serve(async (req: Request) => {
 
           // Handle sorting
           if (filters.sortBy) {
+            console.log('Applying sort:', filters.sortBy, filters.sortOrder)
             query = query.order(filters.sortBy, { ascending: filters.sortOrder === 'asc' })
           } else {
             query = query.order('created_at', { ascending: false })
@@ -129,12 +157,17 @@ serve(async (req: Request) => {
 
           // Handle pagination
           if (filters.skip) {
+            console.log('Applying pagination:', filters.skip, filters.limit)
             query = query.range(filters.skip, (filters.skip + (filters.limit || 100)) - 1)
           }
         }
 
         const { data: filteredStrategies, error: filterError } = await query
-        if (filterError) throw filterError
+        if (filterError) {
+          console.error('Error fetching strategy trades:', filterError)
+          throw filterError
+        }
+        console.log(`Found ${filteredStrategies?.length ?? 0} strategy trades`)
         data = filteredStrategies
         break
 
@@ -145,7 +178,7 @@ serve(async (req: Request) => {
           .insert({
             name: input.name,
             underlying_symbol: input.underlying_symbol,
-            status: 'OPEN',
+            status: 'open',
             legs: input.legs,
             net_cost: input.net_cost,
             average_net_cost: input.net_cost,
@@ -323,9 +356,9 @@ serve(async (req: Request) => {
         const { data: closedStrategy, error: closeUpdateError } = await supabase
           .from('options_strategy_trades')
           .update({
-            status: 'CLOSED',
-            profit_loss: profitLoss,
-            closed_at: new Date().toISOString()
+            status: 'closed',
+            closed_at: new Date().toISOString(),
+            profit_loss: profitLoss
           })
           .eq('id', strategy_id)
           .select()

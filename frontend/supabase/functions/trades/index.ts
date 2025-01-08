@@ -39,7 +39,7 @@ interface Trade {
 
 interface TradeFilters {
   configName: string
-  status?: 'OPEN' | 'CLOSED'
+  status?: 'ALL' | 'OPEN' | 'CLOSED'
   skip?: number
   limit?: number
   symbol?: string
@@ -91,10 +91,13 @@ serve(async (req: Request) => {
     const payload = await req.json() as RequestPayload
     const { action, filters, input, trade_id, price, size } = payload
 
+    console.log('Received request payload:', JSON.stringify(payload, null, 2))
+
     let data
 
     switch (action) {
       case 'getAll':
+        console.log('Fetching all trades')
         const { data: allTrades, error: allError } = await supabase
           .from('trades')
           .select(`
@@ -107,45 +110,76 @@ serve(async (req: Request) => {
         break
 
       case 'getTrades':
+        console.log('Fetching trades with filters:', JSON.stringify(filters, null, 2))
         let query = supabase
           .from('trades')
           .select(`
             *,
-            trade_configurations (*)
+            trade_configurations (
+              id,
+              name
+            )
           `)
 
         if (filters) {
-          console.log('Applying filters:', filters)
-          
-          if (filters.status) {
-            // Ensure lowercase status comparison
+          if (filters.status && filters.status !== 'ALL') {
+            console.log('Applying status filter:', filters.status.toLowerCase())
             query = query.eq('status', filters.status.toLowerCase())
           }
           
           if (filters.configName && filters.configName !== 'all') {
-            query = query.eq('trade_configurations.name', filters.configName)
+            console.log('Applying configuration filter:', filters.configName)
+            const { data: configData, error: configError } = await supabase
+              .from('trade_configurations')
+              .select('id')
+              .eq('name', filters.configName)
+              .single()
+
+            if (configError) {
+              console.error('Error fetching configuration:', configError)
+              throw configError
+            }
+
+            if (configData) {
+              console.log('Found configuration ID:', configData.id)
+              query = query.eq('configuration_id', configData.id)
+            } else {
+              console.warn('No configuration found for name:', filters.configName)
+              return []
+            }
           }
 
           if (filters.symbol) {
+            console.log('Applying symbol filter:', filters.symbol)
             query = query.eq('symbol', filters.symbol)
           }
+
           if (filters.tradeType) {
+            console.log('Applying trade type filter:', filters.tradeType)
             query = query.eq('trade_type', filters.tradeType)
           }
+
           if (filters.optionType === 'options') {
+            console.log('Filtering for options trades')
             query = query.eq('is_contract', true)
           } else if (filters.optionType === 'common') {
+            console.log('Filtering for common stock trades')
             query = query.eq('is_contract', false)
           }
+
           if (filters.maxEntryPrice) {
+            console.log('Applying max entry price filter:', filters.maxEntryPrice)
             query = query.lte('average_price', filters.maxEntryPrice)
           }
+
           if (filters.minEntryPrice) {
+            console.log('Applying min entry price filter:', filters.minEntryPrice)
             query = query.gte('average_price', filters.minEntryPrice)
           }
 
           // Handle date filters
-          if (filters.weekFilter && filters.status === 'CLOSED') {
+          if (filters.weekFilter && filters.status?.toLowerCase() === 'closed') {
+            console.log('Applying week filter for closed trades:', filters.weekFilter)
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
             const friday = new Date(day.setDate(day.getDate() + 4))
@@ -156,6 +190,7 @@ serve(async (req: Request) => {
 
           // Handle sorting
           if (filters.sortBy) {
+            console.log('Applying sort:', filters.sortBy, filters.sortOrder)
             query = query.order(filters.sortBy, { ascending: filters.sortOrder === 'asc' })
           } else {
             query = query.order('created_at', { ascending: false })
@@ -163,12 +198,17 @@ serve(async (req: Request) => {
 
           // Handle pagination
           if (filters.skip) {
+            console.log('Applying pagination:', filters.skip, filters.limit)
             query = query.range(filters.skip, (filters.skip + (filters.limit || 100)) - 1)
           }
         }
 
         const { data: filteredTrades, error: filterError } = await query
-        if (filterError) throw filterError
+        if (filterError) {
+          console.error('Error fetching trades:', filterError)
+          throw filterError
+        }
+        console.log(`Found ${filteredTrades?.length ?? 0} trades`)
         data = filteredTrades
         break
 
