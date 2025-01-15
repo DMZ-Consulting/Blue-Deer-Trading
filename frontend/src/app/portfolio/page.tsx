@@ -16,20 +16,46 @@ const TRADE_GROUPS = [
 ] as const;
 
 export default function PortfolioPage() {
-  const [configName, setConfigName] = useState('day_trader')
-  const [isReportsVisible, setIsReportsVisible] = useState(true)
+  const [configName, setConfigName] = useState(() => {
+    // Try to get saved config from localStorage, default to 'day_trader'
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('portfolioConfigName') || 'day_trader';
+    }
+    return 'day_trader';
+  });
+
+  const [isReportsVisible, setIsReportsVisible] = useState(true);
   const [portfolio, setPortfolio] = useState<PortfolioEndpoint>({
     regular_trades: [],
     strategy_trades: []
-  })
-  const [loading, setLoading] = useState(true)
+  });
+  const [loading, setLoading] = useState(true);
+
   const [dateFilter, setDateFilter] = useState(() => {
+    // Try to get saved date from localStorage
+    if (typeof window !== 'undefined') {
+      const savedDate = localStorage.getItem('portfolioDateFilter');
+      if (savedDate) {
+        return savedDate;
+      }
+    }
+    // Default to current week's Monday if no saved date
     const now = new Date();
-    // Get the Monday of the current week
     const monday = new Date(now);
-    monday.setDate(now.getDate() - now.getDay() + 1);
+    monday.setUTCHours(0, 0, 0, 0);
+    monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay() + 1);
     return monday.toISOString().split('T')[0];
   });
+
+  // Save configName to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('portfolioConfigName', configName);
+  }, [configName]);
+
+  // Save dateFilter to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('portfolioDateFilter', dateFilter);
+  }, [dateFilter]);
 
   const toggleReportsVisibility = () => {
     setIsReportsVisible(prev => !prev)
@@ -59,28 +85,36 @@ export default function PortfolioPage() {
 
   const handleDateChange = (newDate: string) => {
     // Convert the selected date to the Monday of that week
-    const selectedDate = new Date(newDate);
+    const selectedDate = new Date(newDate + 'T00:00:00Z');
     const monday = new Date(selectedDate);
-    monday.setDate(selectedDate.getDate() - selectedDate.getDay() + 1);
+    monday.setUTCHours(0, 0, 0, 0); // Set to midnight UTC
+    monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay() + 1);
     setDateFilter(monday.toISOString().split('T')[0]);
   }
 
-  // Generate week options for the last 12 weeks
+  // Generate week options for the last 52 weeks
   const getWeekOptions = () => {
     const options = [];
     const today = new Date();
+    today.setUTCHours(0, 0, 0, 0); // Set to midnight UTC
     const monday = new Date(today);
-    monday.setDate(today.getDate() - today.getDay() + 1);
+    monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay() + 1);
 
-    for (let i = 0; i < 12; i++) {
-      const date = new Date(monday);
-      date.setDate(monday.getDate() - (7 * i));
-      const friday = new Date(date);
-      friday.setDate(date.getDate() + 4);
+    for (let i = 0; i < 52; i++) {
+      const weekMonday = new Date(monday);
+      weekMonday.setUTCDate(monday.getUTCDate() - (7 * i));
+      
+      const friday = new Date(weekMonday);
+      friday.setUTCDate(friday.getUTCDate() + 4);
 
       options.push({
-        value: date.toISOString().split('T')[0],
-        label: `Week of ${friday.toLocaleDateString()}`
+        value: weekMonday.toISOString().split('T')[0],
+        label: `Week of ${friday.toLocaleDateString('en-US', { 
+          month: 'numeric', 
+          day: 'numeric',
+          year: 'numeric',
+          timeZone: 'UTC'
+        })}`
       });
     }
     return options;
@@ -88,10 +122,15 @@ export default function PortfolioPage() {
 
   // Get the label for the current selected date
   const getSelectedWeekLabel = () => {
-    const selectedDate = new Date(dateFilter);
-    const friday = new Date(selectedDate);
-    friday.setDate(selectedDate.getDate() + 4); // Get to Friday from Monday
-    return `Week of ${friday.toLocaleDateString()}`;
+    const monday = new Date(dateFilter + 'T00:00:00Z');
+    const friday = new Date(monday);
+    friday.setUTCDate(friday.getUTCDate() + 4);
+    return `Week of ${friday.toLocaleDateString('en-US', { 
+      month: 'numeric', 
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC'
+    })}`;
   }
 
   return (

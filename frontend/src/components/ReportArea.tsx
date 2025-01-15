@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { PortfolioEndpoint } from '../utils/types'
 import { getMonthlyPL, MonthlyPL } from '@/api/api'
 
@@ -9,13 +9,15 @@ interface ReportAreaProps {
   configName: string;
 }
 
-export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) {
+// Separate the data fetching and display logic
+function MonthlyBreakdown({ configName, totalPL }: { configName: string; totalPL: number }) {
   const [monthlyPLData, setMonthlyPLData] = useState<MonthlyPL[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchMonthlyPL = async () => {
       try {
+        setLoading(true);
         const data = await getMonthlyPL(configName);
         setMonthlyPLData(data);
       } catch (error) {
@@ -28,19 +30,32 @@ export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) 
     fetchMonthlyPL();
   }, [configName]);
 
+  if (loading) {
+    return <p>Loading monthly data...</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {monthlyPLData.map((item) => (
+        <div key={item.month} className="flex justify-between items-center">
+          <span className="text-sm">{item.month}</span>
+          <span className={`font-semibold ${item.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            ${item.profit_loss.toFixed(2)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) {
   const allTrades = [
     ...(portfolio.regular_trades || []),
     ...(portfolio.strategy_trades || [])
   ];
 
   const weeklyPL = allTrades.reduce((sum, trade) => sum + trade.realized_pl, 0);
-  const totalPL = monthlyPLData.reduce((sum, item) => sum + item.profit_loss, 0);
-
-  const formatMonth = (monthStr: string) => {
-    const [year, month] = monthStr.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1);
-    return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-  };
+  const totalPL = allTrades.reduce((sum, trade) => sum + trade.realized_pl, 0);
 
   return (
     <div className="bg-white border border-gray-300 p-4 rounded shadow-sm">
@@ -63,20 +78,9 @@ export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) 
               </div>
             </div>
           </div>
-          {loading ? (
-            <p>Loading monthly data...</p>
-          ) : (
-            <div className="space-y-2">
-              {monthlyPLData.map((item) => (
-                <div key={item.month} className="flex justify-between items-center">
-                  <span className="text-sm">{formatMonth(item.month)}</span>
-                  <span className={`font-semibold ${item.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    ${item.profit_loss.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <Suspense fallback={<p>Loading monthly data...</p>}>
+            <MonthlyBreakdown configName={configName} totalPL={totalPL} />
+          </Suspense>
         </div>
       </div>
     </div>

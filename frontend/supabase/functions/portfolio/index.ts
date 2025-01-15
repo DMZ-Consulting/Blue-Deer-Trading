@@ -12,7 +12,7 @@ interface PortfolioFilters {
 }
 
 interface Transaction {
-  transaction_type: 'OPEN' | 'ADD' | 'TRIM' | 'CLOSE'
+  transaction_type: 'open' | 'add' | 'trim' | 'close'
   amount: number
   size: string
   net_cost?: number
@@ -59,6 +59,21 @@ interface Strategy {
   options_strategy_transactions: Transaction[]
 }
 
+interface MonthlyPLRecord {
+  month: string;
+  regular_trades_pl: number;
+  strategy_trades_pl: number;
+  total_pl: number;
+  trade_configurations: {
+    name: string;
+  } | null;
+}
+
+interface MonthlyPLResponse {
+  month: string;
+  profit_loss: number;
+}
+
 interface RequestPayload {
   action: string
   filters?: PortfolioFilters
@@ -71,6 +86,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    console.log('Initializing portfolio edge function')
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -78,48 +94,112 @@ serve(async (req: Request) => {
 
     const payload = await req.json() as RequestPayload
     const { action, filters, configName } = payload
+    console.log('Received request payload:', JSON.stringify(payload, null, 2))
 
     let data
 
     switch (action) {
       case 'getPortfolioTrades':
+        console.log('Processing getPortfolioTrades action')
         const regularTrades = []
         const strategyTrades = []
 
         // Get regular trades
+        console.log('Building regular trades query with filters:', JSON.stringify(filters, null, 2))
         let tradeQuery = supabase
           .from('trades')
           .select(`
             *,
             trade_configurations (*),
-            transactions (*)
+            transactions!inner (*)
           `)
-          .eq('status', 'CLOSED')
 
         // Handle date filters
         if (filters?.weekFilter) {
+          console.log('Applying week filter for regular trades:', filters.weekFilter)
           const day = new Date(filters.weekFilter)
-          const monday = new Date(day.setDate(day.getDate() - day.getDay()))
-          const friday = new Date(day.setDate(day.getDate() + 4))
+          console.log('Initial day:', {
+            raw: day,
+            getDay: day.getDay(),
+            getDate: day.getDate(),
+            getMonth: day.getMonth(),
+            getFullYear: day.getFullYear(),
+            toISOString: day.toISOString()
+          })
+
+          // Set to midnight UTC
+          day.setUTCHours(0, 0, 0, 0)
+          
+          // Calculate Monday (start of week)
+          const monday = new Date(day)
+          monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay())
+          
+          // Calculate Friday (end of week)
+          const friday = new Date(monday)
+          friday.setUTCDate(friday.getUTCDate() + 4)
+          friday.setUTCHours(23, 59, 59, 999)
+
+          console.log('Date range:', { 
+            input: filters.weekFilter,
+            day: day.toISOString(),
+            monday: monday.toISOString(), 
+            friday: friday.toISOString()
+          })
+          
+          // Filter trades that have TRIM or CLOSE transactions within the date range
           tradeQuery = tradeQuery
-            .gte('closed_at', monday.toISOString())
-            .lte('closed_at', friday.toISOString())
+            .in('transactions.transaction_type', ['trim', 'close'])
+            .gte('transactions.created_at', monday.toISOString())
+            .lte('transactions.created_at', friday.toISOString())
+
+          console.log('Query parameters:', {
+            transaction_types: ['trim', 'close'],
+            created_at_gte: monday.toISOString(),
+            created_at_lte: friday.toISOString()
+          })
         }
 
+        console.log('Executing regular trades query')
         const { data: trades, error: tradeError } = await tradeQuery
 
-        if (tradeError) throw tradeError
+        if (tradeError) {
+          console.error('Error fetching regular trades:', tradeError)
+          throw tradeError
+        }
+        console.log(`Found ${trades?.length ?? 0} regular trades`)
+        if (trades && trades.length > 0) {
+          console.log('Sample trade dates:', trades.map((t: Trade) => ({
+            trade_id: t.trade_id,
+            closed_at: t.closed_at,
+            status: t.status
+          })))
+        }
 
         // Process regular trades
+        console.log('Processing regular trades')
         for (const trade of trades as Trade[]) {
-          if (!trade.transactions) continue
+          if (!trade.transactions) {
+            console.log(`Skipping trade ${trade.trade_id} - no transactions found`)
+            continue
+          }
+
+          console.log(`Processing trade ${trade.trade_id}:`, {
+            symbol: trade.symbol,
+            status: trade.status,
+            trade_type: trade.trade_type
+          })
 
           const closeTransactions = trade.transactions.filter((t: Transaction) =>
-            t.transaction_type === 'CLOSE' || t.transaction_type === 'TRIM'
+            t.transaction_type === 'close' || t.transaction_type === 'trim'
           )
           const openTransactions = trade.transactions.filter((t: Transaction) =>
-            t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
+            t.transaction_type === 'open' || t.transaction_type === 'add'
           )
+
+          console.log('Transaction counts:', {
+            close: closeTransactions.length,
+            open: openTransactions.length
+          })
 
           let closedSize = 0
           for (const transaction of closeTransactions) {
@@ -137,8 +217,10 @@ serve(async (req: Request) => {
 
           // Apply contract multiplier
           if (trade.symbol === 'ES') {
+            console.log('Applying ES contract multiplier (50x)')
             totalRealizedPL *= 50
           } else {
+            console.log('Applying standard contract multiplier (100x)')
             totalRealizedPL *= 100
           }
 
@@ -146,8 +228,15 @@ serve(async (req: Request) => {
 
           // Reverse P/L for short trades
           if (trade.trade_type === 'STO' || trade.trade_type === 'Sell to Open') {
+            console.log('Reversing P/L for short trade')
             totalRealizedPL = -totalRealizedPL
           }
+
+          console.log('Final trade calculations:', {
+            realized_pl: totalRealizedPL,
+            pct_change: pctChange,
+            closed_size: closedSize
+          })
 
           regularTrades.push({
             trade,
@@ -162,34 +251,77 @@ serve(async (req: Request) => {
         }
 
         // Get strategy trades
+        console.log('Building strategy trades query with filters:', JSON.stringify(filters, null, 2))
         let strategyQuery = supabase
           .from('options_strategy_trades')
           .select(`
             *,
             trade_configurations (*),
-            options_strategy_transactions (*)
+            options_strategy_transactions!inner (*)
           `)
-          .eq('status', 'CLOSED')
 
+        // Handle date filters for strategy trades
         if (filters?.weekFilter) {
+          console.log('Applying week filter for strategy trades:', filters.weekFilter)
           const day = new Date(filters.weekFilter)
-          const monday = new Date(day.setDate(day.getDate() - day.getDay()))
-          const friday = new Date(day.setDate(day.getDate() + 4))
+          // Set to midnight UTC
+          day.setUTCHours(0, 0, 0, 0)
+          
+          // Calculate Monday (start of week)
+          const monday = new Date(day)
+          monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay())
+          
+          // Calculate Friday (end of week)
+          const friday = new Date(monday)
+          friday.setUTCDate(friday.getUTCDate() + 4)
+          friday.setUTCHours(23, 59, 59, 999)
+
+          console.log('Date range:', { 
+            input: filters.weekFilter,
+            day: day.toISOString(),
+            monday: monday.toISOString(), 
+            friday: friday.toISOString() 
+          })
+          
+          // Filter strategies that have TRIM or CLOSE transactions within the date range
           strategyQuery = strategyQuery
-            .gte('closed_at', monday.toISOString())
-            .lte('closed_at', friday.toISOString())
+            .in('options_strategy_transactions.transaction_type', ['trim', 'close'])
+            .gte('options_strategy_transactions.created_at', monday.toISOString())
+            .lte('options_strategy_transactions.created_at', friday.toISOString())
         }
 
+        console.log('Executing strategy trades query')
         const { data: strategies, error: strategyError } = await strategyQuery
 
-        if (strategyError) throw strategyError
+        if (strategyError) {
+          console.error('Error fetching strategy trades:', strategyError)
+          throw strategyError
+        }
+        console.log(`Found ${strategies?.length ?? 0} strategy trades`)
 
         // Process strategy trades
+        console.log('Processing strategy trades')
         for (const strategy of strategies as Strategy[]) {
-          if (!strategy.options_strategy_transactions) continue
+          if (!strategy.options_strategy_transactions) {
+            console.log(`Skipping strategy ${strategy.id} - no transactions found`)
+            continue
+          }
+
+          console.log(`Processing strategy ${strategy.id}:`, {
+            name: strategy.name,
+            symbol: strategy.underlying_symbol,
+            status: strategy.status
+          })
 
           const [realizedPL, avgExitPrice] = calculateStrategyPL(strategy)
           const pctChange = (avgExitPrice - strategy.average_net_cost) / strategy.average_net_cost * 100
+
+          console.log('Strategy calculations:', {
+            realized_pl: realizedPL,
+            avg_exit_price: avgExitPrice,
+            avg_entry_price: strategy.average_net_cost,
+            pct_change: pctChange
+          })
 
           strategyTrades.push({
             trade: strategy,
@@ -205,86 +337,137 @@ serve(async (req: Request) => {
 
         // Filter by configuration name
         if (filters?.configName) {
+          console.log('Filtering trades by configuration:', filters.configName)
           data = {
-            regular_trades: regularTrades.filter(t => 
-              t.trade.trade_configurations?.name === filters.configName || filters.configName === 'all'
-            ),
-            strategy_trades: strategyTrades.filter(t => 
-              t.trade.trade_configurations?.name === filters.configName || filters.configName === 'all'
-            )
+            regular_trades: regularTrades.filter(t => {
+              const matches = t.trade.trade_configurations?.name === filters.configName || filters.configName === 'all'
+              console.log(`Regular trade ${t.trade.trade_id} config match:`, {
+                trade_config: t.trade.trade_configurations?.name,
+                filter_config: filters.configName,
+                matches
+              })
+              return matches
+            }),
+            strategy_trades: strategyTrades.filter(t => {
+              const matches = t.trade.trade_configurations?.name === filters.configName || filters.configName === 'all'
+              console.log(`Strategy trade ${t.trade.id} config match:`, {
+                trade_config: t.trade.trade_configurations?.name,
+                filter_config: filters.configName,
+                matches 
+              })
+              return matches
+            })
           }
         } else {
+          console.log('No configuration filter applied')
           data = {
             regular_trades: regularTrades,
             strategy_trades: strategyTrades
           }
         }
+
+        console.log('Final portfolio data:', {
+          regular_trades: data.regular_trades.length,
+          strategy_trades: data.strategy_trades.length
+        })
         break
 
       case 'getMonthlyPL':
-        // Get trades
-        const { data: monthlyTrades, error: monthlyTradeError } = await supabase
-          .from('trades')
+        console.log('Processing getMonthlyPL action with configName:', configName)
+        
+        let query = supabase
+          .from('monthly_pl')
           .select(`
-            profit_loss,
-            created_at,
-            trade_configurations (name)
+            month,
+            regular_trades_pl,
+            strategy_trades_pl,
+            total_pl,
+            trade_configurations:configuration_id (
+              name
+            )
           `)
-          .order('created_at', { ascending: true })
+          .order('month', { ascending: true })
 
-        if (monthlyTradeError) throw monthlyTradeError
+        if (configName && configName !== 'all') {
+          console.log('Filtering by configuration:', configName)
+          const { data: configData, error: configError } = await supabase
+            .from('trade_configurations')
+            .select('id')
+            .eq('name', configName)
+            .single()
 
-        // Get strategy trades
-        const { data: monthlyStrategies, error: monthlyStrategyError } = await supabase
-          .from('options_strategy_trades')
-          .select(`
-            profit_loss,
-            created_at,
-            trade_configurations (name)
-          `)
-          .order('created_at', { ascending: true })
+          if (configError) {
+            console.error('Error fetching configuration:', configError)
+            throw configError
+          }
 
-        if (monthlyStrategyError) throw monthlyStrategyError
+          if (configData) {
+            console.log('Found configuration ID:', configData.id)
+            query = query.eq('configuration_id', configData.id)
+          }
+        }
 
-        // Filter trades by configuration
-        const filteredTrades = monthlyTrades?.filter((trade: Trade) => 
-          !configName || trade.trade_configurations?.name === configName || configName === 'all'
-        ) || []
+        const { data: monthlyData, error: monthlyError } = await query
+        if (monthlyError) {
+          console.error('Error fetching monthly P/L:', monthlyError)
+          throw monthlyError
+        }
+        console.log(`Found ${monthlyData?.length ?? 0} monthly P/L records`)
+        
+        // Log raw data to check for invalid dates
+        console.log('Raw monthly P/L data:', monthlyData.map((record: MonthlyPLRecord) => ({
+          month: record.month,
+          total_pl: record.total_pl
+        })))
 
-        const filteredStrategies = monthlyStrategies?.filter((strategy: Strategy) => 
-          !configName || strategy.trade_configurations?.name === configName || configName === 'all'
-        ) || []
+        // Transform data into expected format
+        data = monthlyData.map((record: MonthlyPLRecord) => {
+          // The month field comes from Postgres as a DATE type (YYYY-MM-DD)
+          // We need to parse it and format it as "Month Year"
+          const date = new Date(record.month);
+          
+          if (isNaN(date.getTime())) {
+            console.error('Invalid date encountered:', record.month);
+            return {
+              month: 'Invalid Date',
+              profit_loss: record.total_pl
+            };
+          }
 
-        // Combine and group by month
-        const monthlyPL: { [key: string]: number } = {}
-
-        // Process trades
-        filteredTrades.forEach(trade => {
-          if (!trade.profit_loss) return
-          const month = new Date(trade.created_at).toLocaleString('default', {
+          const formattedMonth = date.toLocaleString('en-US', {
             month: 'long',
-            year: 'numeric'
-          })
-          monthlyPL[month] = (monthlyPL[month] || 0) + trade.profit_loss
-        })
+            year: 'numeric',
+            timeZone: 'UTC'
+          });
 
-        // Process strategies
-        filteredStrategies.forEach(strategy => {
-          if (!strategy.profit_loss) return
-          const month = new Date(strategy.created_at).toLocaleString('default', {
-            month: 'long',
-            year: 'numeric'
-          })
-          monthlyPL[month] = (monthlyPL[month] || 0) + strategy.profit_loss
-        })
+          return {
+            month: formattedMonth,
+            profit_loss: record.total_pl
+          };
+        }).sort((a: MonthlyPLResponse, b: MonthlyPLResponse) => {
+          // Sort by date, putting invalid dates at the end
+          if (a.month === 'Invalid Date') return 1;
+          if (b.month === 'Invalid Date') return -1;
 
-        // Convert to array and sort
-        data = Object.entries(monthlyPL)
-          .map(([month, profit_loss]) => ({ month, profit_loss }))
-          .sort((a, b) => new Date(b.month).getTime() - new Date(a.month).getTime())
+          // Parse the formatted dates back for comparison
+          const [aMonth, aYear] = a.month.split(' ');
+          const [bMonth, bYear] = b.month.split(' ');
+          
+          // Compare years first
+          const yearDiff = parseInt(aYear) - parseInt(bYear);
+          if (yearDiff !== 0) return yearDiff;
+          
+          // If years are equal, compare months
+          const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                         'July', 'August', 'September', 'October', 'November', 'December'];
+          return months.indexOf(aMonth) - months.indexOf(bMonth);
+        });
+
+        console.log('Transformed monthly P/L data:', data)
         break
 
       default:
+        console.error('Unknown action:', action)
         throw new Error(`Unknown action: ${action}`)
     }
 
@@ -293,6 +476,7 @@ serve(async (req: Request) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
+    console.error('Portfolio edge function error:', error)
     const message = error instanceof Error ? error.message : 'An unknown error occurred'
     return new Response(
       JSON.stringify({ error: message }),

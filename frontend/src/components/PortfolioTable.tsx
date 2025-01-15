@@ -12,6 +12,9 @@ type SortField = 'oneliner' | 'expiration' | 'type' | 'avg_price' | 'size' | 'av
 type SortOrder = 'asc' | 'desc'
 
 const HighlightedNumber = ({ value, decimals = 2, highlight = false }: { value: number, decimals?: number, highlight?: boolean }) => {
+  if (value === null || value === undefined) {
+    return <span>N/A</span>;
+  }
   const formattedValue = value.toFixed(decimals);
   if (highlight) {
     const className = value >= 0 ? "text-green-500" : "text-red-500";
