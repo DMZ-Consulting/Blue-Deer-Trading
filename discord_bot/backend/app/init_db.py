@@ -6,7 +6,7 @@ from app.models import TradeConfiguration, VerificationConfig
 
 def init_db():
     db_url = get_database_url()
-    print(f"Database URL: {db_url}")
+    #print(f"Database URL: {db_url}")
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     
     Base.metadata.create_all(bind=engine)

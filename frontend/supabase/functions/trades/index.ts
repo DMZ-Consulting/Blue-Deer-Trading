@@ -213,11 +213,18 @@ serve(async (req: Request) => {
         break
 
       case 'createTrade':
-        if (!input) throw new Error('Input is required')
-        const { data: trade, error: tradeError } = await supabase
-          .from('trades')
-          .insert({
-            trade_id: generateTradeId(),
+        if (!input) {
+          console.error('Input is required for createTrade action')
+          throw new Error('Input is required')
+        }
+        console.log('Creating new trade with input:', input)
+
+        try {
+          const tradeId = generateTradeId()
+          console.log('Generated trade ID:', tradeId)
+
+          const tradeData = {
+            trade_id: tradeId,
             symbol: input.symbol,
             trade_type: input.trade_type,
             status: 'open',
@@ -232,25 +239,53 @@ serve(async (req: Request) => {
             strike: input.strike,
             expiration_date: input.expiration_date,
             option_type: input.option_type
-          })
-          .select()
-          .single()
+          }
+          console.log('Prepared trade data:', tradeData)
 
-        if (tradeError) throw tradeError
+          const { data: trade, error: tradeError } = await supabase
+            .from('trades')
+            .insert(tradeData)
+            .select()
+            .single()
 
-        // Create initial transaction
-        const { error: transactionError } = await supabase
-          .from('transactions')
-          .insert({
+          if (tradeError) {
+            console.error('Error creating trade:', tradeError)
+            throw tradeError
+          }
+          console.log('Successfully created trade:', trade)
+
+          // Create initial transaction
+          const transactionData = {
+            id: generateTransactionId(),
             trade_id: trade.trade_id,
             transaction_type: 'OPEN',
             amount: input.entry_price,
             size: input.size,
             created_at: new Date().toISOString()
-          })
+          }
+          console.log('Creating initial transaction:', transactionData)
 
-        if (transactionError) throw transactionError
-        data = trade
+          const { error: transactionError } = await supabase
+            .from('transactions')
+            .insert(transactionData)
+
+          if (transactionError) {
+            console.error('Error creating transaction:', transactionError)
+            // If transaction creation fails, we should delete the trade
+            await supabase
+              .from('trades')
+              .delete()
+              .eq('trade_id', trade.trade_id)
+            throw transactionError
+          }
+          console.log('Successfully created transaction')
+
+          data = { trade, transaction: transactionData }
+          console.log('Returning data:', data)
+        } catch (error) {
+          console.error('Error in createTrade:', error)
+          throw error
+        }
         break
 
       case 'addToTrade':
@@ -274,6 +309,7 @@ serve(async (req: Request) => {
         const { error: addTransactionError } = await supabase
           .from('transactions')
           .insert({
+            transaction_id: generateTransactionId(),
             trade_id,
             transaction_type: 'ADD',
             amount: price,
@@ -320,6 +356,7 @@ serve(async (req: Request) => {
         const { error: trimTransactionError } = await supabase
           .from('transactions')
           .insert({
+            transaction_id: generateTransactionId(),
             trade_id,
             transaction_type: 'TRIM',
             amount: price,
@@ -361,6 +398,7 @@ serve(async (req: Request) => {
         const { error: exitTransactionError } = await supabase
           .from('transactions')
           .insert({
+            transaction_id: generateTransactionId(),
             trade_id,
             transaction_type: 'CLOSE',
             amount: price,
@@ -440,5 +478,31 @@ serve(async (req: Request) => {
 
 // Helper function to generate a trade ID
 function generateTradeId(): string {
-  return Math.random().toString(36).substring(2, 10)
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const alphanumeric = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  
+  // First character must be a letter
+  let id = letters.charAt(Math.floor(Math.random() * letters.length));
+  
+  // Generate 7 more random characters (can be letters or numbers)
+  for (let i = 0; i < 7; i++) {
+    id += alphanumeric.charAt(Math.floor(Math.random() * alphanumeric.length));
+  }
+  
+  return id;
+}
+
+// Helper function to generate a transaction ID (similar format but always starts with 'T')
+function generateTransactionId(): string {
+  const alphanumeric = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  
+  // First character is always 'T'
+  let id = 'T';
+  
+  // Generate 7 more random characters (can be letters or numbers)
+  for (let i = 0; i < 7; i++) {
+    id += alphanumeric.charAt(Math.floor(Math.random() * alphanumeric.length));
+  }
+  
+  return id;
 } 

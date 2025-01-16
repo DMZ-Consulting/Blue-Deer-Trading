@@ -45,7 +45,7 @@ def get_database_url():
 
 def get_engine():
     database_url = get_database_url()
-    print(f"Database URL: {database_url}")
+    #print(f"Database URL: {database_url}")
     connect_args = {
         "check_same_thread": False
     } if database_url.startswith("sqlite") else {

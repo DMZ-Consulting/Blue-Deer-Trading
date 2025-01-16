@@ -1,15 +1,11 @@
 #!/bin/bash
 
 export LOCAL_TEST=true
+export DISCORD_TOKEN=MTA3OTg5NzQzNjYzMTM1MTMyNg.GlUV3x.TqAgx4zkYzFAlCph0CVOuqPbjQjqe2s0SAJUZk
+export TEST_TOKEN=MTA3OTg5NzQzNjYzMTM1MTMyNg.GlUV3x.TqAgx4zkYzFAlCph0CVOuqPbjQjqe2s0SAJUZk
 
 # Change to the directory containing the app
 cd "$(dirname "$0")"
 
-# Check if the database file exists
-if [ ! -f local.db ]; then
-  # Run the database initialization script
-  python3 -m app.init_db
-fi
-
-# Start the uvicorn server
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug --reload
+# Run the Discord bot
+python3 run_bot.py
