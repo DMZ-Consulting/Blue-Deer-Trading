@@ -110,6 +110,7 @@ class Members(commands.Cog):
 
     async def dm_member(self, member):
         await member.send("""## Welcome to the Blue Deer Trading Discord server! \n
+        ## Please watch the [Discord Instruction Video](https://drive.google.com/file/d/1fmbMA2F6gFMWPZk1VfwQQl_VNaQGqsuj/view?usp=sharing) to get started. \n
         ### To get started, please verify your account by accepting the Terms & Conditions :arrow_right: https://discord.com/channels/1055255055474905139/1156641139143749632. \n
         ### After you have accepted the Terms & Conditions, You will gain access to the rest of the server. Please read the entirety of the Service Introduction :arrow_right: https://discord.com/channels/1055255055474905139/1146740935821111356. \n
         ### Please make sure to watch both instructional videos to acclimate yourself to the server. \n
