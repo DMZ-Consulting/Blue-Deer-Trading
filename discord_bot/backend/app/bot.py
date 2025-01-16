@@ -2576,7 +2576,10 @@ async def on_member_update(before, after):
             print(f"Error removing BD-Verified role from {after.name}: {e}")
 
     if after.roles == JOINED_ROLES:
-        await after.add_roles(after.guild.get_role(1283500418013593762))
+        try:
+            await after.add_roles(after.guild.get_role(1283500418013593762))
+        except Exception as e:
+            print(f"Error adding BD-Verified role to {after.name}: {e}")
     
     # if roles are ['@everyone', 'BD-Verified'] then remove BD-Verified
     # Can also do the if no verification role and one of the access roles, then add unverified role here
