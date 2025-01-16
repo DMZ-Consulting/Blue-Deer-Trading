@@ -42,6 +42,8 @@ class Members(commands.Cog):
         """
         print(f"Member joined event triggered for: {member.name} (ID: {member.id})")  # Debug print
         logger.info(f"Member joined: {member.name} (ID: {member.id})")
+
+        await self.dm_member(member)
         
         if member.guild.id != 1055255055474905139:  # Blue Deer Server
             return
@@ -105,6 +107,14 @@ class Members(commands.Cog):
         channel = member.guild.system_channel
         if channel is not None:
             await channel.send(f'Welcome {member.mention}.')
+
+    async def dm_member(self, member):
+        await member.send("""## Welcome to the Blue Deer Trading Discord server! \n
+        ### To get started, please verify your account by accepting the Terms & Conditions :arrow_right: https://discord.com/channels/1055255055474905139/1156641139143749632. \n
+        ### After you have accepted the Terms & Conditions, You will gain access to the rest of the server. Please read the entirety of the Service Introduction :arrow_right: https://discord.com/channels/1055255055474905139/1146740935821111356. \n
+        ### Please make sure to watch both instructional videos to acclimate yourself to the server. \n
+        ### \- BlueDeer""")
+
 
 def setup(bot):
     print("Setting up Members cog...")  # Debug print
