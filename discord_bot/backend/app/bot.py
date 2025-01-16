@@ -2557,6 +2557,7 @@ async def admin_reopen_trade(interaction: discord.Interaction, trade_id: discord
 
 ACCESS_ROLES = ['Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader']
 LOST_ACCESS = ['@everyone', 'BD-Verified']
+JOINED_ROLES = ['@everyone', 'Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader'] 
 
 # if after roles are ['@everyone', 'BD-Verified']
 @bot.event
@@ -2573,6 +2574,9 @@ async def on_member_update(before, after):
             await after.remove_roles(after.guild.get_role(1283500210127110267))
         except Exception as e:
             print(f"Error removing BD-Verified role from {after.name}: {e}")
+
+    if after.roles == JOINED_ROLES:
+        await after.add_roles(after.guild.get_role(1283500418013593762))
     
     # if roles are ['@everyone', 'BD-Verified'] then remove BD-Verified
     # Can also do the if no verification role and one of the access roles, then add unverified role here
