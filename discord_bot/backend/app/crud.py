@@ -165,9 +165,9 @@ def get_portfolio_trades(
             print(f"Trade {trade.trade_id} no average_exit_price, assuming 0")
             total_realized_pl = sum((float(t.amount) - float(trade.average_price)) * float(t.size) for t in open_transactions) * -1
 
-        # ES Is a futures contract with a multiplier of 50
+        # ES Is a futures contract with a multiplier of 5
         if trade.symbol == "ES":
-            total_realized_pl *= 50
+            total_realized_pl *= 5
         else: # All other contracts are 100x
             total_realized_pl *= 100
 
@@ -279,9 +279,9 @@ def get_portfolio_trades_relevant_to_week(
             print(f"Trade {trade.trade_id} no average_exit_price, assuming 0")
             total_realized_pl = sum((float(t.amount) - float(trade.average_price)) * float(t.size) for t in transactions)
 
-        # ES Is a futures contract with a multiplier of 50
+        # ES Is a futures contract with a multiplier of 5
         if trade.symbol == "ES":
-            total_realized_pl *= 50
+            total_realized_pl *= 5
         else: # All other contracts are 100x
             total_realized_pl *= 100
 

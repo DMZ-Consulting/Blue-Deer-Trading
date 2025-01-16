@@ -37,8 +37,11 @@ logger = logging.getLogger(__name__)
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.guilds = True  # Enable guild events
+intents.presences = True  # Enable presence updates
+intents.guild_messages = True  # Enable guild message events
 
-bot = commands.Bot(command_prefix='/', intents=intents)
+bot = commands.Bot(command_prefix='/', intents=intents, auto_sync_commands=False)  # Disable auto command sync
 
 class TradeGroupEnum:
     DAY_TRADER = "day_trader"
@@ -61,9 +64,13 @@ async def run_bot():
         logger.error("DISCORD_TOKEN environment variable is not set.")
         raise ValueError("DISCORD_TOKEN environment variable is not set.")
     try:
-        # Run the update_expiration_dates function before starting the bot
-        # update_expiration_dates()
-
+        print("Starting bot setup...")
+        # Load the members cog
+        try:
+            bot.load_extension('app.cogs.members')
+            print("Successfully loaded members cog")
+        except Exception as e:
+            print(f"Error loading members cog: {e}")
         await bot.start(token)
     except Exception as e:
         logger.error(f"Failed to start the bot: {str(e)}")
@@ -74,46 +81,41 @@ async def on_ready():
     global last_sync_time
     print(f'{bot.user} has connected to Discord!')
     create_tables(engine)
+    
+    # Print loaded cogs for debugging
+    print("Loaded cogs:", [cog for cog in bot.cogs.keys()])
+    
+    # Force sync commands on startup
+    print("Syncing commands...")
+    try:
+        guild_ids = []
+        if os.getenv("LOCAL_TEST", "false").lower() == "true":
+            guild_ids = [os.getenv('TEST_GUILD_ID')]
+        else:
+            guild_ids = [os.getenv('PROD_GUILD_ID')]
+        
+        for guild_id in guild_ids:
+            if guild_id:
+                try:
+                    guild = discord.Object(id=int(guild_id))
+                    await sync_commands_with_backoff(guild)
+                    last_sync_time = datetime.now()
+                except Exception as e:
+                    print(f"Failed to sync commands to guild {guild_id}: {e}")
+    except Exception as e:
+        print(f"Error syncing commands: {e}")
+    
     if os.getenv("LOCAL_TEST", "false").lower() != "true":
         check_and_update_roles.start()
-        check_and_exit_expired_trades.start()
-
-    await manually_expire_trades()
-    
-    # Check if we need to sync commands
-    if last_sync_time is None or datetime.now() - last_sync_time > SYNC_COOLDOWN:
-        await sync_commands()
-        last_sync_time = datetime.now()
-    else:
-        print("Skipping command sync due to cooldown")
 
     print("Bot is ready!")
-
-async def sync_commands():
-    guild_ids = []
-    if os.getenv("LOCAL_TEST", "false").lower() == "true":
-        guild_ids = [os.getenv('TEST_GUILD_ID')]
-    else:
-        guild_ids = [os.getenv('PROD_GUILD_ID')]
-    
-    for guild_id in guild_ids:
-        if guild_id:
-            try:
-                guild = discord.Object(id=int(guild_id))
-                await sync_commands_with_backoff(guild)
-            except Exception as e:
-                print(f"Failed to sync commands to the guild with ID {guild_id}: {e}")
-        else:
-            print(f"Guild ID not set. Skipping command sync.")
 
 async def sync_commands_with_backoff(guild, max_retries=5, base_delay=1):
     for attempt in range(max_retries):
         try:
-            synced = await bot.sync_commands(guild_ids=[guild.id])
-            if synced:
-                print(f"Synced {len(synced)} command(s) to the guild with ID {guild.id}.")
-            else:
-                print(f"No commands were synced to the guild with ID {guild.id}.")
+            print(f"Attempting to sync commands for guild {guild.id} (attempt {attempt + 1}/{max_retries})")
+            commands = await bot.sync_commands(guild_ids=[guild.id])
+            print(f"Successfully synced {len(commands) if commands else 0} commands to guild {guild.id}")
             return
         except discord.HTTPException as e:
             if e.status == 429:  # Rate limit error
@@ -121,7 +123,13 @@ async def sync_commands_with_backoff(guild, max_retries=5, base_delay=1):
                 print(f"Rate limited. Retrying in {delay} seconds.")
                 await asyncio.sleep(delay)
             else:
+                print(f"HTTP error while syncing commands: {e}")
                 raise
+        except Exception as e:
+            print(f"Error syncing commands: {e}")
+            if attempt == max_retries - 1:
+                raise
+            await asyncio.sleep(base_delay * (2 ** attempt))
     print(f"Failed to sync commands after {max_retries} attempts.")
 
 async def kill_interaction(interaction):
@@ -198,42 +206,61 @@ class TradePaginator(View):
         self.current_page += 1
         await self.send_page()
 
-@tasks.loop(minutes=2)
+
+
+@tasks.loop(minutes=15)  # Changed from 5 to 15 minutes
 async def check_and_update_roles():
     """
     This function checks the roles of all members in the guild and updates them based on the role requirements and conditional role grants.
     It also logs the actions taken in the specified log channel.
     """
     for guild in bot.guilds:
-        if guild.id != 1055255055474905139: # Blue Deer Server, only do this here. 
+        if guild.id != 1055255055474905139:  # Blue Deer Server, only do this here. 
             continue
             
-            db = next(get_db())
+        db = next(get_db())
+        try:
+            # Check role requirements
+            role_requirements = db.query(models.RoleRequirement).filter_by(guild_id=str(guild.id)).all()
             try:
-                # Check role requirements
-                role_requirements = db.query(models.RoleRequirement).filter_by(guild_id=str(guild.id)).all()
-                for requirement in role_requirements:
-                    required_role_ids = [role.role_id for role in requirement.required_roles]
-                    members = guild.fetch_members(limit=None)
-                    async for member in members:
-                        if not any(role.id in required_role_ids for role in member.roles):
+                members = await guild.fetch_members(limit=None).flatten()
+            except discord.HTTPException as e:
+                if e.status == 429:  # Rate limit error
+                    logger.warning(f"Rate limited while fetching members. Skipping this iteration.")
+                    return
+                else:
+                    raise
+
+            for requirement in role_requirements:
+                required_role_ids = [role.role_id for role in requirement.required_roles]
+                for member in members:
+                    if not any(str(role.id) in required_role_ids for role in member.roles):
+                        try:
                             await member.remove_roles(*member.roles, reason="Does not meet role requirements")
                             await log_action(guild, f"Removed roles from {member.name} (ID: {member.id}) due to not meeting role requirements")
+                        except discord.HTTPException as e:
+                            if e.status == 429:
+                                logger.warning(f"Rate limited while updating roles. Waiting for next iteration.")
+                                return
 
-                # Check conditional role grants
-                conditional_grants = db.query(models.ConditionalRoleGrant).filter_by(guild_id=str(guild.id)).all()
-                for grant in conditional_grants:
-                    condition_role_ids = [role.role_id for role in grant.condition_roles]
-                    grant_role = guild.get_role(int(grant.grant_role_id))
-                    exclude_role = guild.get_role(int(grant.exclude_role_id)) if grant.exclude_role_id else None
-                    
-                    members = guild.fetch_members(limit=None)
-                    async for member in members:
-                        if any(role.id in condition_role_ids for role in member.roles) and (not exclude_role or exclude_role not in member.roles):
+            # Check conditional role grants
+            conditional_grants = db.query(models.ConditionalRoleGrant).filter_by(guild_id=str(guild.id)).all()
+            for grant in conditional_grants:
+                condition_role_ids = [role.role_id for role in grant.condition_roles]
+                grant_role = guild.get_role(int(grant.grant_role_id))
+                exclude_role = guild.get_role(int(grant.exclude_role_id)) if grant.exclude_role_id else None
+                
+                for member in members:
+                    if any(str(role.id) in condition_role_ids for role in member.roles) and (not exclude_role or exclude_role not in member.roles):
+                        try:
                             await member.add_roles(grant_role, reason="Meets conditional role grant requirements")
                             await log_action(guild, f"Added role {grant_role.name} to {member.name} (ID: {member.id}) due to meeting conditional role grant requirements")
-            finally:
-                db.close()
+                        except discord.HTTPException as e:
+                            if e.status == 429:
+                                logger.warning(f"Rate limited while updating roles. Waiting for next iteration.")
+                                return
+        finally:
+            db.close()
 
 async def log_action(guild, message):
     db = next(get_db())
@@ -491,30 +518,74 @@ async def log_command_usage(interaction: discord.Interaction, command_name: str,
         logger.error(f"Error logging command usage: {str(e)}")
         logger.error(traceback.format_exc())
 
+class VerificationModal(discord.ui.Modal):
+    def __init__(self, config, terms_link, *args, **kwargs):
+        super().__init__(title="Verification Form", *args, **kwargs)
+        self.config = config
+        
+        # Confirmation of reading terms
+        self.agreement = discord.ui.InputText(
+            label="Terms Agreement",
+            style=discord.InputTextStyle.short,
+            placeholder="Type 'I AGREE' to confirm you have read and accept the terms",
+            required=True,
+            min_length=7,
+            max_length=7
+        )
+        self.add_item(self.agreement)
+        
+        self.full_name = discord.ui.InputText(
+            label="Full Name",
+            style=discord.InputTextStyle.short,
+            placeholder="Enter your full name",
+            required=True,
+            min_length=2,
+            max_length=100
+        )
+        self.add_item(self.full_name)
+        
+        self.email = discord.ui.InputText(
+            label="Email Address",
+            style=discord.InputTextStyle.short,
+            placeholder="Enter your email address",
+            required=True,
+            min_length=5,
+            max_length=100
+        )
+        self.add_item(self.email)
+
+    async def callback(self, interaction: discord.Interaction):
+        print(f"agreement value: {self.agreement.value}")
+        if str(self.agreement.value).upper() != "I AGREE":
+            await interaction.response.send_message(
+                "You must type 'I AGREE' to confirm you have read and accept the terms and conditions.", 
+                ephemeral=True
+            )
+            return
+        await handle_verification(interaction, self.config, str(self.full_name.value), str(self.email.value))
+
 @bot.slash_command(name="setup_verification", description="Set up a verification message with terms and conditions")
 async def setup_verification(
     interaction: discord.Interaction,
-    channel: discord.TextChannel,
-    terms: str,
-    role_to_remove: discord.Role,
-    role_to_add: discord.Role,
-    log_channel: discord.TextChannel,
+    channel: discord.Option(discord.TextChannel, description="The channel to send the verification message"),
+    terms_link: discord.Option(str, description="Link to the terms and conditions document"),
+    terms_summary: discord.Option(str, description="Brief summary of the terms (shown in message)"),
+    role_to_remove: discord.Option(discord.Role, description="The role to remove upon verification"),
+    role_to_add: discord.Option(discord.Role, description="The role to add upon verification"),
+    log_channel: discord.Option(discord.TextChannel, description="The channel for logging verifications"),
 ):
-    await log_command_usage(interaction, "setup_verification", {
-        "channel": channel.name,
-        "terms": terms,
-        "role_to_remove": role_to_remove.name,
-        "role_to_add": role_to_add.name,
-        "log_channel": log_channel.name
-    })
-    print("setup_verification called")
-    # Kill the response immediately
     await interaction.response.defer(ephemeral=True)
     
     db = next(get_db())
     try:
-        embed = discord.Embed(title="Verification", description=terms, color=discord.Color.blue())
-        button = discord.ui.Button(style=ButtonStyle.green, label="Accept Terms", custom_id="verify")
+        embed = discord.Embed(title="Verification Required", color=discord.Color.blue())
+        embed.description = (
+            f"{terms_summary}\n\n"
+            f"**Please read our full Terms and Conditions here:**\n[Blue Deer Trading Terms and Conditions]({terms_link})\n\n"
+            "Click the button below to start the verification process. "
+            "You will need to confirm that you have read and agree to the terms."
+        )
+        button = discord.ui.Button(style=discord.ButtonStyle.green, label="Start Verification", custom_id="verify")
         view = discord.ui.View(timeout=None)
         view.add_item(button)
         message = await channel.send(embed=embed, view=view)
@@ -539,14 +610,31 @@ async def setup_verification(
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
-    print("on_interaction called")
     try:
         if interaction.type == discord.InteractionType.component:
-            print("interaction.type == discord.InteractionType.component", interaction.data)
             if interaction.data["custom_id"] == "verify":
-                await handle_verification(interaction)
-                return
-        # Add this else block to allow other interactions to be processed normally
+                db = next(get_db())
+                try:
+                    config = db.query(models.VerificationConfig).filter_by(message_id=str(interaction.message.id)).first()
+                    if not config:
+                        await interaction.response.send_message("Verification configuration not found.", ephemeral=True)
+                        return
+                    
+                    # Get the terms link from the original message's embed
+                    terms_link = ""
+                    if interaction.message.embeds:
+                        description = interaction.message.embeds[0].description
+                        # Extract the link from the description
+                        for line in description.split('\n'):
+                            if "http" in line:
+                                terms_link = line.strip()
+                                break
+                    
+                    modal = VerificationModal(config, terms_link)
+                    await interaction.response.send_modal(modal)
+                    return
+                finally:
+                    db.close()
         
         await bot.process_application_commands(interaction)
     except Exception as e:
@@ -554,15 +642,9 @@ async def on_interaction(interaction: discord.Interaction):
         logger.error(traceback.format_exc())
         await interaction.response.send_message("An error occurred while processing your request.", ephemeral=True)
 
-async def handle_verification(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+async def handle_verification(interaction: discord.Interaction, config, full_name: str, email: str):
     db = next(get_db())
     try:
-        config = db.query(models.VerificationConfig).filter_by(message_id=str(interaction.message.id)).first()
-        if not config:
-            await interaction.followup.send("Verification configuration not found.", ephemeral=True)
-            return
-
         role_to_remove = interaction.guild.get_role(int(config.role_to_remove_id))
         role_to_add = interaction.guild.get_role(int(config.role_to_add_id))
         log_channel = interaction.guild.get_channel(int(config.log_channel_id))
@@ -575,22 +657,31 @@ async def handle_verification(interaction: discord.Interaction):
             description=f"{interaction.user.mention} has accepted the terms and conditions.",
             color=discord.Color.green()
         )
+        log_embed.add_field(name="Full Name", value=full_name)
+        log_embed.add_field(name="Email", value=email)
         await log_channel.send(embed=log_embed)
 
         new_verification = models.Verification(
             user_id=str(interaction.user.id),
             username=str(interaction.user.name),
+            #full_name=full_name,
+            #email=email,
             timestamp=datetime.utcnow(),
             configuration_id=config.id
         )
+
+        # Write the verification to a local file as well. Append it to the file in CSV format. If the file doesn't exist, create it.
+        with open('verifications.csv', 'a') as f:
+            f.write(f"{interaction.user.id},{interaction.user.name},{full_name},{email}\n")
+
         db.add(new_verification)
         db.commit()
 
-        await interaction.followup.send("You have been verified!", ephemeral=True)
+        await interaction.response.send_message("You have been verified!", ephemeral=True)
     except Exception as e:
         logger.error(f"Error in handle_verification: {str(e)}")
         logger.error(traceback.format_exc())
-        await interaction.followup.send(f"An error occurred during verification: {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"An error occurred during verification: {str(e)}", ephemeral=True)
     finally:
         db.close()
 
@@ -2462,3 +2553,22 @@ async def admin_reopen_trade(interaction: discord.Interaction, trade_id: discord
     db.commit()
 
     await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADMIN_REOPEN_TRADE command: Trade reopened.")
+
+'''
+# Add debug event for member updates
+@bot.event
+async def on_member_update(before, after):
+    print(f"Member updated: {after.name} (ID: {after.id})")
+    logger.info(f"Member updated: {after.name} (ID: {after.id})")
+    if before.roles != after.roles:
+        print(f"Roles changed for {after.name}")
+        print(f"Before: {[role.name for role in before.roles]}")
+        print(f"After: {[role.name for role in after.roles]}")
+    
+    # if roles are ['@everyone', 'BD-Verified'] then remove BD-Verified
+    # Can also do the if no verification role and one of the access roles, then add unverified role here
+
+'''
+
+
+
