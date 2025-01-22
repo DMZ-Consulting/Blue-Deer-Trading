@@ -54,13 +54,33 @@ CREATE TABLE IF NOT EXISTS conditional_role_grant_condition_roles (
 );
 
 -- Verification Configs
+-- THIS NEEDS TO BE UPDATED IN SUPABASE
+-- MUST BE IMPLEMENTED IN DISCORD BOT
 CREATE TABLE IF NOT EXISTS verification_configs (
     id SERIAL PRIMARY KEY,
     message_id VARCHAR UNIQUE,
     channel_id VARCHAR,
     role_to_remove_id VARCHAR,
     role_to_add_id VARCHAR,
-    log_channel_id VARCHAR
+    log_channel_id VARCHAR,
+    verification_message_id VARCHAR,
+    terms_of_service_link VARCHAR,
+    terms_summary VARCHAR
+);
+
+-- User Verification Status
+-- THIS IS NEW FOR SUPABASE
+-- MUST BE IMPLEMENTED IN DISCORD BOT
+CREATE TABLE IF NOT EXISTS user_verification_status (
+    id SERIAL PRIMARY KEY,
+    discord_id VARCHAR,
+    email VARCHAR,
+    discord_username VARCHAR,
+    full_name VARCHAR,
+    verification_status VARCHAR,
+    verification_message_id VARCHAR,
+    verification_timestamp TIMESTAMP,
+    UNIQUE(discord_id)
 );
 
 -- Verifications
