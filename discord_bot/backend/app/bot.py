@@ -18,6 +18,8 @@ import discord
 from discord.ext import tasks
 from dotenv import load_dotenv
 
+import app.models as models
+
 from .supabase_client import (
     create_trade, add_to_trade, trim_trade, exit_trade, get_trade, get_open_trades,
     get_open_os_trades_for_autocomplete, get_open_trades_for_autocomplete, reopen_trade,
@@ -287,7 +289,6 @@ async def get_open_trade_ids(ctx: discord.AutocompleteContext):
     try:
         # Get open trades directly from the database
         trades = await get_open_trades_for_autocomplete()
-        print(trades)
         if not trades:
             return []
         
@@ -416,86 +417,6 @@ async def send_embed_by_configuration_id(interaction: discord.Interaction, confi
     finally:
         db.close()
 
-async def exit_expired_os_trade(trade: models.OptionsStrategyTrade):
-    db = next(get_db())
-    try:
-        trade = db.merge(trade)
-
-        config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.id == trade.configuration_id).first()
-        if not config:
-            logger.error(f"Configuration for trade {trade.trade_id} not found.")
-            return
-
-        # Set exit price to max loss
-        exit_price = 0
-
-        trade.status = models.OptionsStrategyStatusEnum.CLOSED
-        trade.exit_price = exit_price
-        trade.closed_at = datetime.now()
-        
-        current_size = Decimal(trade.current_size)
-        
-        new_transaction = models.OptionsStrategyTransaction(
-            strategy_id=trade.id,
-            transaction_type=models.TransactionTypeEnum.CLOSE,
-            net_cost=exit_price,
-            size=str(current_size),
-            created_at=datetime.now()
-        )
-        db.add(new_transaction)
-
-        """# Calculate profit/loss
-        open_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.OPEN, models.TransactionTypeEnum.ADD])
-        trim_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.TRIM])
-        
-        total_cost = sum(Decimal(t.amount) * Decimal(t.size) for t in open_transactions)
-        total_open_size = sum(Decimal(t.size) for t in open_transactions)
-        
-        average_cost = total_cost / total_open_size if total_open_size > 0 else 0
-
-        close_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.CLOSE])
-        avg_exit_price = sum(Decimal(t.amount) * Decimal(t.size) for t in close_transactions) / sum(Decimal(t.size) for t in close_transactions) if close_transactions else 0
-        trade.average_exit_price = float(avg_exit_price)
-        
-        trim_profit_loss = 0
-        if trim_transactions:
-            trim_profit_loss = sum((Decimal(t.amount) - average_cost) * Decimal(t.size) for t in trim_transactions)
-        exit_profit_loss = (Decimal(exit_price) - average_cost) * current_size
-        
-        total_profit_loss = trim_profit_loss + exit_profit_loss
-        trade.profit_loss = float(total_profit_loss)
-
-        # Determine win/loss
-        trade.win_loss = models.WinLossEnum.LOSS"""
-
-        logger.info(f"Exiting expired OS trade {trade.trade_id} with exit price {exit_price} and current size {current_size}")
-
-        db.commit()
-        db.refresh(trade)
-
-        '''
-        TODO: We are commenting this out for now. Fix this.
-
-        # Create an embed with the closed trade information
-        embed = discord.Embed(title="Trade Expired and Closed", color=discord.Color.red())
-        embed.description = create_trade_oneliner(trade)
-        embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
-        embed.add_field(name="Final Size", value=current_size, inline=True)
-        embed.add_field(name="Total Profit/Loss", value=f"${total_profit_loss:.2f}", inline=True)
-        embed.add_field(name="Result", value="Loss (Expired)", inline=True)
-        embed.set_footer(text=f"Trade ID: {trade.trade_id}")
-
-        # Send the embed to the configured channel with role ping
-        channel = bot.get_channel(int(config.channel_id))
-        role = channel.guild.get_role(int(config.role_id))
-        await channel.send(content=f"{role.mention}", embed=embed)
-        '''
-
-    except Exception as e:
-        logger.error(f"Error exiting expired trade {trade.trade_id}: {str(e)}")
-        logger.error(traceback.format_exc())
-    finally:
-        db.close()
 
 async def log_command_usage(interaction: discord.Interaction, command_name: str, params: dict):
     """Log command usage to the log channel."""
@@ -566,7 +487,6 @@ async def setup_verification(
 ):
     await interaction.response.defer(ephemeral=True)
     
-    db = next(get_db())
     try:
         embed = discord.Embed(title="Verification Required", color=discord.Color.blue())
         embed.description = (
@@ -587,8 +507,8 @@ async def setup_verification(
             role_to_add_id=str(role_to_add.id),
             log_channel_id=str(log_channel.id),
         )
-        db.add(new_config)
-        db.commit()
+
+        # TODO: Add the new config to the database
 
         await interaction.followup.send("Verification message set up successfully.", ephemeral=True)
     except Exception as e:
@@ -596,8 +516,9 @@ async def setup_verification(
         logger.error(traceback.format_exc())
         await interaction.followup.send(f"An error occurred while setting up verification: {str(e)}", ephemeral=True)
     finally:
-        db.close()
+        pass
 
+# TODO: Update to use Supabase
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
     try:
@@ -726,36 +647,10 @@ def parse_option_symbol(option_string: str) -> dict:
             'option_type': option_type,
             'trade_type': 'BTO'  # Default to BTO
         }
-
-async def get_open_trade_ids(ctx: discord.AutocompleteContext):
-    db = next(get_db())
-    try:
-        open_trades = crud.get_trades(db, status=models.TradeStatusEnum.OPEN)
-        
-        # Format trade information
-        trade_info = []
-        for trade in open_trades:
-            symbol = trade.symbol
-            strike = getattr(trade, 'strike', None)
-            expiration = getattr(trade, 'expiration_date', None)
-            
-            if strike and expiration:
-                strike_display = f"${strike:,.2f}" if strike >= 0 else f"(${abs(strike):,.2f})"
-                display = f"{symbol} {strike_display} {expiration.strftime('%m/%d/%y')}"
-                sort_key = (symbol, expiration, strike)
-            else:
-                display = f"{symbol} COMMON"
-                sort_key = (symbol, datetime.max, 0)  # Put non-option trades at the bottom of their symbol group
-            
-            trade_info.append((trade.trade_id, display, sort_key))
-        
-        # Sort the trades
-        sorted_trades = sorted(trade_info, key=lambda x: x[2])
-        
-        # Create OptionChoice objects
-        return [discord.OptionChoice(name=f"{display} (ID: {trade_id})", value=trade_id) for trade_id, display, _ in sorted_trades]
-    finally:
-        db.close()
+    except Exception as e:
+        logger.error(f"Error parsing option symbol: {str(e)}")
+        logger.error(traceback.format_exc())
+        return None
 
 class TradePaginator(discord.ui.View):
     def __init__(self, trades, interaction):
@@ -810,41 +705,6 @@ class TradePaginator(discord.ui.View):
             await self.send_page()
         await interaction.response.defer()
 
-async def get_open_os_trade_ids(ctx: discord.AutocompleteContext):
-    db = next(get_db())
-    try:
-        open_trades = crud.get_os_trades(db, status=models.OptionsStrategyStatusEnum.OPEN)
-        
-        # Format trade information
-        trade_info = []
-        for trade in open_trades:
-            symbol = trade.underlying_symbol
-            name = trade.name
-            expiration_date = None
-            for leg in deserialize_legs(trade.legs):
-                if not expiration_date or leg['expiration_date'] > expiration_date:
-                    expiration_date = leg['expiration_date']
-
-            display = f"{symbol} {expiration_date.strftime('%m/%d/%y')} @ {trade.average_net_cost:.2f}- {name}"
-            sort_key = (symbol, expiration_date, name)
-            
-            trade_info.append((trade.trade_id, display, sort_key))
-        
-        # Sort the trades
-        sorted_trades = sorted(trade_info, key=lambda x: x[2])
-        
-        # Create OptionChoice objects
-        return [discord.OptionChoice(name=f"{display} (ID: {trade_id})", value=trade_id) for trade_id, display, _ in sorted_trades]
-    finally:
-        db.close()
-
-async def get_trade_groups(ctx: discord.AutocompleteContext):
-    db = next(get_db())
-    try:
-        trade_groups = db.query(models.TradeConfiguration.name).distinct().all()
-        return [group[0] for group in trade_groups]
-    finally:
-        db.close()
 
 def convert_to_two_digit_year(date_string):
     """Convert a date string to use 2-digit year if it's not already."""
@@ -886,19 +746,6 @@ def determine_trade_group(expiration_date: str, trade_type: str, symbol: str) ->
     else:
         print(f"Returning LONG_TERM_TRADER for {expiration_date}")
         return TradeGroupEnum.LONG_TERM_TRADER
-
-def get_configuration(db: Session, trade_group: str) -> models.TradeConfiguration:
-    """
-    Retrieve the trade configuration for a given trade group.
-    
-    Args:
-    db (Session): The database session.
-    trade_group (str): The name of the trade group.
-
-    Returns:
-    models.TradeConfiguration: The trade configuration for the given trade group, or None if not found.
-    """
-    return db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == trade_group).first()
 
 def create_trade_oneliner(trade, price = 0, size = 0):
     """Create a one-liner summary of the trade."""
@@ -1840,7 +1687,7 @@ async def unsync_resync(ctx, guild_id: int = None):
     synced = await bot.sync_commands(guild=guild)
     await ctx.send(f"Resynced {len(synced)} commands.", ephemeral=True)
 
-
+# TODO: Update with supabase
 @bot.slash_command(name="transaction_send", description="Send a transaction message")
 async def transaction_send(interaction: discord.Interaction, transaction_id: discord.Option(str, description="The transaction to send")):
     await kill_interaction(interaction)
