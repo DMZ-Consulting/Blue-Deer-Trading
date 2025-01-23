@@ -105,7 +105,10 @@ serve(async (req: Request) => {
             trade_configurations (*)
           `)
           .order('created_at', { ascending: false })
-        if (allError) throw allError
+        if (allError) {
+          console.error('Error fetching all trades:', allError)
+          throw new Error(`Failed to fetch all trades: ${allError.message}`)
+        }
         data = allTrades
         break
 
@@ -137,7 +140,7 @@ serve(async (req: Request) => {
 
             if (configError) {
               console.error('Error fetching configuration:', configError)
-              throw configError
+              throw new Error(`Failed to fetch trade configuration '${filters.configName}': ${configError.message}`)
             }
 
             if (configData) {
@@ -145,7 +148,7 @@ serve(async (req: Request) => {
               query = query.eq('configuration_id', configData.id)
             } else {
               console.warn('No configuration found for name:', filters.configName)
-              return []
+              throw new Error(`No trade configuration found with name '${filters.configName}'`)
             }
           }
 
@@ -206,7 +209,7 @@ serve(async (req: Request) => {
         const { data: filteredTrades, error: filterError } = await query
         if (filterError) {
           console.error('Error fetching trades:', filterError)
-          throw filterError
+          throw new Error(`Failed to fetch filtered trades: ${filterError.message}`)
         }
         console.log(`Found ${filteredTrades?.length ?? 0} trades`)
         data = filteredTrades
@@ -215,7 +218,7 @@ serve(async (req: Request) => {
       case 'createTrade':
         if (!input) {
           console.error('Input is required for createTrade action')
-          throw new Error('Input is required')
+          throw new Error('Input is required for creating a trade')
         }
         console.log('Creating new trade with input:', input)
 
@@ -284,79 +287,103 @@ serve(async (req: Request) => {
           console.log('Returning data:', data)
         } catch (error) {
           console.error('Error in createTrade:', error)
-          throw error
+          throw new Error(`Error creating new trade: ${error instanceof Error ? error.message : 'Unknown error'}`)
         }
         break
 
       case 'addToTrade':
-        if (!trade_id || !price || !size) throw new Error('trade_id, price, and size are required')
-        // Get current trade
-        const { data: currentTrade, error: currentTradeError } = await supabase
-          .from('trades')
-          .select('*')
-          .eq('trade_id', trade_id)
-          .single()
+        if (!trade_id || !price || !size) {
+          throw new Error('Missing required parameters: trade_id, price, and size are required for adding to a trade')
+        }
 
-        if (currentTradeError) throw currentTradeError
+        try {
+          // Get current trade
+          const { data: currentTrade, error: currentTradeError } = await supabase
+            .from('trades')
+            .select('*')
+            .eq('trade_id', trade_id)
+            .single()
 
-        // Calculate new average price and size
-        const currentSize = parseFloat(currentTrade.current_size)
-        const addSize = parseFloat(size)
-        const newSize = currentSize + addSize
-        const newAveragePrice = ((currentSize * currentTrade.average_price) + (addSize * price)) / newSize
+          if (currentTradeError) {
+            console.error('Error fetching trade for add:', currentTradeError)
+            throw new Error(`Failed to fetch trade ${trade_id} for adding: ${currentTradeError.message}`)
+          }
 
-        // Create transaction
-        const { error: addTransactionError } = await supabase
-          .from('transactions')
-          .insert({
-            transaction_id: generateTransactionId(),
-            trade_id,
-            transaction_type: 'ADD',
-            amount: price,
-            size,
-            created_at: new Date().toISOString()
-          })
+          // Calculate new average price and size
+          const currentSize = parseFloat(currentTrade.current_size)
+          const addSize = parseFloat(size)
+          const newSize = currentSize + addSize
+          // TODO: Make sure this calculation is correct.
+          const newAveragePrice = ((currentSize * currentTrade.average_price) + (addSize * price)) / newSize
 
-        if (addTransactionError) throw addTransactionError
+          // Create transaction
+          const { error: addTransactionError } = await supabase
+            .from('transactions')
+            .insert({
+              id: generateTransactionId(),
+              trade_id,
+              transaction_type: 'ADD',
+              amount: price,
+              size,
+              created_at: new Date().toISOString()
+            })
 
-        // Update trade
-        const { data: updatedTrade, error: updateError } = await supabase
-          .from('trades')
-          .update({
-            average_price: newAveragePrice,
-            current_size: newSize.toString()
-          })
-          .eq('trade_id', trade_id)
-          .select()
-          .single()
+          if (addTransactionError) {
+            console.error('Error creating add transaction:', addTransactionError)
+            throw new Error(`Failed to create add transaction: ${addTransactionError.message}`)
+          }
 
-        if (updateError) throw updateError
-        data = updatedTrade
+          // Update trade
+          const { data: updatedTrade, error: updateError } = await supabase
+            .from('trades')
+            .update({
+              average_price: newAveragePrice,
+              current_size: newSize.toString()
+            })
+            .eq('trade_id', trade_id)
+            .select()
+            .single()
+
+          if (updateError) {
+            console.error('Error updating trade for add:', updateError)
+            throw new Error(`Failed to update trade ${trade_id} after adding: ${updateError.message}`)
+          }
+          data = updatedTrade
+        } catch (error) {
+          console.error('Error in addToTrade:', error)
+          throw new Error(`Error adding to trade ${trade_id}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
         break
 
       case 'trimTrade':
-        if (!trade_id || !price || !size) throw new Error('trade_id, price, and size are required')
-        // Get current trade
-        const { data: trimTrade, error: trimTradeError } = await supabase
-          .from('trades')
+        if (!trade_id || !price || !size) {
+          throw new Error('Missing required parameters: trade_id, price, and size are required for trimming a trade')
+        }
+        try {
+          // Get current trade
+          const { data: trimTrade, error: trimTradeError } = await supabase
+            .from('trades')
           .select('*')
           .eq('trade_id', trade_id)
           .single()
 
-        if (trimTradeError) throw trimTradeError
+        if (trimTradeError) {
+          console.error('Error fetching trade for trim:', trimTradeError)
+          throw new Error(`Failed to fetch trade ${trade_id} for trimming: ${trimTradeError.message}`)
+        }
 
         const trimCurrentSize = parseFloat(trimTrade.current_size)
         const trimSize = parseFloat(size)
 
         if (trimSize > trimCurrentSize) {
-          throw new Error('Trim size is greater than current trade size')
+          throw new Error(`Cannot trim ${trimSize} shares/contracts - current position size is only ${trimCurrentSize}`)
         }
 
         // Create transaction
         const { error: trimTransactionError } = await supabase
           .from('transactions')
           .insert({
-            transaction_id: generateTransactionId(),
+            id: generateTransactionId(),
             trade_id,
             transaction_type: 'TRIM',
             amount: price,
@@ -364,7 +391,10 @@ serve(async (req: Request) => {
             created_at: new Date().toISOString()
           })
 
-        if (trimTransactionError) throw trimTransactionError
+        if (trimTransactionError) {
+          console.error('Error creating trim transaction:', trimTransactionError)
+          throw new Error(`Failed to create trim transaction: ${trimTransactionError.message}`)
+        }
 
         // Update trade
         const { data: trimmedTrade, error: trimUpdateError } = await supabase
@@ -376,91 +406,154 @@ serve(async (req: Request) => {
           .select()
           .single()
 
-        if (trimUpdateError) throw trimUpdateError
-        data = trimmedTrade
+          if (trimUpdateError) {
+            console.error('Error updating trade for trim:', trimUpdateError)
+            throw new Error(`Failed to update trade ${trade_id} after trimming: ${trimUpdateError.message}`)
+          }
+          data = trimmedTrade
+        } catch (error) {
+          console.error('Error in trimTrade:', error)
+          throw new Error(`Error trimming trade ${trade_id}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
         break
 
       case 'exitTrade':
-        if (!trade_id || !price) throw new Error('trade_id and price are required')
-        // Get current trade and all its transactions
-        const { data: exitTradeData, error: exitTradeError } = await supabase
-          .from('trades')
-          .select(`
-            *,
-            transactions (*)
-          `)
-          .eq('trade_id', trade_id)
-          .single()
+        if (!trade_id || !price) {
+          throw new Error('Missing required parameters: trade_id and price are required for exiting a trade')
+        }
+        try {
+          // Get current trade and all its transactions
+          const { data: exitTradeData, error: exitTradeError } = await supabase
+            .from('trades')
+            .select(`
+              *,
+              transactions (*)
+            `)
+            .eq('trade_id', trade_id)
+            .single()
 
-        if (exitTradeError) throw exitTradeError
+          if (exitTradeError) {
+            console.error('Error fetching trade for exit:', exitTradeError)
+            throw new Error(`Failed to fetch trade ${trade_id} for exiting: ${exitTradeError.message}`)
+          }
 
-        // Create exit transaction
-        const { error: exitTransactionError } = await supabase
-          .from('transactions')
-          .insert({
-            transaction_id: generateTransactionId(),
-            trade_id,
-            transaction_type: 'CLOSE',
-            amount: price,
-            size: exitTradeData.current_size,
-            created_at: new Date().toISOString()
-          })
+          // Create exit transaction
+          const { error: exitTransactionError } = await supabase
+            .from('transactions')
+            .insert({
+              id: generateTransactionId(),
+              trade_id,
+              transaction_type: 'CLOSE',
+              amount: price,
+              size: exitTradeData.current_size,
+              created_at: new Date().toISOString()
+            })
 
-        if (exitTransactionError) throw exitTransactionError
+          if (exitTransactionError) {
+            console.error('Error creating exit transaction:', exitTransactionError)
+            throw new Error(`Failed to create exit transaction: ${exitTransactionError.message}`)
+          }
 
-        // Calculate profit/loss
-        const exitTradeWithTransactions = exitTradeData as ExitTrade
-        const openTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
-          t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
-        )
-        const trimTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
-          t.transaction_type === 'TRIM'
-        )
+          // Calculate profit/loss
+          const exitTradeWithTransactions = exitTradeData as ExitTrade
+          console.log('Exit trade data:', exitTradeWithTransactions)
 
-        const totalCost = openTransactions.reduce((sum: number, t: Transaction) => 
-          sum + (parseFloat(t.amount.toString()) * parseFloat(t.size)), 0
-        )
-        const totalOpenSize = openTransactions.reduce((sum: number, t: Transaction) => 
-          sum + parseFloat(t.size), 0
-        )
-        const averageCost = totalCost / totalOpenSize
+          const openTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
+            t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
+          )
+          console.log('Open/Add transactions:', openTransactions)
 
-        const trimProfitLoss = trimTransactions.reduce((sum: number, t: Transaction) => 
-          sum + ((parseFloat(t.amount.toString()) - averageCost) * parseFloat(t.size)), 0
-        )
-        const exitProfitLoss = (price - averageCost) * parseFloat(exitTradeData.current_size)
-        const totalProfitLoss = trimProfitLoss + exitProfitLoss
+          const trimTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
+            t.transaction_type === 'TRIM'
+          )
+          console.log('Trim transactions:', trimTransactions)
 
-        // Calculate average exit price
-        const totalExitValue = trimTransactions.reduce((sum: number, t: Transaction) => 
-          sum + (parseFloat(t.amount.toString()) * parseFloat(t.size)), 0
-        ) + (price * parseFloat(exitTradeData.current_size))
-        const totalExitSize = trimTransactions.reduce((sum: number, t: Transaction) => 
-          sum + parseFloat(t.size), 0
-        ) + parseFloat(exitTradeData.current_size)
-        const averageExitPrice = totalExitValue / totalExitSize
+          const totalCost = openTransactions.reduce((sum: number, t: Transaction) => {
+            const amount = parseFloat(t.amount.toString())
+            const size = parseFloat(t.size)
+            const cost = amount * size
+            console.log(`Transaction cost calculation: amount ${amount} * size ${size} = ${cost}`)
+            return sum + cost
+          }, 0)
+          console.log('Total cost:', totalCost)
 
-        // Update trade
-        const { data: closedTrade, error: closeUpdateError } = await supabase
-          .from('trades')
-          .update({
-            status: 'closed',
-            exit_price: price,
-            average_exit_price: averageExitPrice,
-            profit_loss: totalProfitLoss,
-            win_loss: totalProfitLoss > 0 ? 'WIN' : totalProfitLoss < 0 ? 'LOSS' : 'BREAKEVEN',
-            closed_at: new Date().toISOString()
-          })
-          .eq('trade_id', trade_id)
-          .select()
-          .single()
+          const totalOpenSize = openTransactions.reduce((sum: number, t: Transaction) => {
+            const size = parseFloat(t.size)
+            console.log(`Adding size ${size} to total open size ${sum}`)
+            return sum + size
+          }, 0)
+          console.log('Total open size:', totalOpenSize)
 
-        if (closeUpdateError) throw closeUpdateError
-        data = closedTrade
+          const averageCost = totalCost / totalOpenSize
+          console.log('Average cost:', averageCost)
+
+          const trimProfitLoss = trimTransactions.reduce((sum: number, t: Transaction) => {
+            const amount = parseFloat(t.amount.toString())
+            const size = parseFloat(t.size)
+            const profitLoss = (amount - averageCost) * size
+            console.log(`Trim P/L calculation: (amount ${amount} - avg cost ${averageCost}) * size ${size} = ${profitLoss}`)
+            return sum + profitLoss
+          }, 0)
+          console.log('Total trim P/L:', trimProfitLoss)
+
+          const currentSize = parseFloat(exitTradeData.current_size)
+          const exitProfitLoss = (price - averageCost) * currentSize
+          console.log(`Exit P/L calculation: (price ${price} - avg cost ${averageCost}) * current size ${currentSize} = ${exitProfitLoss}`)
+
+          const totalProfitLoss = trimProfitLoss + exitProfitLoss
+          console.log('Total P/L:', totalProfitLoss)
+
+          // Calculate average exit price
+          const totalExitValue = trimTransactions.reduce((sum: number, t: Transaction) => {
+            const amount = parseFloat(t.amount.toString())
+            const size = parseFloat(t.size)
+            const value = amount * size
+            console.log(`Trim exit value: amount ${amount} * size ${size} = ${value}`)
+            return sum + value
+          }, 0) + (price * currentSize)
+          console.log('Total exit value:', totalExitValue)
+
+          const totalExitSize = trimTransactions.reduce((sum: number, t: Transaction) => {
+            const size = parseFloat(t.size)
+            console.log(`Adding size ${size} to total exit size ${sum}`)
+            return sum + size
+          }, 0) + currentSize
+          console.log('Total exit size:', totalExitSize)
+
+          const averageExitPrice = totalExitValue / totalExitSize
+          console.log('Average exit price:', averageExitPrice)
+
+          // Update trade
+          const { data: closedTrade, error: closeUpdateError } = await supabase
+            .from('trades')
+            .update({
+              status: 'closed',
+              exit_price: price,
+              average_exit_price: averageExitPrice,
+              profit_loss: totalProfitLoss,
+              win_loss: totalProfitLoss > 0 ? 'WIN' : totalProfitLoss < 0 ? 'LOSS' : 'BREAKEVEN',
+              closed_at: new Date().toISOString(),
+              current_size: '0'
+            })
+            .eq('trade_id', trade_id)
+            .select()
+            .single()
+
+          closedTrade.exit_size = exitTradeData.current_size
+
+          if (closeUpdateError) {
+            console.error('Error updating trade for exit:', closeUpdateError)
+            throw new Error(`Failed to update trade ${trade_id} after exiting: ${closeUpdateError.message}`)
+          }
+          data = closedTrade
+        } catch (error) {
+          console.error('Error in exitTrade:', error)
+          throw new Error(`Error exiting trade ${trade_id}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
         break
 
       default:
-        throw new Error(`Unknown action: ${action}`)
+        throw new Error(`Unknown action: ${action}. Supported actions are: getAll, getTrades, createTrade, addToTrade, trimTrade, exitTrade`)
     }
 
     return new Response(

@@ -175,21 +175,30 @@ async def exit_trade(trade_id: str, price: float) -> Dict[str, Any]:
     if not supabase:
         raise Exception("Supabase client not initialized")
 
+    logger.info(f"Calling trades edge function with action=exitTrade, trade_id={trade_id}, price={price}")
     try:
-        # Update the trade status to closed and set exit price
-        response = supabase.table('trades').update({
-            'status': 'closed',
-            'exit_price': price,
-            'closed_at': datetime.utcnow().isoformat()
-        }).eq('trade_id', trade_id).execute()
+        response = supabase.functions.invoke(
+            "trades",
+            invoke_options={"body": {"action": "exitTrade", "trade_id": trade_id, "price": price}}
+        )
+        logger.info(f"Edge function raw response: {response}")
+        
+        # Decode bytes response to JSON
+        if isinstance(response, bytes):
+            response_json = json.loads(response.decode('utf-8'))
+        else:
+            response_json = response
+            
+        logger.info(f"Edge function decoded response: {response_json}")
 
-        if not response.data:
-            raise Exception(f"Trade {trade_id} not found")
+        if response_json.get("error"):
+            logger.error(f"Edge function error: {response_json['error']}")
+            raise Exception(f"Error exiting trade: {response_json['error']}")
 
-        logger.info(f"Successfully exited trade {trade_id}")
-        return response.data[0]
+        return response_json
     except Exception as e:
-        logger.error(f"Error exiting trade: {str(e)}")
+        logger.error(f"Exception in exit_trade edge function: {str(e)}")
+        logger.error(f"Full exception: {traceback.format_exc()}")
         raise
 
 async def get_trade(trade_id: str) -> Optional[Dict[str, Any]]:

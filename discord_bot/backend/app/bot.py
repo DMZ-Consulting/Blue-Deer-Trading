@@ -84,9 +84,6 @@ async def on_ready():
     logger.info(f"Connected to {len(bot.guilds)} guilds")
     for guild in bot.guilds:
         logger.info(f"Connected to guild: {guild.name} (id: {guild.id})")
-    
-    # Start background tasks
-    check_expired_trades.start()
 
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
@@ -238,32 +235,62 @@ def convert_to_two_digit_year(date_string: str) -> str:
         except ValueError:
             return date_string
 
+def convert_timestamp_string_to_two_digit_year(timestamp_string: str) -> str:
+    """Convert a timestamp string to use 2-digit year if it's not already."""
+    try:
+        timestamp = datetime.fromisoformat(timestamp_string)
+        return timestamp.strftime("%m/%d/%y")
+    except ValueError:
+        return timestamp_string
+
+def create_transaction_oneliner(trade: dict, type: str, size: float, price: float):
+    """Create a one-line summary of a transaction."""
+    ot = trade.get('option_type', None)
+    if ot:
+        if ot.startswith("C"):
+            option_type = "CALL"
+        elif ot.startswith("P"):
+            option_type = "PUT"   
+        else:
+            option_type = ot
+    else:
+        option_type = ""
+
+    risk_identifier = "risk" if type == "ADD" else "size"
+
+    if trade.get('is_contract'):
+        expiration = convert_timestamp_string_to_two_digit_year(trade.get('expiration_date')) if trade.get('expiration_date', None) else "No Exp"
+        strike = f"{trade.get('strike'):.2f}"
+        return f"### {type} {expiration} {trade.get('symbol')} {strike} {option_type} @ {price:.2f} {size} {risk_identifier}"
+    else:
+        return f"### {type} {trade.get('symbol')} @ {price:.2f} {size} {risk_identifier}"
 
 def create_trade_oneliner(trade: dict, price: float, size: float) -> str:
     """Create a one-line summary of a trade."""
 
-    if trade['option_type']:
-        if trade['option_type'].startswith("C"):
+    ot = trade.get('option_type', None)
+    if ot:
+        if ot.startswith("C"):
             option_type = "CALL"
-        elif trade['option_type'].startswith("P"):
+        elif ot.startswith("P"):
             option_type = "PUT"   
         else:
-            option_type = trade['option_type']
+            option_type = ot
     else:
         option_type = ""
 
     if size == 0:
-        size = trade['current_size'] if trade['current_size'] else trade['size']
+        size = trade.get('current_size', None) if trade.get('current_size') else trade.get('size', None)
     if price == 0:
-        price = trade['average_price']
+        price = trade.get('average_price', None)
     display_price = f"${price:.2f}"
     
-    if trade['is_contract']:
-        expiration = convert_to_two_digit_year(trade['expiration_date']) if trade['expiration_date'] else "No Exp"
-        strike = f"${trade['strike']:.2f}"
-        return f"### {expiration} {trade['symbol']} {strike} {option_type} @ {display_price} {size} risk"
+    if trade.get('is_contract'):
+        expiration = convert_to_two_digit_year(trade.get('expiration_date')) if trade.get('expiration_date') else "No Exp"
+        strike = f"${trade.get('strike'):.2f}"
+        return f"### {expiration} {trade.get('symbol')} {strike} {option_type} @ {display_price} {size} risk"
     else:
-        return f"### {trade['symbol']} @ {display_price} {size} risk"
+        return f"### {trade.get('symbol')} @ {display_price} {size} risk"
 
 def create_trade_oneliner_os(strategy) -> str:
     """Create a one-line summary of an options strategy trade."""
@@ -282,11 +309,12 @@ def create_trade_oneliner_os(strategy) -> str:
     except Exception as e:
         logger.error(f"Error in create_trade_oneliner_os: {str(e)}")
         return "Error creating strategy summary"
-
+    
 async def get_open_trade_ids(ctx: discord.AutocompleteContext):
     try:
         # Get open trades directly from the database
         trades = await get_open_trades_for_autocomplete()
+        print(trades)
         if not trades:
             return []
         
@@ -295,7 +323,15 @@ async def get_open_trade_ids(ctx: discord.AutocompleteContext):
         for trade in trades:
             symbol = trade['symbol']
             strike = trade.get('strike')
-            expiration = trade.get('expiration_date')
+            if trade.get('expiration_date'):
+                exp_date = datetime.strptime(trade.get('expiration_date').split('T')[0], '%Y-%m-%d')
+                current_year = datetime.now().year
+                if exp_date.year == current_year:
+                    expiration = exp_date.strftime('%m/%d')
+                else:
+                    expiration = exp_date.strftime('%m/%d/%y')
+            else:
+                expiration = None
             
             if strike is not None and expiration:
                 strike_display = f"${float(strike):,.2f}" if float(strike) >= 0 else f"(${abs(float(strike)):,.2f})"
@@ -378,6 +414,33 @@ async def get_trade_groups(ctx: discord.AutocompleteContext):
         discord.OptionChoice(name="Swing Trader", value=TradeGroupEnum.SWING_TRADER),
         discord.OptionChoice(name="Long-Term Trader", value=TradeGroupEnum.LONG_TERM_TRADER),
     ]
+
+async def get_configuration_by_id(configuration_id: str):
+    if os.getenv("LOCAL_TEST", "false").lower() == "true":
+        return {
+            'id': 1,
+            'name': 'day_trader',
+            'channel_id': 1283513132546920650,
+            'role_id': 1284994394554105877
+        }
+
+    response = supabase.table('trade_configurations').select('*').eq('id', configuration_id).execute()
+    return response.data[0] if response.data else None
+
+async def send_embed_by_configuration_id(interaction: discord.Interaction, configuration_id: str, embed: discord.Embed, note_embed: discord.Embed = None):
+    config = await get_configuration_by_id(configuration_id)
+    try:
+        # Send the embed to the configured channel with role ping
+        channel = interaction.guild.get_channel(int(config.get('channel_id', None)))
+        role = interaction.guild.get_role(int(config.get('role_id', None)))
+        await channel.send(content=f"{role.mention}", embed=embed)
+        if note_embed:
+            await channel.send(embed=note_embed)
+        return True
+    except Exception as e:
+        logger.error(f"Error sending embed by configuration ID: {str(e)}")
+        logger.error(traceback.format_exc())
+        return False
 
 def parse_option_symbol(option_string: str) -> dict:
     """Parse an option symbol string into its components.
@@ -639,6 +702,8 @@ async def list_trades(interaction: discord.Interaction):
         logger.error(f"Error in trades command: {str(e)}")
         await interaction.followup.send(f"Error listing open trades: {str(e)}", ephemeral=True)
 
+# =================== Regular Commands ===================
+
 @bot.slash_command(name="open", description="Open a trade from a symbol string")
 async def open_trade(
     interaction: discord.Interaction,
@@ -707,86 +772,101 @@ async def open_trade(
     except Exception as e:
         await log_to_channel(interaction.guild, f"Error in OPEN command by {interaction.user.name}: {str(e)}")
 
-@bot.slash_command(name="bto", description="Buy to open a new trade")
-async def bto(
+@bot.slash_command(name="add", description="Add to an existing trade")
+async def add_action(
     interaction: discord.Interaction,
-    symbol: discord.Option(str, description="The symbol of the security"),
-    entry_price: discord.Option(float, description="The price at which the trade was opened"),
+    trade_id: discord.Option(str, description="The ID of the trade to add to", autocomplete=get_open_trade_ids),
+    price: discord.Option(float, description="The price of the trade"),
     size: discord.Option(str, description="The size of the trade"),
-    expiration_date: discord.Option(str, description="The expiration date of the trade (MM/DD/YY)") = None,
-    strike: discord.Option(float, description="The strike price of the trade") = None,
-    option_type: discord.Option(str, description="The option type of the trade (C or P)") = None,
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
-    await log_command_usage(interaction, "bto", {
-        "symbol": symbol,
-        "entry_price": entry_price,
-        "size": size,
-        "expiration_date": expiration_date,
-        "strike": strike,
-        "option_type": option_type,
-        "note": note
-    })
     await kill_interaction(interaction)
-    try:
-        response = await create_trade(
-            interaction=interaction, 
-            symbol=symbol, 
-            entry_price=entry_price, 
-            size=size, 
-            trade_type="BTO", 
-            expiration_date=expiration_date, 
-            strike=strike, 
-            option_type=option_type, 
-            note=note
-        )
-        trade_data = response['trade']
-        if trade_data:
-            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed BTO command: Trade has been opened successfully.")
-    except Exception as e:
-        await log_to_channel(interaction.guild, f"Error in BTO command by {interaction.user.name}: {str(e)}")
 
-@bot.slash_command(name="sto", description="Open a new stock trade")
-async def sto(
+    trade_data = await add_to_trade(trade_id, price, size)
+    print(trade_data)
+
+    # Create an embed with the transaction information
+    embed = discord.Embed(title="Added to Trade", color=discord.Color.teal())
+    embed.description = create_transaction_oneliner(trade_data, "ADD", size, price)
+    embed.add_field(name="New Total Size", value=format_size(trade_data.get('current_size', None)), inline=True)
+    embed.add_field(name="New Avg Price", value=f"${trade_data.get('average_price', None):.2f}", inline=True)
+
+    embed.set_footer(text=f"Trade ID: {trade_data.get('trade_id', None)}")
+    
+    # Send an additional embed with the note if provided
+    note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
+    if not await send_embed_by_configuration_id(interaction, trade_data.get('configuration_id', None), embed, note_embed):
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} **FAILED** ADD command: Trade {trade_id} NOT ADDED TO.")
+        return
+    
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD command: Transaction added to trade {trade_id} successfully.")
+
+@bot.slash_command(name="trim", description="Trim an existing trade")
+async def trim_action(
     interaction: discord.Interaction,
-    symbol: str,
-    entry_price: float,
-    size: float,
-    note: str = None,
+    trade_id: discord.Option(str, description="The ID of the trade to trim", autocomplete=get_open_trade_ids),
+    price: discord.Option(float, description="The price of the trade"),
+    size: discord.Option(str, description="The size of the trade"),
+    note: discord.Option(str, description="Optional note from the trader") = None,
 ):
-    """Open a new stock trade"""
-    await interaction.response.defer()
+    await kill_interaction(interaction)
 
-    try:
-        # Create trade using Supabase edge function
-        response = await create_trade(
-            symbol=symbol, 
-            trade_type="stock",
-            entry_price=entry_price, 
-            size=size, 
-            note=note,
-            config_name="day_trader"
-        )
-        trade_data = response['trade']
-        # Create and send embed
-        embed = discord.Embed(
-            title=f"New Stock Trade Opened: {symbol}",
-            color=discord.Color.green(),
-            timestamp=datetime.now(),
-        )
-        embed.add_field(name="Entry Price", value=f"${entry_price:,.2f}", inline=True)
-        embed.add_field(name="Size", value=f"{size:,.0f}", inline=True)
-        if note:
-            embed.add_field(name="Note", value=note, inline=False)
-        embed.set_footer(text=f"Trade ID: {trade_data['trade_id']}")
+    trade_data = await trim_trade(trade_id, price, size)
+    print(trade_data)
 
-        await interaction.followup.send(embed=embed)
+    # Create an embed with the transaction information
+    embed = discord.Embed(title="Trimmed Trade", color=discord.Color.orange())
+    embed.description = create_transaction_oneliner(trade_data, "TRIM", size, price)
+    embed.add_field(name="Size Remaining", value=format_size(trade_data.get('current_size', None)), inline=True)
+    embed.set_footer(text=f"Trade ID: {trade_data.get('trade_id', None)}")
+    
+    # Send an additional embed with the note if provided
+    note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
+    if not await send_embed_by_configuration_id(interaction, trade_data.get('configuration_id', None), embed, note_embed):
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} **FAILED** TRIM command: Trade {trade_id} NOT TRIMMED.")
+        return
+    
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed TRIM command: Trade {trade_id} trimmed successfully.")
 
-    except Exception as e:
-        logging.error(f"Error in sto command: {str(e)}")
-        await interaction.followup.send(
-            f"Error opening stock trade: {str(e)}", ephemeral=True
-        )
+@bot.slash_command(name="exit", description="Exit an existing trade")
+async def exit_action(
+    interaction: discord.Interaction,
+    trade_id: discord.Option(str, description="The ID of the trade to exit", autocomplete=get_open_trade_ids),
+    price: discord.Option(float, description="The price of the trade"),
+    note: discord.Option(str, description="Optional note from the trader") = None,
+):
+    await kill_interaction(interaction)
+
+    trade_data = await exit_trade(trade_id, price)
+    print(trade_data)
+
+    # Create an embed with the closed trade information
+    embed = discord.Embed(title="Trade Closed", color=discord.Color.gold())
+    embed.description = create_transaction_oneliner(trade_data, "EXIT", trade_data.get('exit_size'), price)
+
+    # Calculate profit/loss per share or per contract
+    if trade_data.get('is_contract'):
+        profit_loss_per_unit = (trade_data.get('profit_loss') / float(trade_data.get('size'))) * 100 # Assuming 100 shares per contract
+        unit_type = "contract"
+    else:
+        profit_loss_per_unit = trade_data.get('profit_loss') / float(trade_data.get('size'))
+        unit_type = "share"
+    
+    embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${profit_loss_per_unit:.2f}", inline=True)
+    embed.add_field(name="Avg Entry Price", value=f"${trade_data.get('average_price', None):.2f}", inline=True)
+    if trade_data.get('average_exit_price', None):
+        embed.add_field(name="Avg Exit Price", value=f"${trade_data.get('average_exit_price', None):.2f}", inline=True)
+    else:
+        embed.add_field(name="Avg Exit Price", value=f"${price:.2f}", inline=True)
+    embed.set_footer(text=f"Trade ID: {trade_data.get('trade_id', None)}")
+    
+    # Send an additional embed with the note if provided
+    note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
+    if not await send_embed_by_configuration_id(interaction, trade_data.get('configuration_id', None), embed, note_embed):
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} **FAILED** EXIT command: Trade {trade_id} NOT EXITED.")
+        return
+    
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed EXIT command: Trade {trade_id} exited successfully.")
 
 @bot.slash_command(name="fut", description="Buy to open a new futures trade")
 async def future_trade(
@@ -822,6 +902,7 @@ async def lt_trade(
     })
     await common_stock_trade(interaction, TradeGroupEnum.LONG_TERM_TRADER, symbol, entry_price, size, note)
 
+# Helper function for common stock trades
 async def common_stock_trade(
     interaction: discord.Interaction,
     trade_group: TradeGroupEnum,
@@ -935,6 +1016,88 @@ async def log_to_channel(guild, message):
 
 
 # ================= Options Strategy Functions =================
+
+@bot.slash_command(name="os", description="Open a new options strategy trade")
+async def os_trade(
+    interaction: discord.Interaction,
+    strategy_name: discord.Option(str, description="The name of the strategy (e.g., 'Iron Condor', 'Call Spread')"),
+    size: discord.Option(str, description="The size of the strategy"),
+    net_cost: discord.Option(float, description="The net cost of the strategy"),
+    legs: discord.Option(str, description="The legs of the strategy in format: 'SPY240119C510,SPY240119P500,...'"),
+    note: discord.Option(str, description="Optional note from the trader") = None,
+):
+    """Open a new options strategy trade."""
+    await kill_interaction(interaction)
+    try:
+        # Parse legs
+        leg_list = []
+        for leg in legs.split(','):
+            parsed = parse_option_symbol(leg.strip())
+            leg_list.append({
+                'symbol': parsed['symbol'],
+                'strike': parsed['strike'],
+                'expiration_date': parsed['expiration_date'],
+                'option_type': parsed['option_type'],
+                'size': size,  # Each leg has the same size
+                'net_cost': net_cost  # Total net cost of the strategy
+            })
+
+        # Determine trade group based on the first leg's expiration
+        trade_group = await determine_trade_group(
+            leg_list[0]['expiration_date'].strftime("%m/%d/%y"),
+            "BTO",  # Default to BTO for options strategies
+            underlying_symbol
+        )
+
+        # Get configuration for trade group
+        config = await get_configuration(trade_group)
+        if not config:
+            await interaction.followup.send(f"No configuration found for trade group {trade_group}", ephemeral=True)
+            return None
+
+        # Create trade using Supabase edge function
+        trade_data = await create_os_trade(
+            strategy_name=strategy_name,
+            underlying_symbol=underlying_symbol,
+            net_cost=net_cost,
+            size=size,
+            legs=leg_list,
+            configuration_id=config['id'],
+            is_day_trade=(trade_group == TradeGroupEnum.DAY_TRADER),
+            note=note
+        )
+
+        if trade_data:
+            # Create and send embed
+            embed = discord.Embed(title="New Options Strategy Created", color=discord.Color.green())
+            embed.add_field(name="Trade ID", value=trade_data["trade_id"], inline=False)
+            embed.add_field(name="Strategy", value=strategy_name, inline=True)
+            embed.add_field(name="Symbol", value=underlying_symbol, inline=True)
+            embed.add_field(name="Net Cost", value=f"${net_cost:,.2f}", inline=True)
+            embed.add_field(name="Size", value=size, inline=True)
+            
+            # Add leg details
+            for i, leg in enumerate(leg_list, 1):
+                leg_str = (
+                    f"{leg['symbol']} ${leg['strike']:,.2f} "
+                    f"{leg['expiration_date'].strftime('%m/%d/%y')} {leg['option_type']}"
+                )
+                embed.add_field(name=f"Leg {i}", value=leg_str, inline=False)
+
+            if note:
+                embed.add_field(name="Note", value=note, inline=False)
+
+            await interaction.followup.send(embed=embed)
+            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed OS command: Options strategy has been opened successfully.")
+
+    except ValueError as e:
+        await interaction.followup.send(f"Error parsing option symbols: {str(e)}", ephemeral=True)
+        await log_to_channel(interaction.guild, f"Error in OS command by {interaction.user.name}: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error in os_trade command: {str(e)}")
+        logger.error(traceback.format_exc())
+        await interaction.followup.send(f"Error creating options strategy: {str(e)}", ephemeral=True)
+        await log_to_channel(interaction.guild, f"Error in OS command by {interaction.user.name}: {str(e)}")
 
 @bot.slash_command(name="os_add", description="Add to an existing options strategy trade")
 async def os_add(
@@ -1232,85 +1395,89 @@ async def help_command(interaction: discord.Interaction):
         await interaction.followup.send("Error displaying help message. Please try again later.", ephemeral=True)
         await log_to_channel(interaction.guild, f"Error in HELP command by {interaction.user.name}: {str(e)}")
 
-@bot.slash_command(name="os", description="Open a new options strategy trade")
-async def os_trade(
+
+
+
+# ==================== DEPRECATED COMMANDS ====================
+'''
+@bot.slash_command(name="bto", description="Buy to open a new trade")
+async def bto(
     interaction: discord.Interaction,
-    strategy_name: discord.Option(str, description="The name of the strategy (e.g., 'Iron Condor', 'Call Spread')"),
-    size: discord.Option(str, description="The size of the strategy"),
-    net_cost: discord.Option(float, description="The net cost of the strategy"),
-    legs: discord.Option(str, description="The legs of the strategy in format: 'SPY240119C510,SPY240119P500,...'"),
+    symbol: discord.Option(str, description="The symbol of the security"),
+    entry_price: discord.Option(float, description="The price at which the trade was opened"),
+    size: discord.Option(str, description="The size of the trade"),
+    expiration_date: discord.Option(str, description="The expiration date of the trade (MM/DD/YY)") = None,
+    strike: discord.Option(float, description="The strike price of the trade") = None,
+    option_type: discord.Option(str, description="The option type of the trade (C or P)") = None,
     note: discord.Option(str, description="Optional note from the trader") = None,
 ):
-    """Open a new options strategy trade."""
+    await log_command_usage(interaction, "bto", {
+        "symbol": symbol,
+        "entry_price": entry_price,
+        "size": size,
+        "expiration_date": expiration_date,
+        "strike": strike,
+        "option_type": option_type,
+        "note": note
+    })
     await kill_interaction(interaction)
     try:
-        # Parse legs
-        leg_list = []
-        for leg in legs.split(','):
-            parsed = parse_option_symbol(leg.strip())
-            leg_list.append({
-                'symbol': parsed['symbol'],
-                'strike': parsed['strike'],
-                'expiration_date': parsed['expiration_date'],
-                'option_type': parsed['option_type'],
-                'size': size,  # Each leg has the same size
-                'net_cost': net_cost  # Total net cost of the strategy
-            })
-
-        # Determine trade group based on the first leg's expiration
-        trade_group = await determine_trade_group(
-            leg_list[0]['expiration_date'].strftime("%m/%d/%y"),
-            "BTO",  # Default to BTO for options strategies
-            underlying_symbol
-        )
-
-        # Get configuration for trade group
-        config = await get_configuration(trade_group)
-        if not config:
-            await interaction.followup.send(f"No configuration found for trade group {trade_group}", ephemeral=True)
-            return None
-
-        # Create trade using Supabase edge function
-        trade_data = await create_os_trade(
-            strategy_name=strategy_name,
-            underlying_symbol=underlying_symbol,
-            net_cost=net_cost,
-            size=size,
-            legs=leg_list,
-            configuration_id=config['id'],
-            is_day_trade=(trade_group == TradeGroupEnum.DAY_TRADER),
+        response = await create_trade(
+            interaction=interaction, 
+            symbol=symbol, 
+            entry_price=entry_price, 
+            size=size, 
+            trade_type="BTO", 
+            expiration_date=expiration_date, 
+            strike=strike, 
+            option_type=option_type, 
             note=note
         )
-
+        trade_data = response['trade']
         if trade_data:
-            # Create and send embed
-            embed = discord.Embed(title="New Options Strategy Created", color=discord.Color.green())
-            embed.add_field(name="Trade ID", value=trade_data["trade_id"], inline=False)
-            embed.add_field(name="Strategy", value=strategy_name, inline=True)
-            embed.add_field(name="Symbol", value=underlying_symbol, inline=True)
-            embed.add_field(name="Net Cost", value=f"${net_cost:,.2f}", inline=True)
-            embed.add_field(name="Size", value=size, inline=True)
-            
-            # Add leg details
-            for i, leg in enumerate(leg_list, 1):
-                leg_str = (
-                    f"{leg['symbol']} ${leg['strike']:,.2f} "
-                    f"{leg['expiration_date'].strftime('%m/%d/%y')} {leg['option_type']}"
-                )
-                embed.add_field(name=f"Leg {i}", value=leg_str, inline=False)
-
-            if note:
-                embed.add_field(name="Note", value=note, inline=False)
-
-            await interaction.followup.send(embed=embed)
-            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed OS command: Options strategy has been opened successfully.")
-
-    except ValueError as e:
-        await interaction.followup.send(f"Error parsing option symbols: {str(e)}", ephemeral=True)
-        await log_to_channel(interaction.guild, f"Error in OS command by {interaction.user.name}: {str(e)}")
+            await log_to_channel(interaction.guild, f"User {interaction.user.name} executed BTO command: Trade has been opened successfully.")
     except Exception as e:
-        logger.error(f"Error in os_trade command: {str(e)}")
-        logger.error(traceback.format_exc())
-        await interaction.followup.send(f"Error creating options strategy: {str(e)}", ephemeral=True)
-        await log_to_channel(interaction.guild, f"Error in OS command by {interaction.user.name}: {str(e)}")
+        await log_to_channel(interaction.guild, f"Error in BTO command by {interaction.user.name}: {str(e)}")
 
+@bot.slash_command(name="sto", description="Open a new stock trade")
+async def sto(
+    interaction: discord.Interaction,
+    symbol: str,
+    entry_price: float,
+    size: float,
+    note: str = None,
+):
+    """Open a new stock trade"""
+    await interaction.response.defer()
+
+    try:
+        # Create trade using Supabase edge function
+        response = await create_trade(
+            symbol=symbol, 
+            trade_type="stock",
+            entry_price=entry_price, 
+            size=size, 
+            note=note,
+            config_name="day_trader"
+        )
+        trade_data = response['trade']
+        # Create and send embed
+        embed = discord.Embed(
+            title=f"New Stock Trade Opened: {symbol}",
+            color=discord.Color.green(),
+            timestamp=datetime.now(),
+        )
+        embed.add_field(name="Entry Price", value=f"${entry_price:,.2f}", inline=True)
+        embed.add_field(name="Size", value=f"{size:,.0f}", inline=True)
+        if note:
+            embed.add_field(name="Note", value=note, inline=False)
+        embed.set_footer(text=f"Trade ID: {trade_data['trade_id']}")
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        logging.error(f"Error in sto command: {str(e)}")
+        await interaction.followup.send(
+            f"Error opening stock trade: {str(e)}", ephemeral=True
+        )
+'''
