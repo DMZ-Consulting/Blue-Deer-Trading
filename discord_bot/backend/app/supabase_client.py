@@ -520,3 +520,34 @@ async def reopen_trade(trade_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error reopening trade: {str(e)}")
         raise 
+
+async def get_verification_config(message_id: str) -> Dict[str, Any]:
+    """Get the verification config for a message."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+
+    return supabase.table('verification_config').select('*').eq('message_id', message_id).single()
+
+async def add_verification_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Add a new verification config."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+    
+    # Convert SQLAlchemy model to dict if needed
+    config_data = config.to_dict() if hasattr(config, 'to_dict') else config
+    return supabase.table('verification_config').insert(config_data).execute()
+
+async def add_verification(verification: Dict[str, Any]) -> Dict[str, Any]:
+    """Add a new verification."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+    
+    # Convert SQLAlchemy model to dict if needed
+    verification_data = verification.to_dict() if hasattr(verification, 'to_dict') else verification
+    return supabase.table('verifications').insert(verification_data).execute()
+
+async def get_trade_by_id(trade_id: str) -> Dict[str, Any]:
+    """Get a trade by ID."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+    return supabase.table('trades').select('*').eq('trade_id', trade_id).single()

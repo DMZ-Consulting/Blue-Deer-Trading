@@ -23,7 +23,7 @@ import app.models as models
 from .supabase_client import (
     create_trade, add_to_trade, trim_trade, exit_trade, get_trade, get_open_trades,
     get_open_os_trades_for_autocomplete, get_open_trades_for_autocomplete, reopen_trade,
-    create_os_trade, supabase
+    create_os_trade, supabase, get_verification_config, add_verification_config, add_verification, get_trade_by_id
 )
 
 load_dotenv()
@@ -67,11 +67,14 @@ class TradeGroupEnum:
 last_sync_time = None
 SYNC_COOLDOWN = timedelta(hours=1)  # Only sync once per hour
 
-async def run_bot():
-    if os.getenv("LOCAL_TEST", "false").lower() == "true":
-        token = os.getenv('TEST_TOKEN')
-    else:   
-        token = os.getenv('DISCORD_TOKEN')
+
+# Somehow override the run function, or call this from the run function...
+async def run_bot(token=None):
+    if token is None:
+        if os.getenv("LOCAL_TEST", "false").lower() == "true":
+            token = os.getenv('TEST_TOKEN')
+        else:   
+            token = os.getenv('DISCORD_TOKEN')
 
     if not token:
         logger.error("DISCORD_TOKEN environment variable is not set.")
@@ -429,7 +432,7 @@ async def log_command_usage(interaction: discord.Interaction, command_name: str,
         logger.error(traceback.format_exc())
 
 class VerificationModal(discord.ui.Modal):
-    def __init__(self, config, terms_link, *args, **kwargs):
+    def __init__(self, config, *args, **kwargs):
         super().__init__(title="Verification Form", *args, **kwargs)
         self.config = config
         
@@ -505,54 +508,37 @@ async def setup_verification(
             role_to_remove_id=str(role_to_remove.id),
             role_to_add_id=str(role_to_add.id),
             log_channel_id=str(log_channel.id),
+            terms_of_service_link=terms_link,
         )
 
-        # TODO: Add the new config to the database
-
+        await add_verification_config(new_config)
         await interaction.followup.send("Verification message set up successfully.", ephemeral=True)
     except Exception as e:
         logger.error(f"Error in setup_verification: {str(e)}")
         logger.error(traceback.format_exc())
         await interaction.followup.send(f"An error occurred while setting up verification: {str(e)}", ephemeral=True)
-    finally:
-        pass
 
-# TODO: Update to use Supabase
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
     try:
         if interaction.type == discord.InteractionType.component:
             if interaction.data["custom_id"] == "verify":
-                db = next(get_db())
-                try:
-                    config = db.query(models.VerificationConfig).filter_by(message_id=str(interaction.message.id)).first()
-                    if not config:
-                        await interaction.response.send_message("Verification configuration not found.", ephemeral=True)
-                        return
-                    
-                    # Get the terms link from the original message's embed
-                    terms_link = ""
-                    if interaction.message.embeds:
-                        description = interaction.message.embeds[0].description
-                        # Extract the link from the description
-                        for line in description.split('\n'):
-                            if "http" in line:
-                                terms_link = line.strip()
-                                break
-                    
-                    modal = VerificationModal(config, terms_link)
-                    await interaction.response.send_modal(modal)
+                config = await get_verification_config(interaction.message.id)
+                if not config:
+                    await interaction.response.send_message("Verification configuration not found.", ephemeral=True)
                     return
-                finally:
-                    db.close()
+                
+                modal = VerificationModal(config, config["terms_of_service_link"])
+                await interaction.response.send_modal(modal)
+                return
         
         await bot.process_application_commands(interaction)
     except Exception as e:
         logger.error(f"Error in on_interaction: {str(e)}")
         logger.error(traceback.format_exc())
         await interaction.response.send_message("An error occurred while processing your request.", ephemeral=True)
+
 async def handle_verification(interaction: discord.Interaction, config, full_name: str, email: str):
-    db = next(get_db())
     try:
         role_to_remove = interaction.guild.get_role(int(config.role_to_remove_id))
         role_to_add = interaction.guild.get_role(int(config.role_to_add_id))
@@ -573,26 +559,23 @@ async def handle_verification(interaction: discord.Interaction, config, full_nam
         new_verification = models.Verification(
             user_id=str(interaction.user.id),
             username=str(interaction.user.name),
-            #full_name=full_name,
-            #email=email,
+            full_name=full_name,
+            email=email,
             timestamp=datetime.utcnow(),
             configuration_id=config.id
         )
 
+        await add_verification(new_verification)
+
         # Write the verification to a local file as well. Append it to the file in CSV format. If the file doesn't exist, create it.
         with open('verifications.csv', 'a') as f:
             f.write(f"{interaction.user.id},{interaction.user.name},{full_name},{email}\n")
-
-        db.add(new_verification)
-        db.commit()
 
         await interaction.response.send_message("You have been verified!", ephemeral=True)
     except Exception as e:
         logger.error(f"Error in handle_verification: {str(e)}")
         logger.error(traceback.format_exc())
         await interaction.response.send_message(f"An error occurred during verification: {str(e)}", ephemeral=True)
-    finally:
-        db.close()
 
 def parse_option_symbol(option_string: str) -> dict:
     """Parse an option symbol string into its components.
@@ -1686,11 +1669,64 @@ async def unsync_resync(ctx, guild_id: int = None):
     synced = await bot.sync_commands(guild=guild)
     await ctx.send(f"Resynced {len(synced)} commands.", ephemeral=True)
 
+
+@bot.slash_command(name="note", description="Add a note to a trade")
+async def add_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)), note: discord.Option(str, description="The note to add")):
+    await kill_interaction(interaction)
+
+    trade = await get_trade_by_id(trade_id)
+    if not trade:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
+        return
+    
+    config = await get_configuration(trade["configuration_id"])
+    if not config:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
+        return
+    
+    channel = interaction.guild.get_channel(int(config["channel_id"]))
+    embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
+    embed.description = create_trade_oneliner(trade)
+    embed.add_field(name="Note", value=note, inline=False)
+    embed.set_footer(text=f"Posted by {interaction.user.name}")
+    await channel.send(embed=embed)
+
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
+
+ACCESS_ROLES = ['Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader']
+LOST_ACCESS = ['@everyone', 'BD-Verified']
+JOINED_ROLES = ['@everyone', 'Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader'] 
+
+# if after roles are ['@everyone', 'BD-Verified']
+@bot.event
+async def on_member_update(before, after):
+    print(f"Member updated: {after.name} (ID: {after.id})")
+    logger.info(f"Member updated: {after.name} (ID: {after.id})")
+    if before.roles != after.roles:
+        print(f"Roles changed for {after.name}")
+        print(f"Before: {[role.name for role in before.roles]}")
+        print(f"After: {[role.name for role in after.roles]}")
+    
+    if after.roles == LOST_ACCESS:
+        try:    
+            await after.remove_roles(after.guild.get_role(1283500210127110267))
+        except Exception as e:
+            print(f"Error removing BD-Verified role from {after.name}: {e}")
+
+    if after.roles == JOINED_ROLES:
+        try:
+            await after.add_roles(after.guild.get_role(1283500418013593762))
+        except Exception as e:
+            print(f"Error adding BD-Verified role to {after.name}: {e}")
+    
+    # if roles are ['@everyone', 'BD-Verified'] then remove BD-Verified
+    # Can also do the if no verification role and one of the access roles, then add unverified role here
+
+'''
 # TODO: Update with supabase
 @bot.slash_command(name="transaction_send", description="Send a transaction message")
 async def transaction_send(interaction: discord.Interaction, transaction_id: discord.Option(str, description="The transaction to send")):
     await kill_interaction(interaction)
-    db = next(get_db())
     transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
     if not transaction:
         await interaction.response.send_message("Transaction not found.", ephemeral=True)
@@ -1736,74 +1772,6 @@ async def transaction_send(interaction: discord.Interaction, transaction_id: dis
 
         channel = interaction.guild.get_channel(int(config.channel_id))
         await channel.send(embed=embed)
+'''
 
-
-@bot.slash_command(name="note", description="Add a note to a trade")
-async def add_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)), note: discord.Option(str, description="The note to add")):
-    await kill_interaction(interaction)
-    db = next(get_db())
-    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
-    if not trade:
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
-        return
-    
-    config = get_configuration(db, trade.configuration.name)
-    if not config:
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
-        return
-    
-    channel = interaction.guild.get_channel(int(config.channel_id))
-    embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
-    embed.description = create_trade_oneliner(trade)
-    embed.add_field(name="Note", value=note, inline=False)
-    embed.set_footer(text=f"Posted by {interaction.user.name}")
-    await channel.send(embed=embed)
-
-    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
-    
-@bot.slash_command(name="admin_reopen_trade", description="Reopen a trade")
-async def admin_reopen_trade(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to reopen")):
-    await kill_interaction(interaction)
-    db = next(get_db())
-    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
-    if not trade:
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADMIN_REOPEN_TRADE command: Trade not found.")
-        return
-    
-    trade.status = "open"
-    db.commit()
-
-    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADMIN_REOPEN_TRADE command: Trade reopened.")
-
-
-ACCESS_ROLES = ['Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader']
-LOST_ACCESS = ['@everyone', 'BD-Verified']
-JOINED_ROLES = ['@everyone', 'Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader'] 
-
-# if after roles are ['@everyone', 'BD-Verified']
-@bot.event
-async def on_member_update(before, after):
-    print(f"Member updated: {after.name} (ID: {after.id})")
-    logger.info(f"Member updated: {after.name} (ID: {after.id})")
-    if before.roles != after.roles:
-        print(f"Roles changed for {after.name}")
-        print(f"Before: {[role.name for role in before.roles]}")
-        print(f"After: {[role.name for role in after.roles]}")
-    
-    if after.roles == LOST_ACCESS:
-        try:    
-            await after.remove_roles(after.guild.get_role(1283500210127110267))
-        except Exception as e:
-            print(f"Error removing BD-Verified role from {after.name}: {e}")
-
-    if after.roles == JOINED_ROLES:
-        try:
-            await after.add_roles(after.guild.get_role(1283500418013593762))
-        except Exception as e:
-            print(f"Error adding BD-Verified role to {after.name}: {e}")
-    
-    # if roles are ['@everyone', 'BD-Verified'] then remove BD-Verified
-    # Can also do the if no verification role and one of the access roles, then add unverified role here
-
-
-
+# ==================== END DEPRECATED COMMANDS ====================

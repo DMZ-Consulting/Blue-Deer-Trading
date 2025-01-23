@@ -1,7 +1,7 @@
 import asyncio
 import os
 from dotenv import load_dotenv
-from app.bot import bot
+from app.bot import run_bot
 
 # Load environment variables
 load_dotenv()
@@ -12,7 +12,7 @@ if not token:
     raise ValueError("No Discord token found in environment variables")
 
 try:
-    bot.run(token)
+    asyncio.run(run_bot(token))
 except KeyboardInterrupt:
     print("Bot shutting down...")
 except Exception as e:
