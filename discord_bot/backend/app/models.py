@@ -142,6 +142,8 @@ class Verification(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
     username = Column(String)
+    #email = Column(String)
+    #full_name = Column(String)
     configuration_id = Column(Integer, ForeignKey("verification_configs.id"))
     timestamp = Column(DateTime)
 

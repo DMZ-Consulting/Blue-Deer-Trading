@@ -233,3 +233,5 @@ coverage/
 *.gif
 *.ico
 *.svg
+
+.temp/

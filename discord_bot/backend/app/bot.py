@@ -33,8 +33,11 @@ logger = logging.getLogger(__name__)
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.guilds = True  # Enable guild events
+intents.presences = True  # Enable presence updates
+intents.guild_messages = True  # Enable guild message events
 
-bot = discord.Bot(intents=intents)
+bot = commands.Bot(command_prefix='/', intents=intents, auto_sync_commands=False)
 
 class TradeStatus:
     OPEN = "open"
@@ -72,6 +75,13 @@ async def run_bot():
         logger.error("DISCORD_TOKEN environment variable is not set.")
         raise ValueError("DISCORD_TOKEN environment variable is not set.")
     try:
+        print("Starting bot setup...")
+        # Load the members cog
+        try:
+            bot.load_extension('app.cogs.members')
+            print("Successfully loaded members cog")
+        except Exception as e:
+            print(f"Error loading members cog: {e}")
         await bot.start(token)
     except Exception as e:
         logger.error(f"Failed to start the bot: {str(e)}")
@@ -79,79 +89,27 @@ async def run_bot():
 
 @bot.event
 async def on_ready():
-    """Handle bot startup."""
-    logger.info(f"{bot.user} has connected to Discord!")
-    logger.info(f"Connected to {len(bot.guilds)} guilds")
-    for guild in bot.guilds:
-        logger.info(f"Connected to guild: {guild.name} (id: {guild.id})")
+    global last_sync_time
+    print(f'{bot.user} has connected to Discord!')
+    create_tables(engine)
 
-@bot.event
-async def on_member_update(before: discord.Member, after: discord.Member):
-    """Handle member role updates."""
-    if before.roles != after.roles:
-        await check_roles(after, after.guild)
+    print("Loaded cogs:", [cog for cog in bot.cogs.keys()])
+    
+    # Force sync commands on startup
+    print("Syncing commands...")
+    
+    if os.getenv("LOCAL_TEST", "false").lower() != "true":
+        check_and_update_roles.start()
+        check_and_exit_expired_trades.start()
+    
+    # Check if we need to sync commands
+    if last_sync_time is None or datetime.now() - last_sync_time > SYNC_COOLDOWN:
+        await sync_commands()
+        last_sync_time = datetime.now()
+    else:
+        print("Skipping command sync due to cooldown")
 
-@bot.event
-async def on_member_join(member: discord.Member):
-    """Handle new member joins."""
-    await check_roles(member, member.guild)
-
-@tasks.loop(minutes=2)
-async def check_expired_trades():
-    """Check for and handle expired trades."""
-    try:
-        # Get open trades from Supabase
-        trades = await get_open_trades()
-        today = date.today()
-        
-        for trade in trades:
-            if trade.get('expiration_date'):
-                # Parse ISO format date, taking only the date part before the T
-                expiration_date = datetime.strptime(trade['expiration_date'].split('T')[0], '%Y-%m-%d').date()
-                if expiration_date <= today:
-                    logger.info(f"Exiting expired trade {trade['trade_id']} with expiration date {trade['expiration_date']}")
-                    await exit_trade(trade['trade_id'], trade['entry_price'])  # Using entry price as exit price for expired trades
-        
-    except Exception as e:
-        logger.error(f"Error in check_expired_trades: {str(e)}")
-        logger.error(traceback.format_exc())
-
-@bot.slash_command(name="sync", description="Sync trades with external system")
-async def sync_trades(interaction: discord.Interaction):
-    """Sync trades with external system."""
-    await kill_interaction(interaction)
-    try:
-        # Get sync configuration from Supabase
-        config = supabase.table('bot_configuration').select('last_sync_time').single().execute()
-        if config.data:
-            last_sync = datetime.fromisoformat(config.data['last_sync_time']) if config.data.get('last_sync_time') else None
-            if last_sync and datetime.utcnow() - last_sync < SYNC_COOLDOWN:
-                await interaction.followup.send("Trades were synced recently. Please wait before syncing again.", ephemeral=True)
-                return
-
-        # Update last sync time
-        supabase.table('bot_configuration').upsert({
-            'last_sync_time': datetime.utcnow().isoformat()
-        }).execute()
-
-        await interaction.followup.send("Trade sync completed successfully.", ephemeral=True)
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed SYNC command: Trade sync completed successfully.")
-
-    except Exception as e:
-        logger.error(f"Error syncing trades: {str(e)}")
-        logger.error(traceback.format_exc())
-        await log_to_channel(interaction.guild, f"Error in SYNC command by {interaction.user.name}: {str(e)}")
-
-async def log_command_usage(interaction: discord.Interaction, command_name: str, params: dict):
-    """Log command usage to the log channel."""
-    try:
-        # Format parameters, excluding any None values
-        param_str = ', '.join(f"{k}={v}" for k, v in params.items() if v is not None)
-        log_message = f"Command executed: /{command_name} by {interaction.user.name} ({interaction.user.id})\nParameters: {param_str}"
-        await log_to_channel(interaction.guild, log_message)
-    except Exception as e:
-        logger.error(f"Error logging command usage: {str(e)}")
-        logger.error(traceback.format_exc())
+    print("Bot is ready!")
 
 async def sync_commands():
     guild_ids = []
@@ -170,14 +128,23 @@ async def sync_commands():
         else:
             print(f"Guild ID not set. Skipping command sync.")
 
+async def log_command_usage(interaction: discord.Interaction, command_name: str, params: dict):
+    """Log command usage to the log channel."""
+    try:
+        # Format parameters, excluding any None values
+        param_str = ', '.join(f"{k}={v}" for k, v in params.items() if v is not None)
+        log_message = f"Command executed: /{command_name} by {interaction.user.name} ({interaction.user.id})\nParameters: {param_str}"
+        await log_to_channel(interaction.guild, log_message)
+    except Exception as e:
+        logger.error(f"Error logging command usage: {str(e)}")
+        logger.error(traceback.format_exc())
+
 async def sync_commands_with_backoff(guild, max_retries=5, base_delay=1):
     for attempt in range(max_retries):
         try:
-            synced = await bot.sync_commands(guild_ids=[guild.id])
-            if synced:
-                print(f"Synced {len(synced)} command(s) to the guild with ID {guild.id}.")
-            else:
-                print(f"No commands were synced to the guild with ID {guild.id}.")
+            print(f"Attempting to sync commands for guild {guild.id} (attempt {attempt + 1}/{max_retries})")
+            commands = await bot.sync_commands(guild_ids=[guild.id])
+            print(f"Successfully synced {len(commands) if commands else 0} commands to guild {guild.id}")
             return
         except discord.HTTPException as e:
             if e.status == 429:  # Rate limit error
@@ -185,7 +152,13 @@ async def sync_commands_with_backoff(guild, max_retries=5, base_delay=1):
                 print(f"Rate limited. Retrying in {delay} seconds.")
                 await asyncio.sleep(delay)
             else:
+                print(f"HTTP error while syncing commands: {e}")
                 raise
+        except Exception as e:
+            print(f"Error syncing commands: {e}")
+            if attempt == max_retries - 1:
+                raise
+            await asyncio.sleep(base_delay * (2 ** attempt))
     print(f"Failed to sync commands after {max_retries} attempts.")
 
 async def kill_interaction(interaction):
@@ -440,7 +413,266 @@ async def send_embed_by_configuration_id(interaction: discord.Interaction, confi
     except Exception as e:
         logger.error(f"Error sending embed by configuration ID: {str(e)}")
         logger.error(traceback.format_exc())
-        return False
+    finally:
+        db.close()
+
+async def exit_expired_os_trade(trade: models.OptionsStrategyTrade):
+    db = next(get_db())
+    try:
+        trade = db.merge(trade)
+
+        config = db.query(models.TradeConfiguration).filter(models.TradeConfiguration.id == trade.configuration_id).first()
+        if not config:
+            logger.error(f"Configuration for trade {trade.trade_id} not found.")
+            return
+
+        # Set exit price to max loss
+        exit_price = 0
+
+        trade.status = models.OptionsStrategyStatusEnum.CLOSED
+        trade.exit_price = exit_price
+        trade.closed_at = datetime.now()
+        
+        current_size = Decimal(trade.current_size)
+        
+        new_transaction = models.OptionsStrategyTransaction(
+            strategy_id=trade.id,
+            transaction_type=models.TransactionTypeEnum.CLOSE,
+            net_cost=exit_price,
+            size=str(current_size),
+            created_at=datetime.now()
+        )
+        db.add(new_transaction)
+
+        """# Calculate profit/loss
+        open_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.OPEN, models.TransactionTypeEnum.ADD])
+        trim_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.TRIM])
+        
+        total_cost = sum(Decimal(t.amount) * Decimal(t.size) for t in open_transactions)
+        total_open_size = sum(Decimal(t.size) for t in open_transactions)
+        
+        average_cost = total_cost / total_open_size if total_open_size > 0 else 0
+
+        close_transactions = crud.get_transactions_for_trade(db, trade.trade_id, [models.TransactionTypeEnum.CLOSE])
+        avg_exit_price = sum(Decimal(t.amount) * Decimal(t.size) for t in close_transactions) / sum(Decimal(t.size) for t in close_transactions) if close_transactions else 0
+        trade.average_exit_price = float(avg_exit_price)
+        
+        trim_profit_loss = 0
+        if trim_transactions:
+            trim_profit_loss = sum((Decimal(t.amount) - average_cost) * Decimal(t.size) for t in trim_transactions)
+        exit_profit_loss = (Decimal(exit_price) - average_cost) * current_size
+        
+        total_profit_loss = trim_profit_loss + exit_profit_loss
+        trade.profit_loss = float(total_profit_loss)
+
+        # Determine win/loss
+        trade.win_loss = models.WinLossEnum.LOSS"""
+
+        logger.info(f"Exiting expired OS trade {trade.trade_id} with exit price {exit_price} and current size {current_size}")
+
+        db.commit()
+        db.refresh(trade)
+
+        '''
+        TODO: We are commenting this out for now. Fix this.
+
+        # Create an embed with the closed trade information
+        embed = discord.Embed(title="Trade Expired and Closed", color=discord.Color.red())
+        embed.description = create_trade_oneliner(trade)
+        embed.add_field(name="Exit Price", value=f"${exit_price:.2f}", inline=True)
+        embed.add_field(name="Final Size", value=current_size, inline=True)
+        embed.add_field(name="Total Profit/Loss", value=f"${total_profit_loss:.2f}", inline=True)
+        embed.add_field(name="Result", value="Loss (Expired)", inline=True)
+        embed.set_footer(text=f"Trade ID: {trade.trade_id}")
+
+        # Send the embed to the configured channel with role ping
+        channel = bot.get_channel(int(config.channel_id))
+        role = channel.guild.get_role(int(config.role_id))
+        await channel.send(content=f"{role.mention}", embed=embed)
+        '''
+
+    except Exception as e:
+        logger.error(f"Error exiting expired trade {trade.trade_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        db.close()
+
+async def log_command_usage(interaction: discord.Interaction, command_name: str, params: dict):
+    """Log command usage to the log channel."""
+    try:
+        # Format parameters, excluding any None values
+        param_str = ', '.join(f"{k}={v}" for k, v in params.items() if v is not None)
+        log_message = f"Command executed: /{command_name} by {interaction.user.name} ({interaction.user.id})\nParameters: {param_str}"
+        await log_to_channel(interaction.guild, log_message)
+    except Exception as e:
+        logger.error(f"Error logging command usage: {str(e)}")
+        logger.error(traceback.format_exc())
+
+class VerificationModal(discord.ui.Modal):
+    def __init__(self, config, terms_link, *args, **kwargs):
+        super().__init__(title="Verification Form", *args, **kwargs)
+        self.config = config
+        
+        # Confirmation of reading terms
+        self.agreement = discord.ui.InputText(
+            label="Terms Agreement",
+            style=discord.InputTextStyle.short,
+            placeholder="Type 'I AGREE' to confirm you have read and accept the terms",
+            required=True,
+            min_length=7,
+            max_length=7
+        )
+        self.add_item(self.agreement)
+        
+        self.full_name = discord.ui.InputText(
+            label="Full Name",
+            style=discord.InputTextStyle.short,
+            placeholder="Enter your full name",
+            required=True,
+            min_length=2,
+            max_length=100
+        )
+        self.add_item(self.full_name)
+        
+        self.email = discord.ui.InputText(
+            label="Email Address",
+            style=discord.InputTextStyle.short,
+            placeholder="Enter your email address",
+            required=True,
+            min_length=5,
+            max_length=100
+        )
+        self.add_item(self.email)
+
+    async def callback(self, interaction: discord.Interaction):
+        print(f"agreement value: {self.agreement.value}")
+        if str(self.agreement.value).upper() != "I AGREE":
+            await interaction.response.send_message(
+                "You must type 'I AGREE' to confirm you have read and accept the terms and conditions.", 
+                ephemeral=True
+            )
+            return
+        await handle_verification(interaction, self.config, str(self.full_name.value), str(self.email.value))
+
+@bot.slash_command(name="setup_verification", description="Set up a verification message with terms and conditions")
+async def setup_verification(
+    interaction: discord.Interaction,
+    channel: discord.Option(discord.TextChannel, description="The channel to send the verification message"),
+    terms_link: discord.Option(str, description="Link to the terms and conditions document"),
+    terms_summary: discord.Option(str, description="Brief summary of the terms (shown in message)"),
+    role_to_remove: discord.Option(discord.Role, description="The role to remove upon verification"),
+    role_to_add: discord.Option(discord.Role, description="The role to add upon verification"),
+    log_channel: discord.Option(discord.TextChannel, description="The channel for logging verifications"),
+):
+    await interaction.response.defer(ephemeral=True)
+    
+    db = next(get_db())
+    try:
+        embed = discord.Embed(title="Verification Required", color=discord.Color.blue())
+        embed.description = (
+            f"{terms_summary}\n\n"
+            f"**Please read our full Terms and Conditions here:**\n[Blue Deer Trading Terms and Conditions]({terms_link})\n\n"
+            "Click the button below to start the verification process. "
+            "You will need to confirm that you have read and agree to the terms."
+        )
+        button = discord.ui.Button(style=discord.ButtonStyle.green, label="Start Verification", custom_id="verify")
+        view = discord.ui.View(timeout=None)
+        view.add_item(button)
+        message = await channel.send(embed=embed, view=view)
+
+        new_config = models.VerificationConfig(
+            message_id=str(message.id),
+            channel_id=str(channel.id),
+            role_to_remove_id=str(role_to_remove.id),
+            role_to_add_id=str(role_to_add.id),
+            log_channel_id=str(log_channel.id),
+        )
+        db.add(new_config)
+        db.commit()
+
+        await interaction.followup.send("Verification message set up successfully.", ephemeral=True)
+    except Exception as e:
+        logger.error(f"Error in setup_verification: {str(e)}")
+        logger.error(traceback.format_exc())
+        await interaction.followup.send(f"An error occurred while setting up verification: {str(e)}", ephemeral=True)
+    finally:
+        db.close()
+
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    try:
+        if interaction.type == discord.InteractionType.component:
+            if interaction.data["custom_id"] == "verify":
+                db = next(get_db())
+                try:
+                    config = db.query(models.VerificationConfig).filter_by(message_id=str(interaction.message.id)).first()
+                    if not config:
+                        await interaction.response.send_message("Verification configuration not found.", ephemeral=True)
+                        return
+                    
+                    # Get the terms link from the original message's embed
+                    terms_link = ""
+                    if interaction.message.embeds:
+                        description = interaction.message.embeds[0].description
+                        # Extract the link from the description
+                        for line in description.split('\n'):
+                            if "http" in line:
+                                terms_link = line.strip()
+                                break
+                    
+                    modal = VerificationModal(config, terms_link)
+                    await interaction.response.send_modal(modal)
+                    return
+                finally:
+                    db.close()
+        
+        await bot.process_application_commands(interaction)
+    except Exception as e:
+        logger.error(f"Error in on_interaction: {str(e)}")
+        logger.error(traceback.format_exc())
+        await interaction.response.send_message("An error occurred while processing your request.", ephemeral=True)
+async def handle_verification(interaction: discord.Interaction, config, full_name: str, email: str):
+    db = next(get_db())
+    try:
+        role_to_remove = interaction.guild.get_role(int(config.role_to_remove_id))
+        role_to_add = interaction.guild.get_role(int(config.role_to_add_id))
+        log_channel = interaction.guild.get_channel(int(config.log_channel_id))
+
+        await interaction.user.remove_roles(role_to_remove)
+        await interaction.user.add_roles(role_to_add)
+
+        log_embed = discord.Embed(
+            title="User Verified",
+            description=f"{interaction.user.mention} has accepted the terms and conditions.",
+            color=discord.Color.green()
+        )
+        log_embed.add_field(name="Full Name", value=full_name)
+        log_embed.add_field(name="Email", value=email)
+        await log_channel.send(embed=log_embed)
+
+        new_verification = models.Verification(
+            user_id=str(interaction.user.id),
+            username=str(interaction.user.name),
+            #full_name=full_name,
+            #email=email,
+            timestamp=datetime.utcnow(),
+            configuration_id=config.id
+        )
+
+        # Write the verification to a local file as well. Append it to the file in CSV format. If the file doesn't exist, create it.
+        with open('verifications.csv', 'a') as f:
+            f.write(f"{interaction.user.id},{interaction.user.name},{full_name},{email}\n")
+
+        db.add(new_verification)
+        db.commit()
+
+        await interaction.response.send_message("You have been verified!", ephemeral=True)
+    except Exception as e:
+        logger.error(f"Error in handle_verification: {str(e)}")
+        logger.error(traceback.format_exc())
+        await interaction.response.send_message(f"An error occurred during verification: {str(e)}", ephemeral=True)
+    finally:
+        db.close()
 
 def parse_option_symbol(option_string: str) -> dict:
     """Parse an option symbol string into its components.
@@ -494,49 +726,36 @@ def parse_option_symbol(option_string: str) -> dict:
             'option_type': option_type,
             'trade_type': 'BTO'  # Default to BTO
         }
+
+async def get_open_trade_ids(ctx: discord.AutocompleteContext):
+    db = next(get_db())
+    try:
+        open_trades = crud.get_trades(db, status=models.TradeStatusEnum.OPEN)
         
-    except Exception as e:
-        raise ValueError(f"Error parsing option symbol: {str(e)}")
-
-async def check_roles(member: discord.Member, guild: discord.Guild):
-    try:
-        # Get role requirements from Supabase
-        role_requirements = await supabase.table('role_requirements').select('*').eq('guild_id', str(guild.id)).execute()
-        if not role_requirements.data:
-            return
-
-        # Get conditional role grants from Supabase
-        conditional_grants = await supabase.table('conditional_role_grants').select('*').eq('guild_id', str(guild.id)).execute()
-        if not conditional_grants.data:
-            return
-
-        for grant in conditional_grants.data:
-            # Check if user has any of the required roles
-            has_required_role = any(str(role.id) in grant['condition_role_ids'] for role in member.roles)
+        # Format trade information
+        trade_info = []
+        for trade in open_trades:
+            symbol = trade.symbol
+            strike = getattr(trade, 'strike', None)
+            expiration = getattr(trade, 'expiration_date', None)
             
-            # Check if user has the exclude role
-            has_exclude_role = False
-            if grant.get('exclude_role_id'):
-                has_exclude_role = any(str(role.id) == grant['exclude_role_id'] for role in member.roles)
+            if strike and expiration:
+                strike_display = f"${strike:,.2f}" if strike >= 0 else f"(${abs(strike):,.2f})"
+                display = f"{symbol} {strike_display} {expiration.strftime('%m/%d/%y')}"
+                sort_key = (symbol, expiration, strike)
+            else:
+                display = f"{symbol} COMMON"
+                sort_key = (symbol, datetime.max, 0)  # Put non-option trades at the bottom of their symbol group
             
-            # Grant role if conditions are met
-            if has_required_role and not has_exclude_role:
-                grant_role = guild.get_role(int(grant['grant_role_id']))
-                if grant_role and grant_role not in member.roles:
-                    await member.add_roles(grant_role)
-
-    except Exception as e:
-        logger.error(f"Error checking roles: {str(e)}")
-        logger.error(traceback.format_exc())
-
-async def exit_expired_trade(trade):
-    try:
-        # Exit trade using Supabase function
-        await exit_trade(trade['trade_id'], trade['entry_price'])  # Using entry price as exit price for expired trades
-        logger.info(f"Successfully exited expired trade {trade['trade_id']}")
-    except Exception as e:
-        logger.error(f"Error exiting expired trade: {str(e)}")
-        logger.error(traceback.format_exc())
+            trade_info.append((trade.trade_id, display, sort_key))
+        
+        # Sort the trades
+        sorted_trades = sorted(trade_info, key=lambda x: x[2])
+        
+        # Create OptionChoice objects
+        return [discord.OptionChoice(name=f"{display} (ID: {trade_id})", value=trade_id) for trade_id, display, _ in sorted_trades]
+    finally:
+        db.close()
 
 class TradePaginator(discord.ui.View):
     def __init__(self, trades, interaction):
@@ -591,118 +810,169 @@ class TradePaginator(discord.ui.View):
             await self.send_page()
         await interaction.response.defer()
 
-@tasks.loop(minutes=2)
-async def check_and_update_roles():
-    """
-    This function checks the roles of all members in the guild and updates them based on the role requirements and conditional role grants.
-    It also logs the actions taken in the specified log channel.
-    """
-    for guild in bot.guilds:
-        if guild.id != 1055255055474905139: # Blue Deer Server, only do this here. 
-            continue
+async def get_open_os_trade_ids(ctx: discord.AutocompleteContext):
+    db = next(get_db())
+    try:
+        open_trades = crud.get_os_trades(db, status=models.OptionsStrategyStatusEnum.OPEN)
+        
+        # Format trade information
+        trade_info = []
+        for trade in open_trades:
+            symbol = trade.underlying_symbol
+            name = trade.name
+            expiration_date = None
+            for leg in deserialize_legs(trade.legs):
+                if not expiration_date or leg['expiration_date'] > expiration_date:
+                    expiration_date = leg['expiration_date']
+
+            display = f"{symbol} {expiration_date.strftime('%m/%d/%y')} @ {trade.average_net_cost:.2f}- {name}"
+            sort_key = (symbol, expiration_date, name)
             
+            trade_info.append((trade.trade_id, display, sort_key))
+        
+        # Sort the trades
+        sorted_trades = sorted(trade_info, key=lambda x: x[2])
+        
+        # Create OptionChoice objects
+        return [discord.OptionChoice(name=f"{display} (ID: {trade_id})", value=trade_id) for trade_id, display, _ in sorted_trades]
+    finally:
+        db.close()
+
+async def get_trade_groups(ctx: discord.AutocompleteContext):
+    db = next(get_db())
+    try:
+        trade_groups = db.query(models.TradeConfiguration.name).distinct().all()
+        return [group[0] for group in trade_groups]
+    finally:
+        db.close()
+
+def convert_to_two_digit_year(date_string):
+    """Convert a date string to use 2-digit year if it's not already."""
+    try:
+        date = datetime.strptime(date_string, "%m/%d/%Y")
+        return date.strftime("%m/%d/%y")
+    except ValueError:
+        # If it's already in MM/DD/YY format, return as is
+        return date_string
+
+def determine_trade_group(expiration_date: str, trade_type: str, symbol: str) -> str:
+    print("determine_trade_group called")
+    if symbol == "ES":
+        return TradeGroupEnum.DAY_TRADER
+    
+    if not expiration_date and (trade_type == "sto" or trade_type == "bto"):
+        return TradeGroupEnum.SWING_TRADER
+    
+    try:
+        # Try parsing with 2-digit year first
+        exp_date = datetime.strptime(expiration_date, "%m/%d/%y").date()
+    except ValueError:
         try:
-            # Check role requirements
-            role_requirements = await supabase.table('role_requirements').select('*').eq('guild_id', str(guild.id)).execute()
-            if role_requirements.data:
-                for requirement in role_requirements.data:
-                    required_role_ids = [role['role_id'] for role in requirement['required_roles']]
-                    members = guild.fetch_members(limit=None)
-                    async for member in members:
-                        if not any(str(role.id) in required_role_ids for role in member.roles):
-                            await member.remove_roles(*member.roles, reason="Does not meet role requirements")
-                            await log_action(guild, f"Removed roles from {member.name} (ID: {member.id}) due to not meeting role requirements")
+            # If that fails, try with 4-digit year
+            exp_date = datetime.strptime(expiration_date, "%m/%d/%Y").date()
+        except ValueError:
+            # If both fail, return default
+            return TradeGroupEnum.SWING_TRADER
+    
+    days_to_expiration = (exp_date - datetime.now().date()).days
+    print("days_to_expiration", days_to_expiration)
+    
+    if days_to_expiration <= 3:
+        print(f"Returning DAY_TRADER for {expiration_date}")
+        return TradeGroupEnum.DAY_TRADER
+    elif days_to_expiration <= 90:
+        print(f"Returning SWING_TRADER for {expiration_date}")
+        return TradeGroupEnum.SWING_TRADER
+    else:
+        print(f"Returning LONG_TERM_TRADER for {expiration_date}")
+        return TradeGroupEnum.LONG_TERM_TRADER
 
-            # Check conditional role grants
-            conditional_grants = await supabase.table('conditional_role_grants').select('*').eq('guild_id', str(guild.id)).execute()
-            if conditional_grants.data:
-                for grant in conditional_grants.data:
-                    condition_role_ids = [role['role_id'] for role in grant['condition_roles']]
-                    grant_role = guild.get_role(int(grant['grant_role_id']))
-                    exclude_role = guild.get_role(int(grant['exclude_role_id'])) if grant.get('exclude_role_id') else None
-                    
-                    members = guild.fetch_members(limit=None)
-                    async for member in members:
-                        if any(str(role.id) in condition_role_ids for role in member.roles) and (not exclude_role or exclude_role not in member.roles):
-                            await member.add_roles(grant_role, reason="Meets conditional role grant requirements")
-                            await log_action(guild, f"Added role {grant_role.name} to {member.name} (ID: {member.id}) due to meeting conditional role grant requirements")
-        except Exception as e:
-            print(f"Error checking and updating roles: {str(e)}")
-            print(traceback.format_exc())
+def get_configuration(db: Session, trade_group: str) -> models.TradeConfiguration:
+    """
+    Retrieve the trade configuration for a given trade group.
+    
+    Args:
+    db (Session): The database session.
+    trade_group (str): The name of the trade group.
 
-async def log_action(guild, message):
-    try:
-        # Get log channel from Supabase configuration
-        config = await supabase.table('verification_config').select('log_channel_id').single().execute()
-        if config and config.data and config.data.get('log_channel_id'):
-            log_channel = guild.get_channel(int(config.data['log_channel_id']))
-            if log_channel:
-                await log_channel.send(message)
-    except Exception as e:
-        print(f"Error logging action: {str(e)}")
-        print(traceback.format_exc())
+    Returns:
+    models.TradeConfiguration: The trade configuration for the given trade group, or None if not found.
+    """
+    return db.query(models.TradeConfiguration).filter(models.TradeConfiguration.name == trade_group).first()
 
-# Expired trades are now handled by the check_expired_trades task loop
+def create_trade_oneliner(trade, price = 0, size = 0):
+    """Create a one-liner summary of the trade."""
+    if trade.option_type:
+        if trade.option_type.startswith("C"):
+            option_type = "CALL"
+        elif trade.option_type.startswith("P"):
+            option_type = "PUT"   
+        else:
+            option_type = trade.option_type
+    else:
+        option_type = ""
+
+    if size == 0:
+        size = trade.current_size if trade.current_size else trade.size
+    if price == 0:
+        price = trade.average_price
+    display_price = f"${price:.2f}"
+    
+    if trade.is_contract:
+        expiration = convert_to_two_digit_year(trade.expiration_date.strftime('%m/%d/%y')) if trade.expiration_date else "No Exp"
+        strike = f"${trade.strike:.2f}"
+        return f"### {expiration} {trade.symbol} {strike} {option_type} @ {display_price} {size} risk"
+    else:
+        return f"### {trade.symbol} @ {display_price} {size} risk"
+    
+def create_transaction_oneliner(trade, type, size, price):
+    if trade.option_type:
+        if trade.option_type.startswith("C"):
+            option_type = "CALL"
+        elif trade.option_type.startswith("P"):
+            option_type = "PUT"   
+        else:
+            option_type = trade.option_type
+    else:
+        option_type = ""
+
+    risk_identifier = "risk" if type == "ADD" else "size"
+
+    if trade.is_contract:
+        expiration = convert_to_two_digit_year(trade.expiration_date.strftime('%m/%d/%y')) if trade.expiration_date else "No Exp"
+        strike = f"{trade.strike:.2f}"
+        return f"### {type} {expiration} {trade.symbol} {strike} {option_type} @ {price:.2f} {size} {risk_identifier}"
+    else:
+        return f"### {type} {trade.symbol} @ {price:.2f} {size} {risk_identifier}"
+    
+def serialize_legs(legs):
+    """Serialize the legs data for storage in the database."""
+    return json.dumps([{**leg, 'expiration_date': leg['expiration_date'].strftime('%Y-%m-%d')} for leg in legs])
+
+def deserialize_legs(legs_json):
+    """Deserialize the legs data from the database."""
+    legs = json.loads(legs_json)
+    for leg in legs:
+        leg['expiration_date'] = datetime.strptime(leg['expiration_date'], '%Y-%m-%d').date()
+    return legs
+
+def create_trade_oneliner_os(os_trade):
+    add_date = True
+    trade_oneliner = f"{os_trade.underlying_symbol} - {os_trade.name} "
+    legs = deserialize_legs(os_trade.legs)  # Use the new deserialize_legs function
+    for leg in legs:
+        if add_date:
+            trade_oneliner += f" ({leg['expiration_date'].strftime('%m/%d/%y')}) "
+            add_date = False
+        else:
+            if leg['option_type'] == "C":
+                trade_oneliner += "+"
+            else:
+                trade_oneliner += "-"
         
-@bot.slash_command(name="expire_trades", description="Exit all expired trades")
-async def expire_trades(interaction: discord.Interaction):
-    """Exit all expired trades."""
-    await kill_interaction(interaction)
-    try:
-        # Get open trades from Supabase
-        trades = await get_open_trades()
-        today = date.today()
-        
-        for trade in trades:
-            if trade.get('expiration_date') and datetime.strptime(trade['expiration_date'], '%Y-%m-%d').date() <= today:
-                logger.info(f"Exiting expired trade {trade['trade_id']} with expiration date {trade['expiration_date']}")
-                await exit_trade(trade['trade_id'], trade['entry_price'])  # Using entry price as exit price for expired trades
-        
-        await interaction.followup.send("Expired trades have been exited.", ephemeral=True)
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed EXPIRE_TRADES command: Expired trades have been exited.")
+        trade_oneliner += f"{leg['strike']}{leg['option_type'][0]}"
 
-    except Exception as e:
-        logger.error(f"Error in expire_trades: {str(e)}")
-        logger.error(traceback.format_exc())
-        await log_to_channel(interaction.guild, f"Error in EXPIRE_TRADES command by {interaction.user.name}: {str(e)}")
-
-async def manually_expire_trades():
-    try:
-        # Get open trades from Supabase
-        trades = await get_open_trades()
-        today = date.today()
-        
-        for trade in trades:
-            if trade.get('expiration_date') and datetime.strptime(trade['expiration_date'], '%Y-%m-%d').date() <= today:
-                logger.info(f"Exiting expired trade {trade['trade_id']} with expiration date {trade['expiration_date']}")
-                await exit_trade(trade['trade_id'], trade['entry_price'])  # Using entry price as exit price for expired trades
-        
-    except Exception as e:
-        logger.error(f"Error in check_and_exit_expired_trades: {str(e)}")
-        logger.error(traceback.format_exc())
-
-@bot.slash_command(name="trades", description="List all open trades")
-async def list_trades(interaction: discord.Interaction):
-    """List all open trades."""
-    await interaction.response.defer()
-
-    try:
-        # Get open trades using Supabase edge function
-        trades = await get_open_trades()
-        
-        if not trades:
-            await interaction.followup.send("No open trades found.", ephemeral=True)
-            return
-
-        # Create paginator for displaying trades
-        paginator = TradePaginator(trades, interaction)
-        await paginator.send_page()
-
-    except Exception as e:
-        logger.error(f"Error in trades command: {str(e)}")
-        await interaction.followup.send(f"Error listing open trades: {str(e)}", ephemeral=True)
-
-# =================== Regular Commands ===================
+    return trade_oneliner
 
 @bot.slash_command(name="open", description="Open a trade from a symbol string")
 async def open_trade(
@@ -1477,7 +1747,240 @@ async def sto(
 
     except Exception as e:
         logging.error(f"Error in sto command: {str(e)}")
+        await interaction.followup.send('''
+
+@bot.slash_command(name="add_role_to_users", description="Add a role to all users who have a specific role")
+async def add_role_to_users(
+    interaction: discord.Interaction,
+    role_to_add: discord.Option(discord.Role, description="The role to add to users"),
+    required_role: discord.Option(discord.Role, description="The role that users must have")
+):
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        guild = interaction.guild
+        members = guild.fetch_members(limit=None)
+        
+        added_count = 0
+        already_had_count = 0
+        total_processed = 0
+        
+        async for member in members:
+            if required_role in member.roles:
+                if role_to_add not in member.roles:
+                    await member.add_roles(role_to_add)
+                    added_count += 1
+                else:
+                    already_had_count += 1
+            total_processed += 1
+            if total_processed % 20 == 0:
+                print(f"Processed {total_processed} members")
+        total_affected = added_count + already_had_count
+        
         await interaction.followup.send(
-            f"Error opening stock trade: {str(e)}", ephemeral=True
+            f"Role addition complete:\n"
+            f"- {added_count} users were given the {role_to_add.name} role\n"
+            f"- {already_had_count} users already had the role\n"
+            f"- {total_affected} total users with the {required_role.name} role",
+            ephemeral=True
         )
-'''
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_ROLE_TO_USERS command: Role addition complete.")
+    except discord.Forbidden:
+        await interaction.followup.send("I don't have permission to add roles to users.", ephemeral=True)
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_ROLE_TO_USERS command: I don't have permission to add roles to users.")
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        logger.error(traceback.format_exc())
+        await log_to_channel(interaction.guild, f"Error in ADD_ROLE_TO_USERS command by {interaction.user.name}: {str(e)}")
+        await kill_interaction(interaction)
+
+@bot.slash_command(name="send_embed", description="Send an embed with optional file attachment")
+async def send_embed(
+    interaction: discord.Interaction,
+    title: discord.Option(str, description="The title of the embed"),
+    description: discord.Option(str, description="The description/content of the embed (use \\n for new lines)"),
+    channel: discord.Option(discord.TextChannel, description="The channel to send the embed to"),
+    file: discord.Option(discord.Attachment, description="File to attach to the embed", required=False) = None
+):
+    await kill_interaction(interaction)
+    
+    try:
+        # Replace '\\n' with actual new lines
+        formatted_description = description.replace('\\n', '\n')
+        embed = discord.Embed(title=title, description=formatted_description, color=discord.Color.blue())
+        
+        if file:
+            file_data = await file.read()
+            discord_file = discord.File(io.BytesIO(file_data), filename=file.filename)
+            embed.set_image(url=f"attachment://{file.filename}")
+            await channel.send(embed=embed, file=discord_file)
+        else:
+            await channel.send(embed=embed)
+        
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed SEND_EMBED command: Embed sent successfully!")
+    except Exception as e:
+        logger.error(f"Error in send_embed: {str(e)}")
+        logger.error(traceback.format_exc())
+        await log_to_channel(interaction.guild, f"Error in SEND_EMBED command by {interaction.user.name}: {str(e)}")
+        await kill_interaction(interaction)
+
+
+@bot.slash_command(name="unsync_resync", description="Unsync and resync commands")
+async def unsync_resync(ctx, guild_id: int = None):
+    if guild_id:
+        guild = discord.Object(id=guild_id)
+    else:
+        guild = ctx.guild
+
+    await ctx.respond("Unsyncing commands...", ephemeral=True)
+    await bot.sync_commands(commands=[], guild_ids=[guild.id])
+    await ctx.send("Commands unsynced.", ephemeral=True)
+
+    await ctx.send("Resyncing commands...", ephemeral=True)
+    synced = await bot.sync_commands(guild=guild)
+    await ctx.send(f"Resynced {len(synced)} commands.", ephemeral=True)
+
+
+@bot.slash_command(name="transaction_send", description="Send a transaction message")
+async def transaction_send(interaction: discord.Interaction, transaction_id: discord.Option(str, description="The transaction to send")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+    if not transaction:
+        await interaction.response.send_message("Transaction not found.", ephemeral=True)
+        return
+    
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == transaction.trade_id).first()
+    if not trade:
+        await interaction.response.send_message("Trade not found.", ephemeral=True)
+        return
+    
+    config = get_configuration(db, trade.configuration.name)
+    if not config:
+        await interaction.response.send_message("No configuration found for this trade group.", ephemeral=True)
+        return
+    
+    if transaction.transaction_type == "open":  
+        await post_update(interaction, trade.trade_group, f"Open {transaction.transaction_id}")
+    elif transaction.transaction_type == "close":
+        await post_update(interaction, trade.trade_group, f"Close {transaction.transaction_id}")
+    elif transaction.transaction_type == TransactionTypeEnum.CLOSE:
+        # Create an embed with the closed trade information
+        embed = discord.Embed(title="Trade Closed", color=discord.Color.gold())
+
+        unit_type = "contract" if trade.is_contract else "share"
+
+        profit_loss_per_unit = trade.average_price - transaction.amount
+        
+        # Add the one-liner at the top of the embed
+        embed.description = create_trade_oneliner(trade)
+        
+        embed.add_field(name="Exit Price", value=f"${transaction.amount:.2f}", inline=True)
+        embed.add_field(name="Exit Size", value=format_size(transaction.size), inline=True)
+        embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${profit_loss_per_unit:.2f}", inline=True)
+        embed.add_field(name="Avg Entry Price", value=f"${trade.average_price:.2f}", inline=True)
+        if trade.average_exit_price:
+            embed.add_field(name="Avg Exit Price", value=f"${trade.average_exit_price:.2f}", inline=True)
+        else:
+            embed.add_field(name="Avg Exit Price", value=f"${transaction.amount:.2f}", inline=True)
+        embed.add_field(name="Result", value=trade.win_loss.value.capitalize(), inline=True)
+
+        # Set the footer to include the trade ID
+        embed.set_footer(text=f"Trade ID: {trade.trade_id}")
+
+        channel = interaction.guild.get_channel(int(config.channel_id))
+        await channel.send(embed=embed)
+
+
+@bot.slash_command(name="note", description="Add a note to a trade")
+async def add_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)), note: discord.Option(str, description="The note to add")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
+    if not trade:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
+        return
+    
+    config = get_configuration(db, trade.configuration.name)
+    if not config:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
+        return
+    
+    channel = interaction.guild.get_channel(int(config.channel_id))
+    embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
+    embed.description = create_trade_oneliner(trade)
+    embed.add_field(name="Note", value=note, inline=False)
+    embed.set_footer(text=f"Posted by {interaction.user.name}")
+    await channel.send(embed=embed)
+
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
+
+@bot.slash_command(name="os_note", description="Add a note to a trade")
+async def add_os_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)), note: discord.Option(str, description="The note to add")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    trade = db.query(models.OptionsStrategyTrade).filter(models.OptionsStrategyTrade.trade_id == trade_id).first()
+    if not trade:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
+        return
+    
+    config = get_configuration(db, trade.configuration.name)
+    if not config:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
+        return
+    
+    channel = interaction.guild.get_channel(int(config.channel_id))
+    embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
+    embed.description = create_trade_oneliner_os(trade)
+    embed.add_field(name="Note", value=note, inline=False)
+    embed.set_footer(text=f"Posted by {interaction.user.name}")
+    await channel.send(embed=embed)
+
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
+
+@bot.slash_command(name="admin_reopen_trade", description="Reopen a trade")
+async def admin_reopen_trade(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to reopen")):
+    await kill_interaction(interaction)
+    db = next(get_db())
+    trade = db.query(models.Trade).filter(models.Trade.trade_id == trade_id).first()
+    if not trade:
+        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADMIN_REOPEN_TRADE command: Trade not found.")
+        return
+    
+    trade.status = "open"
+    db.commit()
+
+    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADMIN_REOPEN_TRADE command: Trade reopened.")
+
+
+ACCESS_ROLES = ['Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader']
+LOST_ACCESS = ['@everyone', 'BD-Verified']
+JOINED_ROLES = ['@everyone', 'Full Access', 'Day Trader', 'Swing Trader', 'Long Term Trader'] 
+
+# if after roles are ['@everyone', 'BD-Verified']
+@bot.event
+async def on_member_update(before, after):
+    print(f"Member updated: {after.name} (ID: {after.id})")
+    logger.info(f"Member updated: {after.name} (ID: {after.id})")
+    if before.roles != after.roles:
+        print(f"Roles changed for {after.name}")
+        print(f"Before: {[role.name for role in before.roles]}")
+        print(f"After: {[role.name for role in after.roles]}")
+    
+    if after.roles == LOST_ACCESS:
+        try:    
+            await after.remove_roles(after.guild.get_role(1283500210127110267))
+        except Exception as e:
+            print(f"Error removing BD-Verified role from {after.name}: {e}")
+
+    if after.roles == JOINED_ROLES:
+        try:
+            await after.add_roles(after.guild.get_role(1283500418013593762))
+        except Exception as e:
+            print(f"Error adding BD-Verified role to {after.name}: {e}")
+    
+    # if roles are ['@everyone', 'BD-Verified'] then remove BD-Verified
+    # Can also do the if no verification role and one of the access roles, then add unverified role here
+
+
+
