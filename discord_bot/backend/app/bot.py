@@ -15,7 +15,7 @@ from typing import List, Tuple
 
 import aiofiles
 import discord
-from discord.ext import tasks
+from discord.ext import tasks, commands
 from dotenv import load_dotenv
 
 import app.models as models
@@ -93,7 +93,6 @@ async def run_bot():
 async def on_ready():
     global last_sync_time
     print(f'{bot.user} has connected to Discord!')
-    create_tables(engine)
 
     print("Loaded cogs:", [cog for cog in bot.cogs.keys()])
     
@@ -1761,30 +1760,7 @@ async def add_note(interaction: discord.Interaction, trade_id: discord.Option(st
     await channel.send(embed=embed)
 
     await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
-
-@bot.slash_command(name="os_note", description="Add a note to a trade")
-async def add_os_note(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)), note: discord.Option(str, description="The note to add")):
-    await kill_interaction(interaction)
-    db = next(get_db())
-    trade = db.query(models.OptionsStrategyTrade).filter(models.OptionsStrategyTrade.trade_id == trade_id).first()
-    if not trade:
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Trade not found.")
-        return
     
-    config = get_configuration(db, trade.configuration.name)
-    if not config:
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: No configuration found for trade group: {trade.configuration.name}")
-        return
-    
-    channel = interaction.guild.get_channel(int(config.channel_id))
-    embed = discord.Embed(title="Trade Note", description=note, color=discord.Color.blue())
-    embed.description = create_trade_oneliner_os(trade)
-    embed.add_field(name="Note", value=note, inline=False)
-    embed.set_footer(text=f"Posted by {interaction.user.name}")
-    await channel.send(embed=embed)
-
-    await log_to_channel(interaction.guild, f"User {interaction.user.name} executed ADD_NOTE command: Note added to trade {trade_id}.")
-
 @bot.slash_command(name="admin_reopen_trade", description="Reopen a trade")
 async def admin_reopen_trade(interaction: discord.Interaction, trade_id: discord.Option(str, description="The trade to reopen")):
     await kill_interaction(interaction)
