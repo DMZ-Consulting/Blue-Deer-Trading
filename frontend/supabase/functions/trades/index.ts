@@ -211,16 +211,6 @@ serve(async (req: Request) => {
               .gte('closed_at', monday.toISOString())
               .lte('closed_at', friday.toISOString())
           }
-
-          // backfill trades with all of their transactions and all the transaction information
-          // console.log('Joining trades with transactions table')
-          // try {
-          //   query = query.leftJoin('transactions', 'trades.trade_id', 'transactions.trade_id')
-          //   console.log('Successfully joined trades with transactions')
-          // } catch (error) {
-          //   console.error('Error joining trades with transactions:', error)
-          //   throw new Error(`Failed to join trades with transactions: ${error instanceof Error ? error.message : 'Unknown error'}`)
-          // }
           
           // Handle sorting
           if (filters.sortBy) {

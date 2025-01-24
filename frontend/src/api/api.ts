@@ -297,11 +297,25 @@ export const api = {
 }
 
 export async function deleteTransaction(transactionId: string): Promise<void> {
-  const response = await fetch(`/api/transactions/${transactionId}`, {
-    method: 'DELETE',
+  if (!supabase) throw new Error('Supabase client not initialized');
+  
+  const { error } = await supabase.functions.invoke('transactions', {
+    body: { action: 'deleteTransaction', transactionId }
   });
+  
+  if (error) throw error;
+}
 
-  if (!response.ok) {
-    throw new Error('Failed to delete transaction');
-  }
+export async function updateTransaction(transactionId: string, data: {
+  transaction_type: string;
+  amount: number;
+  size: string;
+}): Promise<void> {
+  if (!supabase) throw new Error('Supabase client not initialized');
+  
+  const { error } = await supabase.functions.invoke('transactions', {
+    body: { action: 'updateTransaction', transactionId, data }
+  });
+  
+  if (error) throw error;
 }

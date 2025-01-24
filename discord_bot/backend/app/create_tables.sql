@@ -158,3 +158,170 @@ CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at);
 CREATE INDEX IF NOT EXISTS idx_verifications_user_id ON verifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_options_strategy_trades_underlying ON options_strategy_trades(underlying_symbol);
+
+-- Create function to update trade after transaction changes
+CREATE OR REPLACE FUNCTION update_trade_before_transaction_change()
+RETURNS TRIGGER AS $$
+DECLARE
+    total_cost FLOAT := 0;
+    total_shares FLOAT := 0;
+    total_exit_cost FLOAT := 0;
+    total_exit_shares FLOAT := 0;
+    updated_trade RECORD;
+    transaction_record RECORD;
+    newest_transaction_id VARCHAR;
+BEGIN
+    -- For DELETE operations, verify this is the newest transaction
+    IF TG_OP = 'DELETE' THEN
+        SELECT id INTO newest_transaction_id
+        FROM transactions
+        WHERE trade_id = OLD.trade_id
+        ORDER BY created_at DESC
+        LIMIT 1;
+
+        IF OLD.id != newest_transaction_id THEN
+            RAISE EXCEPTION 'Only the most recent transaction can be deleted';
+        END IF;
+    END IF;
+
+    -- Get all transactions for this trade, ordered by creation time
+    FOR transaction_record IN (
+        SELECT 
+            transaction_type,
+            amount,
+            size,
+            created_at,
+            id
+        FROM transactions 
+        WHERE trade_id = COALESCE(NEW.trade_id, OLD.trade_id)
+        AND id != COALESCE(OLD.id, '0')  -- Exclude the transaction being deleted if any
+        ORDER BY created_at ASC
+    ) LOOP
+        -- Process each transaction
+        CASE transaction_record.transaction_type
+            WHEN 'OPEN' THEN
+                total_cost := total_cost + (transaction_record.amount * CAST(transaction_record.size AS FLOAT));
+                total_shares := total_shares + CAST(transaction_record.size AS FLOAT);
+            WHEN 'ADD' THEN
+                total_cost := total_cost + (transaction_record.amount * CAST(transaction_record.size AS FLOAT));
+                total_shares := total_shares + CAST(transaction_record.size AS FLOAT);
+            WHEN 'TRIM' THEN
+                total_exit_cost := total_exit_cost + (transaction_record.amount * CAST(transaction_record.size AS FLOAT));
+                total_exit_shares := total_exit_shares + CAST(transaction_record.size AS FLOAT);
+                total_shares := total_shares - CAST(transaction_record.size AS FLOAT);
+            WHEN 'CLOSE' THEN
+                total_exit_cost := total_exit_cost + (transaction_record.amount * CAST(transaction_record.size AS FLOAT));
+                total_exit_shares := total_exit_shares + CAST(transaction_record.size AS FLOAT);
+                total_shares := total_shares - CAST(transaction_record.size AS FLOAT);
+        END CASE;
+    END LOOP;
+
+    -- If this is an insert or update, add the new transaction to the totals
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        CASE NEW.transaction_type
+            WHEN 'OPEN' THEN
+                total_cost := total_cost + (NEW.amount * CAST(NEW.size AS FLOAT));
+                total_shares := total_shares + CAST(NEW.size AS FLOAT);
+            WHEN 'ADD' THEN
+                total_cost := total_cost + (NEW.amount * CAST(NEW.size AS FLOAT));
+                total_shares := total_shares + CAST(NEW.size AS FLOAT);
+            WHEN 'TRIM' THEN
+                total_exit_cost := total_exit_cost + (NEW.amount * CAST(NEW.size AS FLOAT));
+                total_exit_shares := total_exit_shares + CAST(NEW.size AS FLOAT);
+                total_shares := total_shares - CAST(NEW.size AS FLOAT);
+            WHEN 'CLOSE' THEN
+                total_exit_cost := total_exit_cost + (NEW.amount * CAST(NEW.size AS FLOAT));
+                total_exit_shares := total_exit_shares + CAST(NEW.size AS FLOAT);
+                total_shares := total_shares - CAST(NEW.size AS FLOAT);
+        END CASE;
+    END IF;
+
+    -- Calculate average prices and profit/loss
+    DECLARE
+        avg_entry_price FLOAT;
+        avg_exit_price FLOAT;
+        total_pl FLOAT;
+    BEGIN
+        -- Calculate averages only when we have shares
+        avg_entry_price := CASE 
+            WHEN total_shares + total_exit_shares > 0 THEN total_cost / (total_shares + total_exit_shares)
+            ELSE NULL
+        END;
+
+        avg_exit_price := CASE 
+            WHEN total_exit_shares > 0 THEN total_exit_cost / total_exit_shares
+            ELSE NULL
+        END;
+
+        -- Calculate P/L: (exit price - entry price) * shares sold
+        total_pl := CASE 
+            WHEN total_exit_shares > 0 THEN 
+                (total_exit_cost - (avg_entry_price * total_exit_shares))
+            ELSE NULL
+        END;
+
+        -- Update the trade with calculated values
+        UPDATE trades 
+        SET 
+            average_price = avg_entry_price,
+            current_size = CASE 
+                WHEN total_shares > 0 THEN total_shares::TEXT
+                ELSE '0'
+            END,
+            status = CASE 
+                WHEN total_shares > 0 THEN 'OPEN'
+                ELSE 'CLOSED'
+            END,
+            closed_at = CASE 
+                WHEN total_shares <= 0 THEN 
+                    CASE 
+                        WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.created_at
+                        ELSE (
+                            SELECT created_at 
+                            FROM transactions 
+                            WHERE trade_id = COALESCE(NEW.trade_id, OLD.trade_id)
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        )
+                    END
+                ELSE NULL
+            END,
+            exit_price = CASE 
+                WHEN total_shares <= 0 THEN avg_exit_price
+                ELSE NULL
+            END,
+            average_exit_price = avg_exit_price,
+            profit_loss = total_pl,
+            win_loss = CASE
+                WHEN total_pl > 0 THEN 'WIN'
+                WHEN total_pl < 0 THEN 'LOSS'
+                WHEN total_pl = 0 THEN 'BREAKEVEN'
+                ELSE NULL
+            END
+        WHERE trade_id = COALESCE(NEW.trade_id, OLD.trade_id)
+        RETURNING * INTO updated_trade;
+    END;
+
+    -- Return the appropriate record based on operation type
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Drop existing triggers if they exist
+DROP TRIGGER IF EXISTS transaction_after_insert_update ON transactions;
+DROP TRIGGER IF EXISTS transaction_after_delete ON transactions;
+
+-- Create new BEFORE triggers for transaction changes
+CREATE TRIGGER transaction_before_insert_update
+    BEFORE INSERT OR UPDATE ON transactions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_trade_before_transaction_change();
+
+CREATE TRIGGER transaction_before_delete
+    BEFORE DELETE ON transactions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_trade_before_transaction_change();

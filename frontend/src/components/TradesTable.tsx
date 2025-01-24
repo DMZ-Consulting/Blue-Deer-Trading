@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Trade } from '../utils/types'
 import { ChevronDown, ChevronUp, ArrowUpDown, Settings2, X } from 'lucide-react'
-import { getTradesByConfiguration, deleteTransaction } from '../api/api'
+import { getTradesByConfiguration, deleteTransaction, updateTransaction } from '../api/api'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -48,7 +48,21 @@ type SortOrder = 'asc' | 'desc'
 interface TransactionFormData {
   amount: number;
   size: string;
+  transaction_type: string;  // Keep this for the API but don't show it in the UI
+}
+
+interface Transaction {
+  id: string;
+  trade_id: string;
   transaction_type: string;
+  amount: number;
+  size: string;
+  created_at: string;
+}
+
+interface FormError {
+  size?: string | undefined;
+  amount?: string | undefined;
 }
 
 export function TradesTableComponent({ configName, filterOptions, showAllTrades = false, allowTransactionActions = false }: TradesTableProps) {
@@ -72,8 +86,9 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   const [editFormData, setEditFormData] = useState<TransactionFormData>({
     amount: 0,
     size: '',
-    transaction_type: '',
+    transaction_type: '',  // Initialize with an empty string
   });
+  const [editFormError, setEditFormError] = useState<FormError>({});
 
   const fetchTrades = useCallback(async () => {
     setLoading(true)
@@ -89,13 +104,13 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         showAllTrades
       };
 
-      console.log("Fetching trades with request:", {
-        action: 'getTrades',
-        filters: requestParams
-      });
+      // console.log("Fetching trades with request:", {
+      //   action: 'getTrades',
+      //   filters: requestParams
+      // });
 
       const fetchedTrades = await getTradesByConfiguration(requestParams)
-      console.log("Received trades response:", fetchedTrades);
+      //console.log("Received trades response:", fetchedTrades);
       setTrades(fetchedTrades as Trade[])
     } catch (error) {
       console.error('Error fetching trades:', error)
@@ -262,29 +277,71 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
       setEditFormData({
         amount: transaction.amount,
         size: transaction.size,
-        transaction_type: transaction.transaction_type,
+        transaction_type: transaction.transaction_type,  // Keep the original type
       });
       setEditingTransaction({ id: transactionId, trade_id: tradeId });
     }
   };
 
-  const handleSaveEdit = async () => {
+  const validateSize = (newSize: string, trade: Trade, editedTransaction: Transaction) => {
+    const oldSize = parseFloat(editedTransaction.size);
+    const proposedSize = parseFloat(newSize);
+    
+    if (isNaN(proposedSize)) return undefined;
+
+    const sizeDiff = editedTransaction.transaction_type === 'OPEN' || editedTransaction.transaction_type === 'ADD'
+      ? proposedSize - oldSize
+      : oldSize - proposedSize;
+
+    const currentTradeSize = trade.current_size ? parseFloat(trade.current_size) : 0;
+    const newTotalSize = currentTradeSize + sizeDiff;
+
+    return newTotalSize < 0 ? `This size would result in a negative total size (${newTotalSize})` : undefined;
+  };
+
+  const validateAmount = (amount: number) => {
+    if (amount < 0) {
+      return 'Amount cannot be negative';
+    }
+    return undefined;
+  };
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newAmount = parseFloat(e.target.value);
+    setEditFormData(prev => ({ ...prev, amount: newAmount }));
+
+    const error = validateAmount(newAmount);
+    setEditFormError(prev => ({
+      ...prev,
+      amount: error
+    }));
+  };
+
+  const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSize = e.target.value;
+    setEditFormData(prev => ({ ...prev, size: newSize }));
+
     if (!editingTransaction) return;
 
+    const trade = trades.find(t => t.trade_id === editingTransaction.trade_id);
+    const editedTransaction = trade?.transactions?.find(t => String(t.id) === editingTransaction.id);
+    
+    if (!trade || !editedTransaction) return;
+
+    const error = validateSize(newSize, trade, editedTransaction);
+    setEditFormError(prev => ({
+      ...prev,
+      size: error
+    }));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTransaction || Object.values(editFormError).some(error => error)) return;
+
     try {
-      const response = await fetch(`/api/transactions/${editingTransaction.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(editFormData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update transaction');
-      }
-
+      await updateTransaction(editingTransaction.id, editFormData);
       setEditingTransaction(null);
+      setEditFormError({});
       fetchTrades();
     } catch (error) {
       console.error('Error updating transaction:', error);
@@ -540,29 +597,31 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                                   <TableHeader>
                                     <TableRow>
                                       {isDevelopment && debugMode && <TableHead className="text-center">Transaction ID</TableHead>}
-                                      <TableHead>Type</TableHead>
-                                      <TableHead className="text-center">Price</TableHead>
-                                      <TableHead className="text-center">Size</TableHead>
-                                      <TableHead className="text-center">Date</TableHead>
+                                      <TableHead className="text-center w-24">Type</TableHead>
+                                      <TableHead className="text-center w-24">Price</TableHead>
+                                      <TableHead className="text-center w-16">Size</TableHead>
+                                      <TableHead className="text-center w-40">Date</TableHead>
                                       {allowTransactionActions && (
-                                        <TableHead className="text-center">Actions</TableHead>
+                                        <TableHead className="text-center w-32">Actions</TableHead>
                                       )}
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {trade.transactions?.map(transaction => (
+                                    {trade.transactions?.sort((a, b) => 
+                                      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                                    ).map((transaction, index, array) => (
                                       <TableRow key={String(transaction.id)}>
                                         {isDevelopment && debugMode && <TableCell className="text-center">{String(transaction.id)}</TableCell>}
-                                        <TableCell>
+                                        <TableCell className="text-center">
                                           <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
                                             {transaction.transaction_type}
                                           </span>
                                         </TableCell>
                                         <TableCell className="text-center">${transaction.amount.toFixed(2)}</TableCell>
                                         <TableCell className="text-center">{transaction.size}</TableCell>
-                                        <TableCell className="text-center">{new Date(transaction.created_at).toLocaleString()}</TableCell>
+                                        <TableCell className="text-center whitespace-nowrap">{new Date(transaction.created_at).toLocaleString()}</TableCell>
                                         {allowTransactionActions && (
-                                          <TableCell className="text-center">
+                                          <TableCell>
                                             <div className="flex justify-center space-x-2">
                                               <Button
                                                 variant="ghost"
@@ -571,14 +630,16 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                                               >
                                                 Edit
                                               </Button>
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-red-600 hover:text-red-800"
-                                                onClick={() => handleDeleteTransaction(String(transaction.id), trade.trade_id)}
-                                              >
-                                                Delete
-                                              </Button>
+                                              {index === array.length - 1 && transaction.transaction_type !== 'OPEN' && (
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="text-red-600 hover:text-red-800"
+                                                  onClick={() => handleDeleteTransaction(String(transaction.id), trade.trade_id)}
+                                                >
+                                                  Delete
+                                                </Button>
+                                              )}
                                             </div>
                                           </TableCell>
                                         )}
@@ -600,7 +661,10 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         </Card>
       )}
 
-      <Dialog open={editingTransaction !== null} onOpenChange={() => setEditingTransaction(null)}>
+      <Dialog open={editingTransaction !== null} onOpenChange={() => {
+        setEditingTransaction(null);
+        setEditFormError({});
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Transaction</DialogTitle>
@@ -613,37 +677,39 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                 type="number"
                 step="0.01"
                 value={editFormData.amount}
-                onChange={(e) => setEditFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+                onChange={handleAmountChange}
+                className={editFormError.amount ? 'border-red-500' : ''}
               />
+              {editFormError.amount && (
+                <p className="text-sm text-red-500">{editFormError.amount}</p>
+              )}
             </div>
             <div className="grid gap-2">
               <label htmlFor="size">Size</label>
               <Input
                 id="size"
                 value={editFormData.size}
-                onChange={(e) => setEditFormData(prev => ({ ...prev, size: e.target.value }))}
+                onChange={handleSizeChange}
+                className={editFormError.size ? 'border-red-500' : ''}
               />
-            </div>
-            <div className="grid gap-2">
-              <label htmlFor="type">Type</label>
-              <select
-                id="type"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors"
-                value={editFormData.transaction_type}
-                onChange={(e) => setEditFormData(prev => ({ ...prev, transaction_type: e.target.value }))}
-              >
-                <option value="OPEN">Open</option>
-                <option value="ADD">Add</option>
-                <option value="TRIM">Trim</option>
-                <option value="CLOSE">Close</option>
-              </select>
+              {editFormError.size && (
+                <p className="text-sm text-red-500">{editFormError.size}</p>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingTransaction(null)}>
+            <Button variant="outline" onClick={() => {
+              setEditingTransaction(null);
+              setEditFormError({});
+            }}>
               Cancel
             </Button>
-            <Button onClick={handleSaveEdit}>Save changes</Button>
+            <Button 
+              onClick={handleSaveEdit} 
+              disabled={Object.values(editFormError).some(error => error)}
+            >
+              Save changes
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
