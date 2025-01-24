@@ -11,10 +11,14 @@ token = os.getenv('DISCORD_TOKEN')
 if not token:
     raise ValueError("No Discord token found in environment variables")
 
-try:
-    asyncio.run(run_bot(token))
-except KeyboardInterrupt:
-    print("Bot shutting down...")
-except Exception as e:
-    print(f"Error running bot: {str(e)}")
-    raise 
+def main():
+    try:
+        run_bot(token)
+    except KeyboardInterrupt:
+        print("Bot shutting down...")
+    except Exception as e:
+        print(f"Error running bot: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    main()

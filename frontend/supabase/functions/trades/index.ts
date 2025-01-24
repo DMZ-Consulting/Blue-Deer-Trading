@@ -540,6 +540,7 @@ serve(async (req: Request) => {
             .single()
 
           closedTrade.exit_size = exitTradeData.current_size
+          closedTrade.unit_profit_loss = averageExitPrice - averageCost
 
           if (closeUpdateError) {
             console.error('Error updating trade for exit:', closeUpdateError)

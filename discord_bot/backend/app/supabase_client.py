@@ -1,4 +1,4 @@
-from supabase import create_client
+from supabase import create_client, create_async_client, AsyncClient
 import os
 from dotenv import load_dotenv
 import logging
@@ -11,7 +11,7 @@ import json
 load_dotenv()
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Initialize Supabase client
@@ -21,7 +21,7 @@ supabase_key = os.getenv("SUPABASE_KEY")
 if not supabase_url or not supabase_key:
     logger.error(f"Supabase configuration missing - URL: {'present' if supabase_url else 'missing'}, Key: {'present' if supabase_key else 'missing'}")
 
-supabase = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
+supabase = AsyncClient(supabase_url, supabase_key) if supabase_url and supabase_key else None
 
 # Autocomplete functions (direct table access)
 async def get_open_trades_for_autocomplete() -> List[Dict[str, Any]]:
@@ -30,7 +30,7 @@ async def get_open_trades_for_autocomplete() -> List[Dict[str, Any]]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.table('trades').select('*').eq('status', 'open').execute()
+        response = await supabase.table('trades').select('*').eq('status', 'open').execute()
         return response.data
     except Exception as e:
         logger.error(f"Error getting open trades for autocomplete: {str(e)}")
@@ -42,7 +42,7 @@ async def get_open_os_trades_for_autocomplete() -> List[Dict[str, Any]]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.table('options_strategy_trades').select('*').eq('status', 'open').execute()
+        response = await supabase.table('options_strategy_trades').select('*').eq('status', 'open').execute()
         return response.data
     except Exception as e:
         logger.error(f"Error getting open options strategy trades for autocomplete: {str(e)}")
@@ -84,7 +84,7 @@ async def create_trade(
 
     logger.info(f"Calling trades edge function with action=createTrade and input={input_data}")
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={"body": {"action": "createTrade", "input": input_data}}
         )
@@ -115,7 +115,7 @@ async def add_to_trade(trade_id: str, price: float, size: str) -> Dict[str, Any]
 
     logger.info(f"Calling trades edge function with action=addToTrade, trade_id={trade_id}, price={price}, size={size}")
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={"body": {"action": "addToTrade", "trade_id": trade_id, "price": price, "size": size}}
         )
@@ -146,7 +146,7 @@ async def trim_trade(trade_id: str, price: float, size: str) -> Dict[str, Any]:
 
     logger.info(f"Calling trades edge function with action=trimTrade, trade_id={trade_id}, price={price}, size={size}")
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={"body": {"action": "trimTrade", "trade_id": trade_id, "price": price, "size": size}}
         )
@@ -177,7 +177,7 @@ async def exit_trade(trade_id: str, price: float) -> Dict[str, Any]:
 
     logger.info(f"Calling trades edge function with action=exitTrade, trade_id={trade_id}, price={price}")
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={"body": {"action": "exitTrade", "trade_id": trade_id, "price": price}}
         )
@@ -208,7 +208,7 @@ async def get_trade(trade_id: str) -> Optional[Dict[str, Any]]:
 
     logger.info(f"Calling trades edge function with action=getTrades, trade_id={trade_id}")
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={"body": {"action": "getTrades", "filters": {"trade_id": trade_id}}}
         )
@@ -238,7 +238,7 @@ async def get_open_trades() -> List[Dict[str, Any]]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.table('trades').select('*').eq('status', 'open').execute()
+        response = await supabase.table('trades').select('*').eq('status', 'open').execute()
         return response.data
     except Exception as e:
         logger.error(f"Error getting open trades: {str(e)}")
@@ -286,7 +286,7 @@ async def create_os_trade(
             'created_at': datetime.utcnow().isoformat()
         }
 
-        response = supabase.table('options_strategy_trades').insert(trade_data).execute()
+        response = await supabase.table('options_strategy_trades').insert(trade_data).execute()
         if response.data:
             logger.info(f"Created options strategy trade: {response.data[0]}")
             return response.data[0]
@@ -302,7 +302,7 @@ async def get_open_os_trades() -> List[Dict[str, Any]]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={"body": {"action": "getOSTrades", "filters": {"status": "OPEN"}}}
         )
@@ -336,7 +336,7 @@ async def add_to_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={
                 "body": {
@@ -378,7 +378,7 @@ async def trim_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={
                 "body": {
@@ -419,7 +419,7 @@ async def exit_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={
                 "body": {
@@ -458,7 +458,7 @@ async def add_note_to_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={
                 "body": {
@@ -493,7 +493,7 @@ async def reopen_trade(trade_id: str) -> Dict[str, Any]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = supabase.functions.invoke(
+        response = await supabase.functions.invoke(
             "trades",
             invoke_options={
                 "body": {
@@ -526,7 +526,7 @@ async def get_verification_config(message_id: str) -> Dict[str, Any]:
     if not supabase:
         raise Exception("Supabase client not initialized")
 
-    return supabase.table('verification_config').select('*').eq('message_id', message_id).single()
+    return await supabase.table('verification_config').select('*').eq('message_id', message_id).single()
 
 async def add_verification_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Add a new verification config."""
@@ -535,7 +535,7 @@ async def add_verification_config(config: Dict[str, Any]) -> Dict[str, Any]:
     
     # Convert SQLAlchemy model to dict if needed
     config_data = config.to_dict() if hasattr(config, 'to_dict') else config
-    return supabase.table('verification_config').insert(config_data).execute()
+    return await supabase.table('verification_config').insert(config_data).execute()
 
 async def add_verification(verification: Dict[str, Any]) -> Dict[str, Any]:
     """Add a new verification."""
@@ -544,10 +544,10 @@ async def add_verification(verification: Dict[str, Any]) -> Dict[str, Any]:
     
     # Convert SQLAlchemy model to dict if needed
     verification_data = verification.to_dict() if hasattr(verification, 'to_dict') else verification
-    return supabase.table('verifications').insert(verification_data).execute()
+    return await supabase.table('verifications').insert(verification_data).execute()
 
 async def get_trade_by_id(trade_id: str) -> Dict[str, Any]:
     """Get a trade by ID."""
     if not supabase:
         raise Exception("Supabase client not initialized")
-    return supabase.table('trades').select('*').eq('trade_id', trade_id).single()
+    return await supabase.table('trades').select('*').eq('trade_id', trade_id).single()

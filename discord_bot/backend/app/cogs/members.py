@@ -1,3 +1,5 @@
+# type: ignore[type-arg]
+
 import discord
 from discord.ext import commands
 import logging
@@ -13,7 +15,7 @@ class Members(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_member = None
-    
+
     @commands.Cog.listener()
     async def on_member_join(self, member):
         """
