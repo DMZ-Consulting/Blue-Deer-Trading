@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog"
+} from "../components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -27,7 +27,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 
 interface FilterOptions {
   status: 'ALL' | 'OPEN' | 'CLOSED';
-  startDate: string;
+  startDate?: string;
   optionType?: 'options' | 'common';
   symbol?: string;
   minEntryPrice?: number;
@@ -109,6 +109,16 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   }, [fetchTrades])
 
   const getHeaderText = () => {
+    if (!filterOptions.startDate) {
+      if (filterOptions.status === 'OPEN') {
+        return `Trades Remaining Open`
+      } else if (filterOptions.status === 'CLOSED') {
+        return `Closed Trades`
+      } else {
+        return 'All Trades'
+      }
+    }
+
     const date = new Date(filterOptions.startDate + 'T00:00:00Z');
     const friday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + (5 - date.getUTCDay() + 7) % 7));
     if (filterOptions.status === 'OPEN') {
