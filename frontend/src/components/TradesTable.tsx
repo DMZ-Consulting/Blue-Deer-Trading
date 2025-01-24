@@ -96,7 +96,6 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
       const requestParams = {
         configName: configName === '' ? 'all' : configName,
         status: filterOptions.status,
-        weekFilter: filterOptions.startDate,
         optionType: filterOptions.optionType,
         symbol: filterOptions.symbol,
         minEntryPrice: filterOptions.minEntryPrice,
@@ -104,13 +103,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         showAllTrades
       };
 
-      // console.log("Fetching trades with request:", {
-      //   action: 'getTrades',
-      //   filters: requestParams
-      // });
-
       const fetchedTrades = await getTradesByConfiguration(requestParams)
-      //console.log("Received trades response:", fetchedTrades);
       setTrades(fetchedTrades as Trade[])
     } catch (error) {
       console.error('Error fetching trades:', error)
@@ -124,22 +117,10 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   }, [fetchTrades])
 
   const getHeaderText = () => {
-    if (!filterOptions.startDate) {
-      if (filterOptions.status === 'OPEN') {
-        return `Trades Remaining Open`
-      } else if (filterOptions.status === 'CLOSED') {
-        return `Closed Trades`
-      } else {
-        return 'All Trades'
-      }
-    }
-
-    const date = new Date(filterOptions.startDate + 'T00:00:00Z');
-    const friday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + (5 - date.getUTCDay() + 7) % 7));
     if (filterOptions.status === 'OPEN') {
       return `Trades Remaining Open`
     } else if (filterOptions.status === 'CLOSED') {
-      return `Trades Realized for the week of ${friday.toLocaleDateString(undefined, { timeZone: 'UTC' })}`
+      return `Closed Trades`
     } else {
       return 'All Trades'
     }

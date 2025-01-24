@@ -20,10 +20,6 @@ export default function Home() {
   const [tradeView, setTradeView] = useState<TradeViewType>('regular')
   const [configName, setConfigName] = useState('swing_trader')
   const [statusFilter, setStatusFilter] = useState<'OPEN' | 'CLOSED'>('OPEN')
-  const [dateFilter, setDateFilter] = useState(() => {
-    const now = new Date()
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString().split('T')[0]
-  })
 
   return (
     <main className="container mx-auto p-4 space-y-4">
@@ -70,13 +66,6 @@ export default function Home() {
               <SelectItem value="CLOSED">Closed</SelectItem>
             </SelectContent>
           </Select>
-
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="px-3 py-2 border rounded-md"
-          />
         </div>
       </div>
 
@@ -85,7 +74,6 @@ export default function Home() {
           configName={configName}
           filterOptions={{
             status: statusFilter,
-            startDate: dateFilter,
             optionType: 'common'
           }}
         />
@@ -96,7 +84,6 @@ export default function Home() {
           configName={configName}
           filterOptions={{
             status: statusFilter,
-            startDate: dateFilter,
             optionType: 'options'
           }}
         />
@@ -106,7 +93,6 @@ export default function Home() {
         <OptionsStrategyTableComponent 
           configName={configName}
           statusFilter={statusFilter}
-          dateFilter={dateFilter}
         />
       )}
     </main>
