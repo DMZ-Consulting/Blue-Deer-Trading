@@ -325,3 +325,60 @@ CREATE TRIGGER transaction_before_delete
     BEFORE DELETE ON transactions
     FOR EACH ROW
     EXECUTE FUNCTION update_trade_before_transaction_change();
+
+-- Create function to close expired trades
+CREATE OR REPLACE FUNCTION close_expired_trades()
+RETURNS trigger AS $$
+DECLARE
+    expired_trade RECORD;
+    new_transaction_id VARCHAR;
+BEGIN
+    -- Find trades that have just expired (expiration_date is in the past and status is still OPEN)
+    FOR expired_trade IN
+        SELECT trade_id, current_size
+        FROM trades
+        WHERE expiration_date IS NOT NULL
+        AND expiration_date < CURRENT_TIMESTAMP
+        AND status = 'OPEN'
+    LOOP
+        -- Generate a new transaction ID (using the same format as your application)
+        SELECT CAST(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) * 1000 AS BIGINT)::TEXT INTO new_transaction_id;
+        
+        -- Insert a CLOSE transaction at $0
+        INSERT INTO transactions (
+            id,
+            trade_id,
+            transaction_type,
+            amount,
+            size,
+            created_at
+        ) VALUES (
+            new_transaction_id,
+            expired_trade.trade_id,
+            'CLOSE',
+            0, -- Close at $0 since it expired
+            expired_trade.current_size, -- Close the entire position
+            CURRENT_TIMESTAMP
+        );
+        
+        -- The existing transaction trigger will handle updating the trade status
+    END LOOP;
+    
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to check for expired trades
+CREATE OR REPLACE TRIGGER check_expired_trades
+    AFTER INSERT OR UPDATE ON trades
+    FOR EACH ROW
+    WHEN (NEW.expiration_date IS NOT NULL AND NEW.status = 'OPEN')
+    EXECUTE FUNCTION close_expired_trades();
+
+-- Also create a scheduled job to run periodically to catch any trades that expire between updates
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- Run at 4:45 PM Monday-Friday (16:45)
+SELECT cron.schedule('check_expired_trades', '45 16 * * 1-5', $$
+    SELECT close_expired_trades();
+$$);

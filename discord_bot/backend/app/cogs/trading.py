@@ -385,8 +385,9 @@ class TradingCog(commands.Cog):
             embed.description = await self.create_transaction_oneliner(trade_data, "EXIT", trade_data.get('exit_size', -1), price)
 
             unit_type = "contract" if trade_data.get('is_contract', False) else "share"
+            unit_profit_loss = trade_data.get('unit_profit_loss', 0) * 100 if unit_type == "contract" else trade_data.get('unit_profit_loss', 0)
 
-            embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${trade_data.get('unit_profit_loss', None):.2f}", inline=True)
+            embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${unit_profit_loss:.2f}", inline=True)
             embed.add_field(name="Avg Entry Price", value=f"${trade_data.get('average_price', None):.2f}", inline=True)
             embed.add_field(name="Avg Exit Price", value=f"${trade_data.get('average_exit_price', price):.2f}", inline=True)
             embed.set_footer(text=f"Trade ID: {trade_data.get('trade_id', None)}")
