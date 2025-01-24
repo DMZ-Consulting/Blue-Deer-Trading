@@ -2,13 +2,20 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Trade } from '../utils/types'
-import { ChevronDown, ChevronUp, ArrowUpDown, Settings2 } from 'lucide-react'
-import { getTradesByConfiguration } from '../api/api'
+import { ChevronDown, ChevronUp, ArrowUpDown, Settings2, X } from 'lucide-react'
+import { getTradesByConfiguration, deleteTransaction } from '../api/api'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -31,19 +38,27 @@ interface TradesTableProps {
   configName: string;
   filterOptions: FilterOptions;
   showAllTrades?: boolean;
+  allowTransactionActions?: boolean;
 }
 
 // Add these type definitions at the top of the file
 type SortField = keyof Trade
 type SortOrder = 'asc' | 'desc'
 
-export function TradesTableComponent({ configName, filterOptions, showAllTrades = false }: TradesTableProps) {
+interface TransactionFormData {
+  amount: number;
+  size: string;
+  transaction_type: string;
+}
+
+export function TradesTableComponent({ configName, filterOptions, showAllTrades = false, allowTransactionActions = false }: TradesTableProps) {
   const [trades, setTrades] = useState<Trade[]>([])
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [debugMode, setDebugMode] = useState(false)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [editingTransaction, setEditingTransaction] = useState<{ id: string; trade_id: string } | null>(null)
   const [columnVisibility, setColumnVisibility] = useState({
     symbol: true,
     type: true,
@@ -54,6 +69,11 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
     openedAt: true,
     closedAt: true,
   })
+  const [editFormData, setEditFormData] = useState<TransactionFormData>({
+    amount: 0,
+    size: '',
+    transaction_type: '',
+  });
 
   const fetchTrades = useCallback(async () => {
     setLoading(true)
@@ -222,6 +242,61 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   const getTradeStatus = (trade: Trade) => {
     return trade.status.toUpperCase() as 'OPEN' | 'CLOSED'
   }
+
+  // Add handlers for edit and delete
+  const handleEditTransaction = async (transactionId: string, tradeId: string) => {
+    const trade = trades.find(t => t.trade_id === tradeId);
+    const transaction = trade?.transactions?.find(t => String(t.id) === transactionId);
+    
+    if (transaction) {
+      setEditFormData({
+        amount: transaction.amount,
+        size: transaction.size,
+        transaction_type: transaction.transaction_type,
+      });
+      setEditingTransaction({ id: transactionId, trade_id: tradeId });
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTransaction) return;
+
+    try {
+      const response = await fetch(`/api/transactions/${editingTransaction.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(editFormData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update transaction');
+      }
+
+      setEditingTransaction(null);
+      fetchTrades();
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      alert('Failed to update transaction');
+    }
+  };
+
+  const handleDeleteTransaction = async (transactionId: string, tradeId: string) => {
+    if (!window.confirm('Are you sure you want to delete this transaction?')) {
+      return;
+    }
+
+    try {
+      // TODO: Implement delete API call
+      await deleteTransaction(transactionId);
+      // Refresh trades after deletion
+      fetchTrades();
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      alert('Failed to delete transaction');
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -454,25 +529,49 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                                 <Table>
                                   <TableHeader>
                                     <TableRow>
-                                      {isDevelopment && debugMode && <TableHead>Transaction ID</TableHead>}
+                                      {isDevelopment && debugMode && <TableHead className="text-center">Transaction ID</TableHead>}
                                       <TableHead>Type</TableHead>
-                                      <TableHead>Price</TableHead>
-                                      <TableHead>Size</TableHead>
-                                      <TableHead>Date</TableHead>
+                                      <TableHead className="text-center">Price</TableHead>
+                                      <TableHead className="text-center">Size</TableHead>
+                                      <TableHead className="text-center">Date</TableHead>
+                                      {allowTransactionActions && (
+                                        <TableHead className="text-center">Actions</TableHead>
+                                      )}
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
                                     {trade.transactions?.map(transaction => (
                                       <TableRow key={String(transaction.id)}>
-                                        {isDevelopment && debugMode && <TableCell>{String(transaction.id)}</TableCell>}
+                                        {isDevelopment && debugMode && <TableCell className="text-center">{String(transaction.id)}</TableCell>}
                                         <TableCell>
                                           <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
                                             {transaction.transaction_type}
                                           </span>
                                         </TableCell>
-                                        <TableCell>${transaction.amount.toFixed(2)}</TableCell>
-                                        <TableCell>{transaction.size}</TableCell>
-                                        <TableCell>{new Date(transaction.created_at).toLocaleString()}</TableCell>
+                                        <TableCell className="text-center">${transaction.amount.toFixed(2)}</TableCell>
+                                        <TableCell className="text-center">{transaction.size}</TableCell>
+                                        <TableCell className="text-center">{new Date(transaction.created_at).toLocaleString()}</TableCell>
+                                        {allowTransactionActions && (
+                                          <TableCell className="text-center">
+                                            <div className="flex justify-center space-x-2">
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleEditTransaction(String(transaction.id), trade.trade_id)}
+                                              >
+                                                Edit
+                                              </Button>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-red-600 hover:text-red-800"
+                                                onClick={() => handleDeleteTransaction(String(transaction.id), trade.trade_id)}
+                                              >
+                                                Delete
+                                              </Button>
+                                            </div>
+                                          </TableCell>
+                                        )}
                                       </TableRow>
                                     ))}
                                   </TableBody>
@@ -490,6 +589,54 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={editingTransaction !== null} onOpenChange={() => setEditingTransaction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Transaction</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <label htmlFor="amount">Amount</label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                value={editFormData.amount}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label htmlFor="size">Size</label>
+              <Input
+                id="size"
+                value={editFormData.size}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, size: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label htmlFor="type">Type</label>
+              <select
+                id="type"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors"
+                value={editFormData.transaction_type}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, transaction_type: e.target.value }))}
+              >
+                <option value="OPEN">Open</option>
+                <option value="ADD">Add</option>
+                <option value="TRIM">Trim</option>
+                <option value="CLOSE">Close</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingTransaction(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

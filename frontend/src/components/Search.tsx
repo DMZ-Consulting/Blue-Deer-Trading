@@ -32,7 +32,11 @@ const TRADE_TYPES: TradeType[] = [
   { value: "common", label: "Common" }
 ];
 
-export function SearchComponent() {
+interface SearchComponentProps {
+  allowTransactionActions?: boolean;
+}
+
+export function SearchComponent({ allowTransactionActions = false }: SearchComponentProps) {
   type StatusType = 'ALL' | 'OPEN' | 'CLOSED'
   type ConfigNameType = 'all' | TradeConfig['value']
   type TradeTypeValue = TradeType['value']
@@ -248,6 +252,7 @@ export function SearchComponent() {
               : undefined,
           }}
           showAllTrades={filters.configName === 'all'}
+          allowTransactionActions={allowTransactionActions}
         />
       </div>
     </div>
