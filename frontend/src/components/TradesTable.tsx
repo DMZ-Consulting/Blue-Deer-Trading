@@ -2,13 +2,19 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Trade } from '../utils/types'
-import { ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react'
+import { ChevronDown, ChevronUp, ArrowUpDown, Settings2 } from 'lucide-react'
 import { getTradesByConfiguration } from '../api/api'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 import 'react-datepicker/dist/react-datepicker.css'
 
@@ -38,6 +44,16 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   const [debugMode, setDebugMode] = useState(false)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [columnVisibility, setColumnVisibility] = useState({
+    symbol: true,
+    type: true,
+    status: true,
+    entryPrice: true,
+    size: true,
+    expirationDate: true,
+    openedAt: true,
+    closedAt: true,
+  })
 
   const fetchTrades = useCallback(async () => {
     setLoading(true)
@@ -98,9 +114,15 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
 
   const formatDateTime = (dateString: string | null): string => {
     if (!dateString) return 'N/A';
+
+    // date may come in this format "2025-01-22T20:48:08.699+00:00"
+    // we need to convert it to "2025-01-22 20:48:08"
+    // +00:00 is timezone for UTC
+    // we need to remove the timezone and the milliseconds, but apply the timezone to the date
+    const formattedDate = dateString.replace('T', ' ').replace('.699+00:00', '')
     
     // Parse the UTC date string
-    const utcDate = new Date(dateString + 'Z');
+    const utcDate = new Date(formattedDate + 'Z');
     
     // Create options for EST time formatting
     const options: Intl.DateTimeFormatOptions = {
@@ -221,144 +243,250 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
         </Card>
       )}
       
-      <h2 className="text-2xl font-bold">{getHeaderText()}</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">{getHeaderText()}</h2>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="ml-auto">
+              <Settings2 className="h-4 w-4" />
+              <span className="ml-2">Columns</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.symbol}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, symbol: checked }))
+              }
+            >
+              Symbol
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.type}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, type: checked }))
+              }
+            >
+              Type
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.status}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, status: checked }))
+              }
+            >
+              Status
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.entryPrice}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, entryPrice: checked }))
+              }
+            >
+              Entry Price
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.size}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, size: checked }))
+              }
+            >
+              Size
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.expirationDate}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, expirationDate: checked }))
+              }
+            >
+              Expiration Date
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.openedAt}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, openedAt: checked }))
+              }
+            >
+              Opened At
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.closedAt}
+              onCheckedChange={(checked) => 
+                setColumnVisibility(prev => ({ ...prev, closedAt: checked }))
+              }
+            >
+              Closed At
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {loading ? (
         <p>Loading trades...</p>
       ) : (
         <Card>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-center whitespace-nowrap w-[50px]">
-                    <Button variant="ghost" size="sm">
-                      {/* Expand/Collapse column */}
-                    </Button>
-                  </TableHead>
-                  {isDevelopment && debugMode && (
-                    <TableHead className="text-center whitespace-nowrap">Trade ID</TableHead>
-                  )}
-                  <TableHead className="text-center whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => handleSort('symbol')}>
-                      Symbol {renderSortIcon('symbol')}
-                    </Button>
-                  </TableHead>
-                  <TableHead className="text-center whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => handleSort('trade_type')}>
-                      Type {renderSortIcon('trade_type')}
-                    </Button>
-                  </TableHead>
-                  <TableHead className="text-center whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => handleSort('status')}>
-                      Status {renderSortIcon('status')}
-                    </Button>
-                  </TableHead>
-                  <TableHead className="text-center whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => handleSort('entry_price')}>
-                      Entry Price {renderSortIcon('entry_price')}
-                    </Button>
-                  </TableHead>
-                  <TableHead className="text-center whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => handleSort('current_size')}>
-                      Size {renderSortIcon('current_size')}
-                    </Button>
-                  </TableHead>
-                  <TableHead className="text-center whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => handleSort('expiration_date')}>
-                      Expiration Date {renderSortIcon('expiration_date')}
-                    </Button>
-                  </TableHead>
-                  <TableHead className="text-center whitespace-nowrap">
-                    <Button variant="ghost" onClick={() => handleSort('created_at')}>
-                      Opened At {renderSortIcon('created_at')}
-                    </Button>
-                  </TableHead>
-                  {filterOptions.status !== 'OPEN' && (
-                    <TableHead className="text-center whitespace-nowrap">
-                      <Button variant="ghost" onClick={() => handleSort('closed_at')}>
-                        Closed At {renderSortIcon('closed_at')}
+          <CardContent className="p-0">
+            <div className="max-h-[800px] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-center whitespace-nowrap w-[50px] sticky top-0 bg-white">
+                      <Button variant="ghost" size="sm">
+                        {/* Expand/Collapse column */}
                       </Button>
                     </TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedTrades.map(trade => (
-                  <React.Fragment key={trade.trade_id}>
-                    <TableRow>
-                      <TableCell className="text-center whitespace-nowrap">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleTradeExpansion(trade.trade_id)}
-                        >
-                          {expandedTrades.has(trade.trade_id) ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </TableCell>
-                      {isDevelopment && debugMode && <TableCell className="text-center whitespace-nowrap">{trade.trade_id}</TableCell>}
-                      <TableCell className="text-center whitespace-nowrap">{createTradeOneliner(trade)}</TableCell>
-                      <TableCell className="text-center whitespace-nowrap">{getTradeType(trade)}</TableCell>
-                      <TableCell className="text-center whitespace-nowrap">
-                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(getTradeStatus(trade))}`}>
-                          {getTradeStatus(trade)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-center whitespace-nowrap">${trade.average_price?.toFixed(2) ?? 'N/A'}</TableCell>
-                      <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
-                      <TableCell className="text-center whitespace-nowrap">{trade.expiration_date ? formatDateTime(trade.expiration_date) : ''}</TableCell>
-                      <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
-                      {filterOptions.status !== 'OPEN' && (
-                        <TableCell className="text-center whitespace-nowrap">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
-                      )}
-                    </TableRow>
-                    {expandedTrades.has(trade.trade_id) && (
-                      <TableRow>
-                        <TableCell colSpan={isDevelopment && debugMode ? 9 : 8}>
-                          <Card>
-                            <CardHeader>
-                              <CardTitle>Transactions</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    {isDevelopment && debugMode && <TableHead>Transaction ID</TableHead>}
-                                    <TableHead>Type</TableHead>
-                                    <TableHead>Price</TableHead>
-                                    <TableHead>Size</TableHead>
-                                    <TableHead>Date</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {trade.transactions?.map(transaction => (
-                                    <TableRow key={String(transaction.id)}>
-                                      {isDevelopment && debugMode && <TableCell>{String(transaction.id)}</TableCell>}
-                                      <TableCell>
-                                        <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
-                                          {transaction.transaction_type}
-                                        </span>
-                                      </TableCell>
-                                      <TableCell>${transaction.amount.toFixed(2)}</TableCell>
-                                      <TableCell>{transaction.size}</TableCell>
-                                      <TableCell>{new Date(transaction.created_at).toLocaleString()}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </CardContent>
-                          </Card>
-                        </TableCell>
-                      </TableRow>
+                    {isDevelopment && debugMode && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">Trade ID</TableHead>
                     )}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
+                    {columnVisibility.symbol && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('symbol')}>
+                          Symbol {renderSortIcon('symbol')}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {columnVisibility.type && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('trade_type')}>
+                          Type {renderSortIcon('trade_type')}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {columnVisibility.status && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('status')}>
+                          Status {renderSortIcon('status')}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {columnVisibility.entryPrice && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('entry_price')}>
+                          Entry Price {renderSortIcon('entry_price')}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {columnVisibility.size && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('current_size')}>
+                          Size {renderSortIcon('current_size')}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {columnVisibility.expirationDate && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('expiration_date')}>
+                          Expiration Date {renderSortIcon('expiration_date')}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {columnVisibility.openedAt && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('created_at')}>
+                          Opened At {renderSortIcon('created_at')}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {filterOptions.status !== 'OPEN' && columnVisibility.closedAt && (
+                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
+                        <Button variant="ghost" onClick={() => handleSort('closed_at')}>
+                          Closed At {renderSortIcon('closed_at')}
+                        </Button>
+                      </TableHead>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedTrades.map(trade => (
+                    <React.Fragment key={trade.trade_id}>
+                      <TableRow>
+                        <TableCell className="text-center whitespace-nowrap">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleTradeExpansion(trade.trade_id)}
+                          >
+                            {expandedTrades.has(trade.trade_id) ? (
+                              <ChevronUp className="h-4 w-4" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TableCell>
+                        {isDevelopment && debugMode && <TableCell className="text-center whitespace-nowrap">{trade.trade_id}</TableCell>}
+                        {columnVisibility.symbol && (
+                          <TableCell className="text-center whitespace-nowrap">{createTradeOneliner(trade)}</TableCell>
+                        )}
+                        {columnVisibility.type && (
+                          <TableCell className="text-center whitespace-nowrap">{getTradeType(trade)}</TableCell>
+                        )}
+                        {columnVisibility.status && (
+                          <TableCell className="text-center whitespace-nowrap">
+                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(getTradeStatus(trade))}`}>
+                              {getTradeStatus(trade)}
+                            </span>
+                          </TableCell>
+                        )}
+                        {columnVisibility.entryPrice && (
+                          <TableCell className="text-center whitespace-nowrap">${trade.average_price?.toFixed(2) ?? 'N/A'}</TableCell>
+                        )}
+                        {columnVisibility.size && (
+                          <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
+                        )}
+                        {columnVisibility.expirationDate && (
+                          <TableCell className="text-center whitespace-nowrap">{trade.expiration_date ? formatDateTime(trade.expiration_date) : ''}</TableCell>
+                        )}
+                        {columnVisibility.openedAt && (
+                          <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
+                        )}
+                        {filterOptions.status !== 'OPEN' && columnVisibility.closedAt && (
+                          <TableCell className="text-center whitespace-nowrap">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
+                        )}
+                      </TableRow>
+                      {expandedTrades.has(trade.trade_id) && (
+                        <TableRow>
+                          <TableCell colSpan={Object.values(columnVisibility).filter(Boolean).length + (isDevelopment && debugMode ? 2 : 1)}>
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Transactions</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      {isDevelopment && debugMode && <TableHead>Transaction ID</TableHead>}
+                                      <TableHead>Type</TableHead>
+                                      <TableHead>Price</TableHead>
+                                      <TableHead>Size</TableHead>
+                                      <TableHead>Date</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {trade.transactions?.map(transaction => (
+                                      <TableRow key={String(transaction.id)}>
+                                        {isDevelopment && debugMode && <TableCell>{String(transaction.id)}</TableCell>}
+                                        <TableCell>
+                                          <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
+                                            {transaction.transaction_type}
+                                          </span>
+                                        </TableCell>
+                                        <TableCell>${transaction.amount.toFixed(2)}</TableCell>
+                                        <TableCell>{transaction.size}</TableCell>
+                                        <TableCell>{new Date(transaction.created_at).toLocaleString()}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </CardContent>
+                            </Card>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
