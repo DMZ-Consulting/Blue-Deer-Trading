@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS user_verification_status (
     full_name VARCHAR,
     verification_status VARCHAR,
     configuration_id INTEGER REFERENCES verification_configs(id),
-    verified_at TIMESTAMP,
+    verified_at TIMESTAMPTZ,
     UNIQUE(discord_id)
 );
 
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS verifications (
     user_id VARCHAR,
     username VARCHAR,
     configuration_id INTEGER REFERENCES verification_configs(id),
-    timestamp TIMESTAMP,
+    timestamp TIMESTAMPTZ,
     UNIQUE(user_id)
 );
 
@@ -96,8 +96,8 @@ CREATE TABLE IF NOT EXISTS options_strategy_trades (
     name VARCHAR,
     underlying_symbol VARCHAR,
     status VARCHAR,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    closed_at TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMPTZ,
     configuration_id INTEGER REFERENCES trade_configurations(id),
     trade_group VARCHAR,
     legs TEXT NOT NULL,
@@ -117,8 +117,8 @@ CREATE TABLE IF NOT EXISTS trades (
     average_price FLOAT,
     current_size VARCHAR,
     size VARCHAR NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    closed_at TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMPTZ,
     exit_price FLOAT,
     average_exit_price FLOAT,
     profit_loss FLOAT,
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS trades (
     is_contract BOOLEAN DEFAULT FALSE,
     is_day_trade BOOLEAN DEFAULT FALSE,
     strike FLOAT,
-    expiration_date TIMESTAMP,
+    expiration_date TIMESTAMPTZ,
     option_type VARCHAR
 );
 
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     transaction_type VARCHAR,
     amount FLOAT,
     size VARCHAR,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Options Strategy Transactions
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS options_strategy_transactions (
     transaction_type VARCHAR NOT NULL,
     net_cost FLOAT NOT NULL,
     size VARCHAR NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for frequently queried columns

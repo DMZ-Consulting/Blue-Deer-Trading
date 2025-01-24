@@ -255,6 +255,8 @@ async def help_command(interaction: discord.Interaction):
     """Display all available commands and their purposes."""
     await interaction.response.defer()
 
+    logging_cog = bot.get_cog('LoggingCog')
+
     try:
         embed = discord.Embed(
             title="Blue Deer Trading Bot Commands",
@@ -320,11 +322,11 @@ async def help_command(interaction: discord.Interaction):
 
         embed.set_footer(text="Use / to access any command. Each command will guide you through the required parameters.")
         
-        await interaction.followup.send(embed=embed)
-        await log_to_channel(interaction.guild, f"User {interaction.user.name} executed HELP command.")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        await logging_cog.log_to_channel(interaction.guild, f"User {interaction.user.name} executed HELP command.")
 
     except Exception as e:
         logger.error(f"Error in help command: {str(e)}")
         logger.error(traceback.format_exc())
         await interaction.followup.send("Error displaying help message. Please try again later.", ephemeral=True)
-        await log_to_channel(interaction.guild, f"Error in HELP command by {interaction.user.name}: {str(e)}")
+        await logging_cog.log_to_channel(interaction.guild, f"Error in HELP command by {interaction.user.name}: {str(e)}")

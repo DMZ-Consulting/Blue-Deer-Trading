@@ -2,8 +2,21 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
+
+enum TransactionType {
+  OPEN = 'OPEN',
+  ADD = 'ADD',
+  TRIM = 'TRIM',
+  CLOSE = 'CLOSE'
+}
+
+enum TradeStatus {
+  OPEN = 'OPEN',
+  CLOSED = 'CLOSED'
+}
+
 interface Transaction {
-  transaction_type: 'OPEN' | 'ADD' | 'TRIM' | 'CLOSE'
+  transaction_type: TransactionType
   amount: number
   size: string
   net_cost?: number
@@ -18,7 +31,7 @@ interface Trade {
   trade_id: string
   symbol: string
   trade_type: string
-  status: string
+  status: TradeStatus
   entry_price: number
   average_price: number
   size: string
@@ -125,6 +138,7 @@ serve(async (req: Request) => {
           `)
 
         if (filters) {
+          // TODO: Make these all uppercase when the backend is updated.
           if (filters.status && filters.status !== 'ALL') {
             console.log('Applying status filter:', filters.status.toLowerCase())
             query = query.eq('status', filters.status.toLowerCase())
@@ -226,11 +240,23 @@ serve(async (req: Request) => {
           const tradeId = generateTradeId()
           console.log('Generated trade ID:', tradeId)
 
+          // if expiration date is provided, make sure the time is set to 4:30PM EST, even if the request is from a different timezone
+          if (input.expiration_date) {
+            // Parse the MM/DD/YY format explicitly
+            const [month, day, yearShort] = input.expiration_date.split('/');
+            const year = `20${yearShort}`; // Convert 2-digit year to 4-digit
+            
+            // Create the date string with the exact date at 16:30 ET
+            const dateString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            const expirationDate = new Date(`${dateString}T16:30:00-04:00`);
+            input.expiration_date = expirationDate.toISOString();
+          }
+
           const tradeData = {
             trade_id: tradeId,
             symbol: input.symbol,
             trade_type: input.trade_type,
-            status: 'open',
+            status: TradeStatus.OPEN,
             entry_price: input.entry_price,
             average_price: input.entry_price,
             size: input.size,
@@ -261,7 +287,7 @@ serve(async (req: Request) => {
           const transactionData = {
             id: generateTransactionId(),
             trade_id: trade.trade_id,
-            transaction_type: 'OPEN',
+            transaction_type: TransactionType.OPEN,
             amount: input.entry_price,
             size: input.size,
             created_at: new Date().toISOString()
@@ -385,7 +411,7 @@ serve(async (req: Request) => {
           .insert({
             id: generateTransactionId(),
             trade_id,
-            transaction_type: 'TRIM',
+            transaction_type: TransactionType.TRIM,
             amount: price,
             size,
             created_at: new Date().toISOString()
@@ -443,7 +469,7 @@ serve(async (req: Request) => {
             .insert({
               id: generateTransactionId(),
               trade_id,
-              transaction_type: 'CLOSE',
+              transaction_type: TransactionType.CLOSE,
               amount: price,
               size: exitTradeData.current_size,
               created_at: new Date().toISOString()
@@ -459,12 +485,12 @@ serve(async (req: Request) => {
           console.log('Exit trade data:', exitTradeWithTransactions)
 
           const openTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
-            t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
+            t.transaction_type === TransactionType.OPEN || t.transaction_type === TransactionType.ADD
           )
           console.log('Open/Add transactions:', openTransactions)
 
           const trimTransactions = exitTradeWithTransactions.transactions.filter((t: Transaction) => 
-            t.transaction_type === 'TRIM'
+            t.transaction_type === TransactionType.TRIM
           )
           console.log('Trim transactions:', trimTransactions)
 
@@ -527,7 +553,7 @@ serve(async (req: Request) => {
           const { data: closedTrade, error: closeUpdateError } = await supabase
             .from('trades')
             .update({
-              status: 'closed',
+              status: TradeStatus.CLOSED,
               exit_price: price,
               average_exit_price: averageExitPrice,
               profit_loss: totalProfitLoss,

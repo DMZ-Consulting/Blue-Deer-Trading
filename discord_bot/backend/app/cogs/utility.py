@@ -22,8 +22,11 @@ class UtilityCog(commands.Cog):
             return date.strftime("%m/%d/%y")
         except ValueError:
             try:
-                # It will be in this format 2025-01-18T##:##:##
-                date = datetime.strptime(date_string, "%Y-%m-%dT%H:%M:%S")
+                # It will be in this format 2025-01-18T##:##:## or 2025-04-20T20:30:00+00:00
+                if '+' in date_string:
+                    date = datetime.strptime(date_string.split('+')[0], "%Y-%m-%dT%H:%M:%S")
+                else:
+                    date = datetime.strptime(date_string, "%Y-%m-%dT%H:%M:%S")
                 return date.strftime("%m/%d/%y")
             except ValueError:
                 return date_string

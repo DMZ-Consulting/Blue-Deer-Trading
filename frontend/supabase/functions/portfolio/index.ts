@@ -2,6 +2,14 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
+
+enum TransactionType {
+  OPEN = 'OPEN',
+  ADD = 'ADD',
+  TRIM = 'TRIM',
+  CLOSE = 'CLOSE'
+}
+
 interface PortfolioFilters {
   skip?: number
   limit?: number
@@ -12,7 +20,7 @@ interface PortfolioFilters {
 }
 
 interface Transaction {
-  transaction_type: 'open' | 'add' | 'trim' | 'close'
+  transaction_type: TransactionType
   amount: number
   size: string
   net_cost?: number
@@ -148,12 +156,12 @@ serve(async (req: Request) => {
           
           // Filter trades that have TRIM or CLOSE transactions within the date range
           tradeQuery = tradeQuery
-            .in('transactions.transaction_type', ['trim', 'close'])
+            .in('transactions.transaction_type', [TransactionType.TRIM, TransactionType.CLOSE])
             .gte('transactions.created_at', monday.toISOString())
             .lte('transactions.created_at', friday.toISOString())
 
           console.log('Query parameters:', {
-            transaction_types: ['trim', 'close'],
+            transaction_types: [TransactionType.TRIM, TransactionType.CLOSE],
             created_at_gte: monday.toISOString(),
             created_at_lte: friday.toISOString()
           })
@@ -190,10 +198,10 @@ serve(async (req: Request) => {
           })
 
           const closeTransactions = trade.transactions.filter((t: Transaction) =>
-            t.transaction_type === 'close' || t.transaction_type === 'trim'
+            t.transaction_type === TransactionType.CLOSE || t.transaction_type === TransactionType.TRIM
           )
           const openTransactions = trade.transactions.filter((t: Transaction) =>
-            t.transaction_type === 'open' || t.transaction_type === 'add'
+            t.transaction_type === TransactionType.OPEN || t.transaction_type === TransactionType.ADD
           )
 
           console.log('Transaction counts:', {
@@ -285,7 +293,7 @@ serve(async (req: Request) => {
           
           // Filter strategies that have TRIM or CLOSE transactions within the date range
           strategyQuery = strategyQuery
-            .in('options_strategy_transactions.transaction_type', ['trim', 'close'])
+            .in('options_strategy_transactions.transaction_type', [TransactionType.TRIM, TransactionType.CLOSE])
             .gte('options_strategy_transactions.created_at', monday.toISOString())
             .lte('options_strategy_transactions.created_at', friday.toISOString())
         }
@@ -489,10 +497,10 @@ serve(async (req: Request) => {
 function calculateStrategyPL(strategy: Strategy): [number, number] {
   const transactions = strategy.options_strategy_transactions
   const openTransactions = transactions.filter((t: Transaction) => 
-    t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
+    t.transaction_type === TransactionType.OPEN || t.transaction_type === TransactionType.ADD
   )
   const closeTransactions = transactions.filter((t: Transaction) => 
-    t.transaction_type === 'CLOSE' || t.transaction_type === 'TRIM'
+    t.transaction_type === TransactionType.CLOSE || t.transaction_type === TransactionType.TRIM
   )
 
   const totalCost = openTransactions.reduce((sum: number, t: Transaction) => 
@@ -517,23 +525,13 @@ function calculateStrategyPL(strategy: Strategy): [number, number] {
 }
 
 function createTradeOneliner(trade: Trade): string {
-  const parts = []
-  parts.push(trade.trade_type)
-  parts.push(trade.symbol)
-  
-  if (trade.is_contract) {
-    if (trade.strike) parts.push(trade.strike.toString())
-    if (trade.option_type) parts.push(trade.option_type)
-    if (trade.expiration_date) {
-      const date = new Date(trade.expiration_date)
-      parts.push(date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }))
-    }
-  }
-
-  parts.push(trade.size)
-  parts.push(`@${trade.entry_price}`)
-
-  return parts.join(' ')
+  return [
+    trade.expiration_date ? new Date(trade.expiration_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : null,
+    trade.symbol,
+    trade.is_contract && trade.strike ? `${Number.isInteger(trade.strike) ? trade.strike : trade.strike.toFixed(2)}${trade.option_type || ''}` : null,
+    trade.size,
+    `@${trade.average_price.toFixed(2)}`
+  ].filter(Boolean).join(' ')
 }
 
 function createStrategyOneliner(strategy: Strategy): string {
