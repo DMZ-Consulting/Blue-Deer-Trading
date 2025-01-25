@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Trade } from '../utils/types'
 import { ChevronDown, ChevronUp, ArrowUpDown, Settings2, X } from 'lucide-react'
 import { getTradesByConfiguration, deleteTransaction, updateTransaction } from '../api/api'
 
@@ -24,6 +23,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 import 'react-datepicker/dist/react-datepicker.css'
+import { cn } from "../utils/cn"
+import { ColumnDef, Row } from "@tanstack/react-table"
 
 interface FilterOptions {
   status: 'ALL' | 'OPEN' | 'CLOSED';
@@ -65,6 +66,25 @@ interface FormError {
   amount?: string | undefined;
 }
 
+// Update the Trade interface
+interface Trade {
+  trade_id: string;
+  symbol: string;
+  trade_type: string;
+  status: string;
+  entry_price: number;
+  current_size: string;
+  expiration_date: string | null;
+  created_at: string;
+  closed_at: string | null;
+  average_price: number | null;
+  average_exit_price: number | null;
+  profit_loss: number | null;
+  option_type?: string;
+  strike?: number;
+  transactions?: Transaction[];
+}
+
 export function TradesTableComponent({ configName, filterOptions, showAllTrades = false, allowTransactionActions = false }: TradesTableProps) {
   const [trades, setTrades] = useState<Trade[]>([])
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
@@ -75,13 +95,15 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   const [editingTransaction, setEditingTransaction] = useState<{ id: string; trade_id: string } | null>(null)
   const [columnVisibility, setColumnVisibility] = useState({
     symbol: true,
-    type: true,
+    trade_type: false,
     status: true,
-    entryPrice: true,
-    size: true,
-    expirationDate: true,
-    openedAt: true,
-    closedAt: true,
+    entry_price: true,
+    current_size: true,
+    expiration_date: false,
+    created_at: true,
+    closed_at: false,
+    average_exit_price: true,
+    profit_loss: true,
   })
   const [editFormData, setEditFormData] = useState<TransactionFormData>({
     amount: 0,
@@ -204,12 +226,30 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
     let aValue = a[sortField];
     let bValue = b[sortField];
     
-    // Convert ID fields to strings if they're numbers
-    if (sortField.includes('id')) {
-      aValue = String(aValue);
-      bValue = String(bValue);
+    // Handle special cases for each field type
+    if (sortField === 'profit_loss' || sortField === 'average_price' || sortField === 'average_exit_price') {
+      // Convert to numbers, treating null/undefined as 0
+      aValue = aValue === null || aValue === undefined ? 0 : Number(aValue);
+      bValue = bValue === null || bValue === undefined ? 0 : Number(bValue);
+    } else if (sortField === 'created_at' || sortField === 'closed_at' || sortField === 'expiration_date') {
+      // Convert dates to timestamps, treating null/undefined as 0 (earliest possible date)
+      aValue = typeof aValue === 'string' ? new Date(aValue).getTime() : 0;
+      bValue = typeof bValue === 'string' ? new Date(bValue).getTime() : 0;
+    } else if (sortField === 'current_size') {
+      // Convert sizes to numbers, treating empty/null as 0
+      aValue = typeof aValue === 'string' ? Number(aValue) : 0;
+      bValue = typeof bValue === 'string' ? Number(bValue) : 0;
+    } else {
+      // For string fields (symbol, status, etc.), convert null/undefined to empty string
+      aValue = typeof aValue === 'string' ? aValue : '';
+      bValue = typeof bValue === 'string' ? bValue : '';
     }
-    if (aValue == null || bValue == null) return 0; // Handle undefined values
+
+    // Sort nulls/empty values to the end regardless of sort direction
+    if (aValue === null || aValue === undefined || aValue === '') return 1;
+    if (bValue === null || bValue === undefined || bValue === '') return -1;
+    
+    // Compare the values
     if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
     return 0;
@@ -346,6 +386,81 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
     }
   };
 
+  const columns = [
+    {
+      id: "symbol",
+      header: "Symbol",
+      render: (trade: Trade) => createTradeOneliner(trade),
+    },
+    {
+      id: "trade_type",
+      header: "Type",
+      render: (trade: Trade) => getTradeType(trade),
+    },
+    {
+      id: "status",
+      header: "Status",
+      render: (trade: Trade) => (
+        <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(trade.status)}`}>
+          {trade.status}
+        </span>
+      ),
+    },
+    {
+      id: "entry_price",
+      header: "Entry Price",
+      render: (trade: Trade) => trade.average_price ? `$${Number(trade.average_price).toFixed(2)}` : '-',
+    },
+    {
+      id: "current_size",
+      header: "Size",
+      render: (trade: Trade) => trade.current_size?.toString() ?? '-',
+    },
+    {
+      id: "expiration_date",
+      header: "Expiration Date",
+      render: (trade: Trade) => trade.expiration_date ? formatDateTime(trade.expiration_date) : '-',
+    },
+    {
+      id: "created_at",
+      header: "Opened At",
+      render: (trade: Trade) => formatDateTime(trade.created_at),
+    },
+    {
+      id: "closed_at",
+      header: "Closed At",
+      render: (trade: Trade) => trade.closed_at ? formatDateTime(trade.closed_at) : '-',
+    },
+    {
+      id: "average_exit_price",
+      header: "Exit Price",
+      render: (trade: Trade) => trade.average_exit_price ? `$${Number(trade.average_exit_price).toFixed(2)}` : '-',
+    },
+    {
+      id: "profit_loss",
+      header: "P/L",
+      render: (trade: Trade) => {
+        const value = trade.profit_loss;
+        if (value === null) return '-';
+        const formatted = new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+        }).format(value);
+        const isPositive = value > 0;
+        const isNegative = value < 0;
+        return (
+          <span className={cn(
+            "font-medium",
+            isPositive && "text-green-600",
+            isNegative && "text-red-600"
+          )}>
+            {formatted}
+          </span>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-4">
       {isDevelopment && (
@@ -376,70 +491,17 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.symbol}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, symbol: checked }))
-              }
-            >
-              Symbol
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.type}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, type: checked }))
-              }
-            >
-              Type
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.status}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, status: checked }))
-              }
-            >
-              Status
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.entryPrice}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, entryPrice: checked }))
-              }
-            >
-              Entry Price
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.size}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, size: checked }))
-              }
-            >
-              Size
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.expirationDate}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, expirationDate: checked }))
-              }
-            >
-              Expiration Date
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.openedAt}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, openedAt: checked }))
-              }
-            >
-              Opened At
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={columnVisibility.closedAt}
-              onCheckedChange={(checked) => 
-                setColumnVisibility(prev => ({ ...prev, closedAt: checked }))
-              }
-            >
-              Closed At
-            </DropdownMenuCheckboxItem>
+            {columns.map((column) => (
+              <DropdownMenuCheckboxItem
+                key={column.id as string}
+                checked={columnVisibility[column.id as keyof typeof columnVisibility]}
+                onCheckedChange={(checked) => 
+                  setColumnVisibility(prev => ({ ...prev, [column.id as string]: checked }))
+                }
+              >
+                {column.header as string}
+              </DropdownMenuCheckboxItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -461,62 +523,17 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                     {isDevelopment && debugMode && (
                       <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">Trade ID</TableHead>
                     )}
-                    {columnVisibility.symbol && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('symbol')}>
-                          Symbol {renderSortIcon('symbol')}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {columnVisibility.type && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('trade_type')}>
-                          Type {renderSortIcon('trade_type')}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {columnVisibility.status && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('status')}>
-                          Status {renderSortIcon('status')}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {columnVisibility.entryPrice && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('entry_price')}>
-                          Entry Price {renderSortIcon('entry_price')}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {columnVisibility.size && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('current_size')}>
-                          Size {renderSortIcon('current_size')}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {columnVisibility.expirationDate && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('expiration_date')}>
-                          Expiration Date {renderSortIcon('expiration_date')}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {columnVisibility.openedAt && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('created_at')}>
-                          Opened At {renderSortIcon('created_at')}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {filterOptions.status !== 'OPEN' && columnVisibility.closedAt && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">
-                        <Button variant="ghost" onClick={() => handleSort('closed_at')}>
-                          Closed At {renderSortIcon('closed_at')}
-                        </Button>
-                      </TableHead>
-                    )}
+                    {columns.map((column) => {
+                      if (!columnVisibility[column.id as keyof typeof columnVisibility]) return null;
+                      
+                      return (
+                        <TableHead key={column.id} className="text-center whitespace-nowrap sticky top-0 bg-white">
+                          <Button variant="ghost" onClick={() => handleSort(column.id as SortField)}>
+                            {column.header as string} {renderSortIcon(column.id as SortField)}
+                          </Button>
+                        </TableHead>
+                      );
+                    })}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -537,34 +554,15 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
                           </Button>
                         </TableCell>
                         {isDevelopment && debugMode && <TableCell className="text-center whitespace-nowrap">{trade.trade_id}</TableCell>}
-                        {columnVisibility.symbol && (
-                          <TableCell className="text-center whitespace-nowrap">{createTradeOneliner(trade)}</TableCell>
-                        )}
-                        {columnVisibility.type && (
-                          <TableCell className="text-center whitespace-nowrap">{getTradeType(trade)}</TableCell>
-                        )}
-                        {columnVisibility.status && (
-                          <TableCell className="text-center whitespace-nowrap">
-                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(getTradeStatus(trade))}`}>
-                              {getTradeStatus(trade)}
-                            </span>
-                          </TableCell>
-                        )}
-                        {columnVisibility.entryPrice && (
-                          <TableCell className="text-center whitespace-nowrap">${trade.average_price?.toFixed(2) ?? 'N/A'}</TableCell>
-                        )}
-                        {columnVisibility.size && (
-                          <TableCell className="text-center whitespace-nowrap">{trade.current_size}</TableCell>
-                        )}
-                        {columnVisibility.expirationDate && (
-                          <TableCell className="text-center whitespace-nowrap">{trade.expiration_date ? formatDateTime(trade.expiration_date) : ''}</TableCell>
-                        )}
-                        {columnVisibility.openedAt && (
-                          <TableCell className="text-center whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
-                        )}
-                        {filterOptions.status !== 'OPEN' && columnVisibility.closedAt && (
-                          <TableCell className="text-center whitespace-nowrap">{trade.closed_at ? formatDateTime(trade.closed_at) : '-'}</TableCell>
-                        )}
+                        {columns.map((column) => {
+                          if (!columnVisibility[column.id as keyof typeof columnVisibility]) return null;
+                          
+                          return (
+                            <TableCell key={column.id} className="text-center whitespace-nowrap">
+                              {column.render(trade)}
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                       {expandedTrades.has(trade.trade_id) && (
                         <TableRow>
