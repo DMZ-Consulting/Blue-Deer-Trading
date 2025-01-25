@@ -10,7 +10,7 @@ interface ReportAreaProps {
 }
 
 // Separate the data fetching and display logic
-function MonthlyBreakdown({ configName, totalPL }: { configName: string; totalPL: number }) {
+function MonthlyBreakdown({ configName, setTotalPL }: { configName: string; setTotalPL: (total: number) => void }) {
   const [monthlyPLData, setMonthlyPLData] = useState<MonthlyPL[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -20,6 +20,9 @@ function MonthlyBreakdown({ configName, totalPL }: { configName: string; totalPL
         setLoading(true);
         const data = await getMonthlyPL(configName);
         setMonthlyPLData(data);
+        // Calculate total P/L from monthly data
+        const total = data.reduce((sum: number, item: MonthlyPL) => sum + item.profit_loss, 0);
+        setTotalPL(total);
       } catch (error) {
         console.error('Error fetching monthly P/L:', error);
       } finally {
@@ -28,7 +31,7 @@ function MonthlyBreakdown({ configName, totalPL }: { configName: string; totalPL
     };
 
     fetchMonthlyPL();
-  }, [configName]);
+  }, [configName, setTotalPL]);
 
   if (loading) {
     return <p>Loading monthly data...</p>;
@@ -55,7 +58,7 @@ export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) 
   ];
 
   const weeklyPL = allTrades.reduce((sum, trade) => sum + trade.realized_pl, 0);
-  const totalPL = allTrades.reduce((sum, trade) => sum + trade.realized_pl, 0);
+  const [totalPL, setTotalPL] = useState(0);
 
   return (
     <div className="bg-white border border-gray-300 p-4 rounded shadow-sm">
@@ -79,7 +82,7 @@ export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) 
             </div>
           </div>
           <Suspense fallback={<p>Loading monthly data...</p>}>
-            <MonthlyBreakdown configName={configName} totalPL={totalPL} />
+            <MonthlyBreakdown configName={configName} setTotalPL={setTotalPL} />
           </Suspense>
         </div>
       </div>

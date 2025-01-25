@@ -434,7 +434,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
     {
       id: "average_exit_price",
       header: "Exit Price",
-      render: (trade: Trade) => trade.average_exit_price ? `$${Number(trade.average_exit_price).toFixed(2)}` : '-',
+      render: (trade: Trade) => trade.average_exit_price === null ? '-' : `$${Number(trade.average_exit_price).toFixed(2)}`,
     },
     {
       id: "profit_loss",

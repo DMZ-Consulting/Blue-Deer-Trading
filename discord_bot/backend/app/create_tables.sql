@@ -187,7 +187,7 @@ BEGIN
     -- Get all transactions for this trade, ordered by creation time
     FOR transaction_record IN (
         SELECT 
-            transaction_type,
+            UPPER(transaction_type) as transaction_type,  -- Convert to uppercase for consistency
             amount,
             size,
             created_at,
@@ -213,12 +213,14 @@ BEGIN
                 total_exit_cost := total_exit_cost + (transaction_record.amount * CAST(transaction_record.size AS FLOAT));
                 total_exit_shares := total_exit_shares + CAST(transaction_record.size AS FLOAT);
                 total_shares := total_shares - CAST(transaction_record.size AS FLOAT);
+            ELSE
+                RAISE EXCEPTION 'Invalid transaction type: %', transaction_record.transaction_type;
         END CASE;
     END LOOP;
 
     -- If this is an insert or update, add the new transaction to the totals
     IF TG_OP IN ('INSERT', 'UPDATE') THEN
-        CASE NEW.transaction_type
+        CASE UPPER(NEW.transaction_type)  -- Convert to uppercase for consistency
             WHEN 'OPEN' THEN
                 total_cost := total_cost + (NEW.amount * CAST(NEW.size AS FLOAT));
                 total_shares := total_shares + CAST(NEW.size AS FLOAT);
@@ -233,6 +235,8 @@ BEGIN
                 total_exit_cost := total_exit_cost + (NEW.amount * CAST(NEW.size AS FLOAT));
                 total_exit_shares := total_exit_shares + CAST(NEW.size AS FLOAT);
                 total_shares := total_shares - CAST(NEW.size AS FLOAT);
+            ELSE
+                RAISE EXCEPTION 'Invalid transaction type: %', NEW.transaction_type;
         END CASE;
     END IF;
 
@@ -382,3 +386,312 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 SELECT cron.schedule('check_expired_trades', '45 16 * * 1-5', $$
     SELECT close_expired_trades();
 $$);
+
+-- Update monthly P/L table structure
+CREATE TABLE IF NOT EXISTS monthly_pl (
+    id SERIAL PRIMARY KEY,
+    configuration_id INTEGER REFERENCES trade_configurations(id),
+    month DATE NOT NULL, -- Stored as first day of month
+    regular_trades_pl DOUBLE PRECISION NOT NULL DEFAULT 0,
+    strategy_trades_pl DOUBLE PRECISION NOT NULL DEFAULT 0,
+    total_pl DOUBLE PRECISION GENERATED ALWAYS AS (regular_trades_pl + strategy_trades_pl) STORED,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(configuration_id, month)
+);
+
+-- Function to calculate P/L with multiplier based on trade type and symbol
+CREATE OR REPLACE FUNCTION calculate_pl_with_multiplier(
+    trade_type TEXT,
+    symbol TEXT,
+    base_pl DOUBLE PRECISION
+) RETURNS DOUBLE PRECISION AS $$
+BEGIN
+    -- For common stock ES, multiply by 5
+    IF trade_type = 'common' AND symbol = 'ES' THEN
+        RETURN base_pl * 5;
+    -- For other common stock, multiply by 10
+    ELSIF trade_type = 'common' THEN
+        RETURN base_pl * 10;
+    -- For options contracts, multiply by 100
+    ELSE
+        RETURN base_pl * 100;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to calculate realized P/L for a specific trade and transaction
+CREATE OR REPLACE FUNCTION calculate_realized_pl_for_transaction(
+    trade_record trades,
+    transaction_record transactions
+) RETURNS DOUBLE PRECISION AS $$
+DECLARE
+    realized_pl DOUBLE PRECISION;
+BEGIN
+    -- For TRIM and CLOSE transactions, calculate the realized P/L
+    IF UPPER(transaction_record.transaction_type) IN ('TRIM', 'CLOSE') THEN
+        -- Calculate P/L: (exit price - average entry price) * size
+        realized_pl := (transaction_record.amount - trade_record.average_price) * 
+                      CAST(transaction_record.size AS FLOAT);
+        
+        -- Apply the appropriate multiplier
+        RETURN calculate_pl_with_multiplier(
+            trade_record.trade_type,
+            trade_record.symbol,
+            realized_pl
+        );
+    END IF;
+    
+    RETURN 0;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to update monthly P/L
+CREATE OR REPLACE FUNCTION update_monthly_pl() RETURNS TRIGGER AS $$
+DECLARE
+    trade_record trades%ROWTYPE;  -- Use %ROWTYPE to match table structure
+    transaction_month DATE;
+    regular_pl DOUBLE PRECISION;
+    strategy_pl DOUBLE PRECISION;
+BEGIN
+    -- Only process TRIM and CLOSE transactions
+    IF UPPER(NEW.transaction_type) NOT IN ('TRIM', 'CLOSE') THEN
+        RETURN NEW;
+    END IF;
+
+    -- Get the associated trade record
+    SELECT t.* 
+    INTO trade_record
+    FROM trades t
+    WHERE t.trade_id = NEW.trade_id;
+
+    -- Get the configuration ID separately since it's not part of trades%ROWTYPE
+    SELECT c.id INTO trade_record.configuration_id
+    FROM trade_configurations c
+    WHERE c.id = trade_record.configuration_id;
+
+    -- Calculate the first day of the month for the transaction
+    transaction_month := DATE_TRUNC('month', NEW.created_at::DATE);
+
+    -- Calculate P/L values with default to 0
+    regular_pl := CASE 
+        WHEN NOT EXISTS (
+            SELECT 1 FROM options_strategy_trades ost 
+            WHERE ost.trade_id = trade_record.trade_id
+        ) THEN COALESCE(calculate_realized_pl_for_transaction(trade_record, NEW), 0)
+        ELSE 0
+    END;
+
+    strategy_pl := CASE 
+        WHEN EXISTS (
+            SELECT 1 FROM options_strategy_trades ost 
+            WHERE ost.trade_id = trade_record.trade_id
+        ) THEN COALESCE(calculate_realized_pl_for_transaction(trade_record, NEW), 0)
+        ELSE 0
+    END;
+
+    -- Insert or update monthly P/L record
+    INSERT INTO monthly_pl (configuration_id, month, regular_trades_pl, strategy_trades_pl)
+    VALUES (
+        trade_record.configuration_id, 
+        transaction_month,
+        regular_pl,
+        strategy_pl
+    )
+    ON CONFLICT (configuration_id, month)
+    DO UPDATE SET 
+        regular_trades_pl = COALESCE((
+            -- Sum of all realized P/L from TRIM and CLOSE transactions in this month
+            SELECT SUM(
+                COALESCE(calculate_realized_pl_for_transaction(t, tx), 0)
+            )
+            FROM trades t
+            JOIN transactions tx ON t.trade_id = tx.trade_id
+            WHERE t.configuration_id = trade_record.configuration_id
+            AND DATE_TRUNC('month', tx.created_at) = transaction_month
+            AND UPPER(tx.transaction_type) IN ('TRIM', 'CLOSE')
+            AND NOT EXISTS (
+                SELECT 1 FROM options_strategy_trades ost 
+                WHERE ost.trade_id = t.trade_id
+            )
+        ), 0),
+        strategy_trades_pl = COALESCE((
+            -- Sum of all realized P/L from TRIM and CLOSE transactions in this month
+            SELECT SUM(
+                COALESCE(calculate_realized_pl_for_transaction(t, tx), 0)
+            )
+            FROM trades t
+            JOIN transactions tx ON t.trade_id = tx.trade_id
+            WHERE t.configuration_id = trade_record.configuration_id
+            AND DATE_TRUNC('month', tx.created_at) = transaction_month
+            AND UPPER(tx.transaction_type) IN ('TRIM', 'CLOSE')
+            AND EXISTS (
+                SELECT 1 FROM options_strategy_trades ost 
+                WHERE ost.trade_id = t.trade_id
+            )
+        ), 0),
+        updated_at = CURRENT_TIMESTAMP;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to update monthly P/L after transaction changes
+CREATE OR REPLACE TRIGGER update_monthly_pl_trigger
+    AFTER INSERT OR UPDATE ON transactions
+    FOR EACH ROW
+    WHEN (pg_trigger_depth() < 1)  -- Prevent recursive trigger calls
+    EXECUTE FUNCTION update_monthly_pl();
+
+-- Function to backfill monthly P/L
+CREATE OR REPLACE FUNCTION backfill_monthly_pl() RETURNS void AS $$
+DECLARE
+    config_record RECORD;
+    month_record RECORD;
+    trade_record RECORD;
+    last_transaction RECORD;
+BEGIN
+    -- First, clear existing monthly P/L records to avoid duplicates
+    TRUNCATE TABLE monthly_pl;
+    
+    -- For each configuration
+    FOR config_record IN SELECT id FROM trade_configurations LOOP
+        RAISE NOTICE 'Processing configuration %', config_record.id;
+        
+        -- For each month where we have TRIM or CLOSE transactions
+        FOR month_record IN 
+            SELECT DISTINCT DATE_TRUNC('month', tx.created_at) as month
+            FROM transactions tx
+            JOIN trades t ON tx.trade_id = t.trade_id
+            WHERE t.configuration_id = config_record.id 
+            AND tx.transaction_type IN ('TRIM', 'CLOSE', 'trim', 'close')
+            AND tx.created_at <= CURRENT_TIMESTAMP  -- Include all historical transactions
+            ORDER BY month
+        LOOP
+            RAISE NOTICE 'Processing month %', month_record.month;
+            
+            -- Insert monthly P/L record
+            INSERT INTO monthly_pl (configuration_id, month, regular_trades_pl, strategy_trades_pl)
+            VALUES (
+                config_record.id,
+                month_record.month,
+                (
+                    -- Calculate regular trades P/L from transactions
+                    SELECT COALESCE(SUM(
+                        calculate_realized_pl_for_transaction(t, tx)
+                    ), 0)
+                    FROM trades t
+                    JOIN transactions tx ON tx.trade_id = t.trade_id
+                    WHERE t.configuration_id = config_record.id
+                    AND DATE_TRUNC('month', tx.created_at) = month_record.month
+                    AND tx.transaction_type IN ('TRIM', 'CLOSE', 'trim', 'close')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM options_strategy_trades ost 
+                        WHERE ost.trade_id = t.trade_id
+                    )
+                ),
+                (
+                    -- Calculate strategy trades P/L from transactions
+                    SELECT COALESCE(SUM(
+                        calculate_realized_pl_for_transaction(t, tx)
+                    ), 0)
+                    FROM trades t
+                    JOIN transactions tx ON tx.trade_id = t.trade_id
+                    WHERE t.configuration_id = config_record.id
+                    AND DATE_TRUNC('month', tx.created_at) = month_record.month
+                    AND tx.transaction_type IN ('TRIM', 'CLOSE', 'trim', 'close')
+                    AND EXISTS (
+                        SELECT 1 FROM options_strategy_trades ost 
+                        WHERE ost.trade_id = t.trade_id
+                    )
+                )
+            );
+            
+            -- Log the values we just inserted
+            RAISE NOTICE 'Inserted record for config % month %: Regular P/L: %, Strategy P/L: %',
+                config_record.id,
+                month_record.month,
+                (SELECT regular_trades_pl FROM monthly_pl WHERE configuration_id = config_record.id AND month = month_record.month),
+                (SELECT strategy_trades_pl FROM monthly_pl WHERE configuration_id = config_record.id AND month = month_record.month);
+        END LOOP;
+    END LOOP;
+    
+    -- After processing monthly P/L, update all trades' average prices
+    FOR trade_record IN SELECT * FROM trades LOOP
+        -- Get the most recent transaction for this trade
+        SELECT * INTO last_transaction
+        FROM transactions
+        WHERE trade_id = trade_record.trade_id
+        ORDER BY created_at DESC
+        LIMIT 1;
+        
+        -- If there is a transaction, trigger a recalculation by doing a no-op update
+        IF last_transaction IS NOT NULL THEN
+            RAISE NOTICE 'Updating averages for trade %', trade_record.trade_id;
+            UPDATE transactions 
+            SET created_at = created_at  -- No-op update to trigger the recalculation
+            WHERE id = last_transaction.id;
+        END IF;
+    END LOOP;
+    
+    -- Log final counts
+    RAISE NOTICE 'Monthly P/L backfill completed. Total records created: %',
+        (SELECT COUNT(*) FROM monthly_pl);
+END;
+$$ LANGUAGE plpgsql;
+
+-- To run the backfill, execute:
+-- SELECT backfill_monthly_pl();
+
+-- Function to clean up transactions and update trade data
+CREATE OR REPLACE FUNCTION cleanup_and_update_trades() RETURNS void AS $$
+DECLARE
+    trade_record RECORD;
+    first_close_transaction RECORD;
+    extra_close_transaction RECORD;
+BEGIN
+    -- For each trade
+    FOR trade_record IN SELECT * FROM trades LOOP
+        RAISE NOTICE 'Processing trade %', trade_record.trade_id;
+        
+        -- Find the first (oldest) CLOSE transaction for this trade
+        SELECT * INTO first_close_transaction
+        FROM transactions
+        WHERE trade_id = trade_record.trade_id
+        AND UPPER(transaction_type) = 'CLOSE'
+        ORDER BY created_at ASC
+        LIMIT 1;
+        
+        -- If there is a CLOSE transaction, delete any subsequent CLOSE transactions
+        -- Process in reverse chronological order (newest first)
+        IF first_close_transaction IS NOT NULL THEN
+            FOR extra_close_transaction IN 
+                SELECT * FROM transactions 
+                WHERE trade_id = trade_record.trade_id
+                AND UPPER(transaction_type) = 'CLOSE'
+                AND id != first_close_transaction.id
+                ORDER BY created_at DESC  -- Changed to DESC to process newest first
+            LOOP
+                RAISE NOTICE 'Deleting extra CLOSE transaction % for trade %', 
+                    extra_close_transaction.id, trade_record.trade_id;
+                
+                DELETE FROM transactions 
+                WHERE id = extra_close_transaction.id;
+            END LOOP;
+        END IF;
+        
+        -- Now trigger a recalculation of the trade's data by updating the first CLOSE transaction
+        -- This will trigger the update_trade_before_transaction_change function
+        IF first_close_transaction IS NOT NULL THEN
+            UPDATE transactions 
+            SET created_at = created_at  -- No-op update to trigger the recalculation
+            WHERE id = first_close_transaction.id;
+        END IF;
+    END LOOP;
+    
+    RAISE NOTICE 'Cleanup and update completed successfully';
+END;
+$$ LANGUAGE plpgsql;
+
+-- To run the cleanup and update:
+-- SELECT cleanup_and_update_trades();
