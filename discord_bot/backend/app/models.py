@@ -168,6 +168,29 @@ class OptionsStrategyTransaction(Base):
         return super().to_dict()
 
 
+
+class VerificationConfig(Base):
+    __tablename__ = "verification_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(String, unique=True, index=True)
+    channel_id = Column(String)
+    role_to_remove_id = Column(String)
+    role_to_add_id = Column(String)
+    log_channel_id = Column(String)
+
+class Verification(Base):
+    __tablename__ = "verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True)
+    username = Column(String)
+    #email = Column(String)
+    #full_name = Column(String)
+    configuration_id = Column(Integer, ForeignKey("verification_configs.id"))
+    timestamp = Column(DateTime)
+
+'''
 # Add this to your existing models.py file
 class VerificationConfig(Base):
     __tablename__ = "verification_configs"
@@ -200,7 +223,7 @@ class Verification(Base):
     def to_dict(self):
         """Convert Verification instance to dictionary."""
         return super().to_dict()
-
+'''
 from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import relationship
 

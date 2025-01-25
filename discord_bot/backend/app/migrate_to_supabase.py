@@ -83,6 +83,30 @@ def check_existing_record(supabase, table_name, record_dict, model):
     
     return False
 
+def transform_record(record_dict: Dict[str, Any], table_name: str) -> Dict[str, Any]:
+    """Transform record values based on table-specific rules."""
+    
+    # Capitalize status and transaction_type fields
+    if 'status' in record_dict:
+        record_dict['status'] = record_dict['status'].upper()
+    if 'transaction_type' in record_dict:
+        record_dict['transaction_type'] = record_dict['transaction_type'].upper()
+    
+    # Handle new columns for specific tables
+    if table_name == 'trades':
+        # New columns in Supabase trades table
+        record_dict.setdefault('average_price', record_dict.get('entry_price'))
+        record_dict.setdefault('average_exit_price', None)
+        record_dict.setdefault('profit_loss', None)
+        record_dict.setdefault('win_loss', None)
+        record_dict.setdefault('is_day_trade', False)
+    
+    if table_name == 'transactions':
+        # New columns in Supabase transactions table
+        record_dict.setdefault('net_cost', None)
+    
+    return record_dict
+
 def insert_records_safely(supabase, table_name, records):
     """Insert records one by one to handle errors gracefully."""
     successful = 0
@@ -90,7 +114,9 @@ def insert_records_safely(supabase, table_name, records):
     
     for record in records:
         try:
-            response = supabase.table(table_name).insert(record).execute()
+            # Transform record before insertion
+            transformed_record = transform_record(record, table_name)
+            response = supabase.table(table_name).insert(transformed_record).execute()
             successful += 1
         except Exception as e:
             print(f"Failed to insert record: {record}")

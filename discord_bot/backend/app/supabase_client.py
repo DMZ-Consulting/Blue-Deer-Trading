@@ -30,7 +30,9 @@ async def get_open_trades_for_autocomplete() -> List[Dict[str, Any]]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.table('trades').select('*').eq('status', 'open').execute()
+        # TODO: All status and types should be capitalized
+        #response = await supabase.table('trades').select('*').eq('status', 'open').execute()
+        response = await supabase.table('trades').select('*').in_('status', ['open', 'OPEN']).execute()
         return response.data
     except Exception as e:
         logger.error(f"Error getting open trades for autocomplete: {str(e)}")
