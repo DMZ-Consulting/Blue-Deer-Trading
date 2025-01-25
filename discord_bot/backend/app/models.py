@@ -9,25 +9,8 @@ from sqlalchemy.orm import relationship, validates
 from .database import Base
 from .enum_type import EnumType
 
-# Add this import at the top
-from sqlalchemy import Column, ForeignKey, String, Table
-
 import logging
 from pydantic import field_validator
-
-# Modify Base class to include to_dict method
-class Base:
-    def to_dict(self):
-        """Convert model instance to dictionary."""
-        result = {}
-        for column in self.__table__.columns:
-            value = getattr(self, column.name)
-            if isinstance(value, datetime):
-                value = value.isoformat()
-            elif isinstance(value, enum.Enum):
-                value = value.value
-            result[column.name] = value
-        return result
 
 # Define a named ENUM type
 class TradeStatusEnum(enum.Enum):

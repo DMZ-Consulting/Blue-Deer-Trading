@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 from sqlalchemy import create_engine, text, UniqueConstraint
 from sqlalchemy.orm import sessionmaker
 import json
@@ -32,8 +33,23 @@ def get_sqlite_session():
         
     sqlite_url = f"sqlite:///{db_path}"
     print(f"SQLite URL: {sqlite_url}")
-    engine = create_engine(sqlite_url)
-    Session = sessionmaker(bind=engine)
+    
+    # Create engine with SQLite-specific connect args
+    engine = create_engine(
+        sqlite_url,
+        connect_args={"check_same_thread": False}
+    )
+    
+    # Create all tables (this is safe to call even if tables exist)
+    Base.metadata.create_all(bind=engine)
+    
+    # Create session factory
+    Session = sessionmaker(
+        bind=engine,
+        autocommit=False,
+        autoflush=False
+    )
+    
     return Session()
 
 def get_unique_constraints(model):
@@ -94,16 +110,26 @@ def transform_record(record_dict: Dict[str, Any], table_name: str) -> Dict[str, 
     
     # Handle new columns for specific tables
     if table_name == 'trades':
-        # New columns in Supabase trades table
-        record_dict.setdefault('average_price', record_dict.get('entry_price'))
-        record_dict.setdefault('average_exit_price', None)
-        record_dict.setdefault('profit_loss', None)
-        record_dict.setdefault('win_loss', None)
-        record_dict.setdefault('is_day_trade', False)
+        if 'average_price' not in record_dict:
+            record_dict['average_price'] = record_dict.get('entry_price')
+        if 'average_exit_price' not in record_dict:
+            record_dict['average_exit_price'] = None
+        if 'profit_loss' not in record_dict:
+            record_dict['profit_loss'] = None
+        if 'win_loss' not in record_dict:
+            record_dict['win_loss'] = None
+        if 'is_day_trade' not in record_dict:
+            record_dict['is_day_trade'] = False
     
-    if table_name == 'transactions':
-        # New columns in Supabase transactions table
-        record_dict.setdefault('net_cost', None)
+    # Handle tables with unique constraints
+    if table_name == 'verifications':
+        # For duplicate verifications, we'll append a timestamp to make them unique
+        if 'user_id' in record_dict:
+            record_dict['user_id'] = f"{record_dict['user_id']}_{record_dict.get('timestamp', '')}"
+    
+    if table_name == 'roles':
+        # For duplicate roles, we'll skip them in the insert_records_safely function
+        pass
     
     return record_dict
 
@@ -116,6 +142,21 @@ def insert_records_safely(supabase, table_name, records):
         try:
             # Transform record before insertion
             transformed_record = transform_record(record, table_name)
+            
+            # For roles table, check if record already exists before inserting
+            if table_name == 'roles':
+                try:
+                    existing = supabase.table(table_name)\
+                        .select('*')\
+                        .eq('role_id', record['role_id'])\
+                        .eq('guild_id', record['guild_id'])\
+                        .execute()
+                    if existing.data:
+                        print(f"Skipping duplicate role: {record['role_id']}")
+                        continue
+                except Exception as e:
+                    print(f"Error checking existing role: {str(e)}")
+            
             response = supabase.table(table_name).insert(transformed_record).execute()
             successful += 1
         except Exception as e:
@@ -126,15 +167,17 @@ def insert_records_safely(supabase, table_name, records):
     
     return successful, failed
 
-def migrate_table_data(supabase, sqlite_session, model, table_name):
+def migrate_table_data(supabase, sqlite_session, model, table_name, skip_existence_check=False):
     print(f"Migrating {table_name}...")
     try:
+        # Use all() to get all records from the model
         records = sqlite_session.query(model).all()
         
         if not records:
             print(f"No records found in {table_name}")
             return
         
+        print(f"Found {len(records)} records in {table_name}")
         # Convert SQLAlchemy objects to dictionaries
         data = []
         skipped = 0
@@ -150,8 +193,8 @@ def migrate_table_data(supabase, sqlite_session, model, table_name):
                     value = value.isoformat()
                 record_dict[column.name] = value
             
-            # Check if record already exists using all unique constraints
-            if check_existing_record(supabase, table_name, record_dict, model):
+            # Only check for existing records if we're not skipping the check
+            if not skip_existence_check and check_existing_record(supabase, table_name, record_dict, model):
                 skipped += 1
                 continue
                 
@@ -178,48 +221,128 @@ def migrate_table_data(supabase, sqlite_session, model, table_name):
         print(f"Error migrating {table_name}: {str(e)}")
         raise
 
-def migrate_to_supabase():
-    sqlite_session = None
-    try:
-        # Initialize connections
-        print("Initializing Supabase connection...")
-        supabase = get_supabase()
-        
-        print("Initializing SQLite connection...")
-        sqlite_session = get_sqlite_session()
-        
-        # Migration order based on dependencies
-        migrations = [
-            (TradeConfiguration, "trade_configurations"),
-            (BotConfiguration, "bot_configurations"),
-            (Role, "roles"),
-            (RoleRequirement, "role_requirements"),
-            (ConditionalRoleGrant, "conditional_role_grants"),
-            (VerificationConfig, "verification_configs"),
-            (Verification, "verifications"),
-            (OptionsStrategyTrade, "options_strategy_trades"),
-            (Trade, "trades"),
-            (Transaction, "transactions"),
-            (OptionsStrategyTransaction, "options_strategy_transactions"),
-        ]
-        
-        # Execute migrations
-        for model, table_name in migrations:
-            migrate_table_data(supabase, sqlite_session, model, table_name)
-        
-        print("Migration completed successfully!")
-        
-    except FileNotFoundError as e:
-        print(f"Database error: {str(e)}")
-        print("Please make sure your SQLite database exists and is accessible.")
-    except Exception as e:
-        print(f"Migration failed: {str(e)}")
-        print("Please check your Supabase credentials and database permissions.")
-        if hasattr(e, 'response'):
-            print(f"Response details: {e.response.text if hasattr(e.response, 'text') else e.response}")
-    finally:
-        if sqlite_session:
-            sqlite_session.close()
+def clean_supabase_tables(supabase):
+    """Delete all records from Supabase tables in reverse order of dependencies."""
+    # Order matters due to foreign key constraints - delete children before parents
+    table_configs = [
+        # First delete dependent tables
+        {"name": "transactions", "pk": "id"},
+        {"name": "options_strategy_transactions", "pk": "id"},
+        # Then delete main tables
+        {"name": "trades", "pk": "trade_id"},
+        {"name": "options_strategy_trades", "pk": "id"},
+        # Then delete junction tables
+        {"name": "role_requirement_roles", "pk": None, "where": True},  
+        {"name": "conditional_role_grant_condition_roles", "pk": None, "where": True},
+        # Then delete remaining tables
+        {"name": "verifications", "pk": "id"},
+        {"name": "verification_configs", "pk": "id"},
+        {"name": "role_requirements", "pk": "id"},
+        {"name": "roles", "pk": "id"},
+        {"name": "conditional_role_grants", "pk": "id"},
+        {"name": "bot_configurations", "pk": "id"},
+        {"name": "trade_configurations", "pk": "id"}
+    ]
+    
+    failed_tables = []
+    for table in table_configs:
+        try:
+            print(f"Cleaning table {table['name']}...")
+            
+            if table.get('where', False):
+                # For tables requiring WHERE clause
+                response = supabase.table(table['name']).delete().eq('id', 'id').execute()
+            elif table['pk'] is None:
+                # For junction tables without WHERE requirement
+                response = supabase.table(table['name']).delete().execute()
+            else:
+                # For regular tables, delete using their primary key
+                response = supabase.table(table['name']).delete().neq(table['pk'], -1).execute()
+            
+            # Verify the table is empty
+            check = supabase.table(table['name']).select('*').execute()
+            if len(check.data) > 0:
+                print(f"Warning: Table {table['name']} still has {len(check.data)} records after cleaning")
+                # Try a more aggressive approach for tables that failed initial delete
+                try:
+                    print(f"Attempting forced delete on {table['name']}...")
+                    response = supabase.table(table['name']).delete().execute()
+                    check = supabase.table(table['name']).select('*').execute()
+                    if len(check.data) > 0:
+                        failed_tables.append(table['name'])
+                    else:
+                        print(f"Successfully cleaned {table['name']} on second attempt")
+                except Exception as e:
+                    print(f"Error on forced delete: {str(e)}")
+                    failed_tables.append(table['name'])
+            else:
+                print(f"Successfully cleaned {table['name']}")
+        except Exception as e:
+            print(f"Error cleaning table {table['name']}: {str(e)}")
+            failed_tables.append(table['name'])
+    
+    if failed_tables:
+        tables_str = ", ".join(failed_tables)
+        raise Exception(f"Failed to clean the following tables: {tables_str}")
+    
+    return True
 
 if __name__ == "__main__":
-    migrate_to_supabase() 
+    parser = argparse.ArgumentParser(description='Migrate data from SQLite to Supabase')
+    parser.add_argument('--clean', action='store_true', help='Clean Supabase tables before migration')
+    args = parser.parse_args()
+    
+    try:
+        # Get database connections
+        sqlite_session = get_sqlite_session()
+        supabase = get_supabase()
+        
+        if args.clean:
+            print("Cleaning Supabase tables...")
+            try:
+                clean_supabase_tables(supabase)
+                print("Successfully cleaned all tables")
+            except Exception as e:
+                print(f"Error during cleaning: {str(e)}")
+                print("Aborting migration to prevent partial data state")
+                sys.exit(1)
+        
+        # Define models and their corresponding table names in reverse order of deletion
+        # This ensures parent records exist before child records are inserted
+        models_to_migrate = [
+            (TradeConfiguration, "trade_configurations"),
+            (BotConfiguration, "bot_configurations"),
+            (VerificationConfig, "verification_configs"),
+            (Verification, "verifications"),
+            (Role, "roles"),
+            (ConditionalRoleGrant, "conditional_role_grants"),
+            (RoleRequirement, "role_requirements"),
+            (Trade, "trades"),
+            (Transaction, "transactions"),
+            (OptionsStrategyTrade, "options_strategy_trades"),
+            (OptionsStrategyTransaction, "options_strategy_transactions")
+        ]
+        
+        # Junction tables that don't have models - these will need to be handled separately
+        junction_tables = [
+            "role_requirement_roles",
+            "conditional_role_grant_condition_roles"
+        ]
+        
+        print("Note: Junction tables will be skipped as they don't have SQLAlchemy models:", junction_tables)
+        
+        # Migrate each table
+        for model, table_name in models_to_migrate:
+            migrate_table_data(supabase, sqlite_session, model, table_name, skip_existence_check=args.clean)
+            
+        # Handle junction tables if needed
+        for table_name in junction_tables:
+            print(f"Skipping junction table {table_name} - handle these manually if needed")
+            
+        print("Migration completed successfully!")
+        
+    except Exception as e:
+        print(f"Migration failed: {str(e)}")
+        sys.exit(1)
+    finally:
+        sqlite_session.close() 
