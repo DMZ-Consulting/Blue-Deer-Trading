@@ -2,7 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from app.bot import run_bot
-
+import time
 # Load environment variables
 load_dotenv()
 
@@ -21,4 +21,10 @@ def main():
         raise
 
 if __name__ == "__main__":
-    main()
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print(f"Error running bot: {str(e)}")
+            raise
+        time.sleep(1)
