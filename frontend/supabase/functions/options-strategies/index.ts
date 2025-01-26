@@ -9,11 +9,23 @@ interface Transaction {
   net_cost?: number
 }
 
+enum StrategyStatus {
+  OPEN = 'OPEN',
+  CLOSED = 'CLOSED'
+}
+
+enum StrategyTransactionType {
+  OPEN = 'OPEN',
+  ADD = 'ADD',
+  TRIM = 'TRIM',
+  CLOSE = 'CLOSE'
+}
+
 interface Strategy {
   id: number
   name: string
   underlying_symbol: string
-  status: string
+  status: StrategyStatus
   net_cost: number
   average_net_cost: number
   size: string
@@ -66,11 +78,15 @@ declare global {
 }
 
 serve(async (req: Request) => {
+  console.log('Received request:', req.method, req.url)
+  
   if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request')
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    console.log('Initializing Supabase client')
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -80,6 +96,7 @@ serve(async (req: Request) => {
     const { action, filters, input, strategy_id, net_cost, size } = payload
 
     console.log('Received request payload:', JSON.stringify(payload, null, 2))
+    console.log(`Processing action: ${action}`)
 
     let data
 
@@ -93,7 +110,11 @@ serve(async (req: Request) => {
             trade_configurations (*)
           `)
           .order('created_at', { ascending: false })
-        if (allError) throw allError
+        if (allError) {
+          console.error('Error fetching all strategies:', allError)
+          throw allError
+        }
+        console.log(`Retrieved ${allStrategies?.length ?? 0} strategies`)
         data = allStrategies
         break
 
@@ -111,8 +132,8 @@ serve(async (req: Request) => {
 
         if (filters) {
           if (filters.status && filters.status !== 'ALL') {
-            console.log('Applying status filter:', filters.status.toLowerCase())
-            query = query.eq('status', filters.status.toLowerCase())
+            console.log('Applying status filter:', filters.status.toUpperCase())
+            query = query.eq('status', filters.status.toUpperCase())
           }
 
           if (filters.configName && filters.configName !== 'all') {
@@ -143,7 +164,7 @@ serve(async (req: Request) => {
           }
 
           // Handle date filters
-          if (filters.weekFilter && filters.status?.toLowerCase() === 'closed') {
+          if (filters.weekFilter && filters.status?.toUpperCase() === 'CLOSED') {
             console.log('Applying week filter for closed trades:', filters.weekFilter)
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
@@ -178,13 +199,14 @@ serve(async (req: Request) => {
         break
 
       case 'createOptionsStrategy':
+        console.log('Creating new options strategy:', input)
         if (!input) throw new Error('Input is required')
         const { data: strategy, error: strategyError } = await supabase
           .from('options_strategy_trades')
           .insert({
             name: input.name,
             underlying_symbol: input.underlying_symbol,
-            status: 'open',
+            status: StrategyStatus.OPEN,
             legs: input.legs,
             net_cost: input.net_cost,
             average_net_cost: input.net_cost,
@@ -197,114 +219,125 @@ serve(async (req: Request) => {
           .select()
           .single()
 
-        if (strategyError) throw strategyError
+        if (strategyError) {
+          console.error('Error creating strategy:', strategyError)
+          throw strategyError
+        }
+        console.log('Created strategy:', strategy)
 
         // Create initial transaction
+        console.log('Creating initial transaction for strategy:', strategy.strategy_id)
         const { error: transactionError } = await supabase
           .from('options_strategy_transactions')
           .insert({
-            strategy_id: strategy.id,
-            transaction_type: 'OPEN',
+            strategy_id: strategy.strategy_id,
+            transaction_type: StrategyTransactionType.OPEN,
             net_cost: input.net_cost,
             size: input.size,
             created_at: new Date().toISOString()
           })
 
-        if (transactionError) throw transactionError
+        if (transactionError) {
+          console.error('Error creating initial transaction:', transactionError)
+          throw transactionError
+        }
+        console.log('Successfully created initial transaction')
         data = strategy
         break
 
       case 'addToStrategy':
+        console.log('Adding to strategy:', { strategy_id, net_cost, size })
         if (!strategy_id || !net_cost || !size) throw new Error('strategy_id, net_cost, and size are required')
-        // Get current strategy
-        const { data: currentStrategy, error: currentStrategyError } = await supabase
-          .from('options_strategy_trades')
-          .select('*')
-          .eq('id', strategy_id)
-          .single()
-
-        if (currentStrategyError) throw currentStrategyError
-
-        // Calculate new average net cost and size
-        const currentSize = parseFloat(currentStrategy.current_size)
-        const addSize = parseFloat(size)
-        const newSize = currentSize + addSize
-        const newAverageNetCost = ((currentSize * currentStrategy.average_net_cost) + (addSize * net_cost)) / newSize
-
+          
         // Create transaction
+        console.log('Creating ADD transaction')
         const { error: addTransactionError } = await supabase
           .from('options_strategy_transactions')
           .insert({
             strategy_id,
-            transaction_type: 'ADD',
+            transaction_type: StrategyTransactionType.ADD,
             net_cost,
             size,
             created_at: new Date().toISOString()
           })
 
-        if (addTransactionError) throw addTransactionError
-
-        // Update strategy
-        const { data: updatedStrategy, error: updateError } = await supabase
+        if (addTransactionError) {
+          console.error('Error creating ADD transaction:', addTransactionError)
+          throw addTransactionError
+        }
+        // get updated strategy
+        const { data: addUpdatedStrategy, error: addUpdateError } = await supabase
           .from('options_strategy_trades')
-          .update({
-            average_net_cost: newAverageNetCost,
-            current_size: newSize.toString()
-          })
-          .eq('id', strategy_id)
-          .select()
+          .select('*')
+          .eq('strategy_id', strategy_id)
           .single()
 
-        if (updateError) throw updateError
-        data = updatedStrategy
+        if (addUpdateError) {
+          console.error('Error updating strategy:', addUpdateError)
+          throw addUpdateError
+        }
+        console.log('Successfully updated strategy:', addUpdatedStrategy)
+        data = addUpdatedStrategy
         break
 
       case 'trimStrategy':
+        console.log('Trimming strategy:', { strategy_id, net_cost, size })
         if (!strategy_id || !net_cost || !size) throw new Error('strategy_id, net_cost, and size are required')
         // Get current strategy
         const { data: trimStrategy, error: trimStrategyError } = await supabase
           .from('options_strategy_trades')
           .select('*')
-          .eq('id', strategy_id)
+          .eq('strategy_id', strategy_id)
           .single()
 
-        if (trimStrategyError) throw trimStrategyError
+        if (trimStrategyError) {
+          console.error('Error fetching strategy to trim:', trimStrategyError)
+          throw trimStrategyError
+        }
+        console.log('Current strategy:', trimStrategy)
 
         const trimCurrentSize = parseFloat(trimStrategy.current_size)
         const trimSize = parseFloat(size)
+        console.log('Sizes:', { trimCurrentSize, trimSize })
 
         if (trimSize > trimCurrentSize) {
+          console.error('Invalid trim size:', { trimSize, trimCurrentSize })
           throw new Error('Trim size is greater than current strategy size')
         }
 
         // Create transaction
+        console.log('Creating TRIM transaction')
         const { error: trimTransactionError } = await supabase
           .from('options_strategy_transactions')
           .insert({
             strategy_id,
-            transaction_type: 'TRIM',
+            transaction_type: StrategyTransactionType.TRIM,
             net_cost,
             size,
             created_at: new Date().toISOString()
           })
 
-        if (trimTransactionError) throw trimTransactionError
-
-        // Update strategy
-        const { data: trimmedStrategy, error: trimUpdateError } = await supabase
+        if (trimTransactionError) {
+          console.error('Error creating TRIM transaction:', trimTransactionError)
+          throw trimTransactionError
+        }
+        // get updated strategy
+        const { data: trimUpdatedStrategy, error: trimUpdateError } = await supabase
           .from('options_strategy_trades')
-          .update({
-            current_size: (trimCurrentSize - trimSize).toString()
-          })
-          .eq('id', strategy_id)
-          .select()
+          .select('*')
+          .eq('strategy_id', strategy_id)
           .single()
 
-        if (trimUpdateError) throw trimUpdateError
-        data = trimmedStrategy
+        if (trimUpdateError) {
+          console.error('Error updating strategy:', trimUpdateError)
+          throw trimUpdateError
+        }
+        console.log('Successfully updated strategy:', trimUpdatedStrategy)
+        data = trimUpdatedStrategy
         break
 
       case 'exitStrategy':
+        console.log('Exiting strategy:', { strategy_id, net_cost })
         if (!strategy_id || !net_cost) throw new Error('strategy_id and net_cost are required')
         // Get current strategy and all its transactions
         const { data: exitStrategy, error: exitStrategyError } = await supabase
@@ -313,76 +346,48 @@ serve(async (req: Request) => {
             *,
             options_strategy_transactions (*)
           `)
-          .eq('id', strategy_id)
+          .eq('strategy_id', strategy_id)
           .single()
 
-        if (exitStrategyError) throw exitStrategyError
+        if (exitStrategyError) {
+          console.error('Error fetching strategy to exit:', exitStrategyError)
+          throw exitStrategyError
+        }
+        console.log('Current strategy and transactions:', exitStrategy)
 
         // Create exit transaction
+        console.log('Creating CLOSE transaction')
         const { error: exitTransactionError } = await supabase
           .from('options_strategy_transactions')
           .insert({
             strategy_id,
-            transaction_type: 'CLOSE',
+            transaction_type: StrategyTransactionType.CLOSE,
             net_cost,
             size: exitStrategy.current_size,
             created_at: new Date().toISOString()
           })
 
-        if (exitTransactionError) throw exitTransactionError
+        if (exitTransactionError) {
+          console.error('Error creating CLOSE transaction:', exitTransactionError)
+          throw exitTransactionError
+        }
 
-        // Calculate profit/loss
-        const transactions = exitStrategy.options_strategy_transactions
-        const openTransactions = transactions.filter((t: any) => 
-          t.transaction_type === 'OPEN' || t.transaction_type === 'ADD'
-        )
-        const trimTransactions = transactions.filter((t: any) => 
-          t.transaction_type === 'TRIM'
-        )
-
-        const totalCost = openTransactions.reduce((sum: number, t: any) => 
-          sum + (parseFloat(t.net_cost.toString()) * parseFloat(t.size)), 0
-        )
-        const totalSize = openTransactions.reduce((sum: number, t: any) => 
-          sum + parseFloat(t.size), 0
-        )
-        const avgEntryCost = totalCost / totalSize
-
-        const totalExitCost = trimTransactions.reduce((sum: number, t: any) => 
-          sum + (parseFloat(t.net_cost.toString()) * parseFloat(t.size)), 0
-        ) + (net_cost * parseFloat(exitStrategy.current_size))
-        const totalExitSize = trimTransactions.reduce((sum: number, t: any) => 
-          sum + parseFloat(t.size), 0
-        ) + parseFloat(exitStrategy.current_size)
-        const avgExitCost = totalExitCost / totalExitSize
-
-        const profitLoss = (avgExitCost - avgEntryCost) * parseFloat(exitStrategy.size) * 100
-
-        // Update strategy
-        const { data: closedStrategy, error: closeUpdateError } = await supabase
-          .from('options_strategy_trades')
-          .update({
-            status: 'closed',
-            closed_at: new Date().toISOString(),
-            profit_loss: profitLoss
-          })
-          .eq('id', strategy_id)
-          .select()
-          .single()
-
-        if (closeUpdateError) throw closeUpdateError
-        data = closedStrategy
+        console.log('Successfully closed strategy:', exitStrategy)
+        data = exitStrategy
         break
 
       default:
+        console.error('Unknown action:', action)
         throw new Error(`Unknown action: ${action}`)
     }
 
+    console.log('Sending successful response')
     return new Response(
       JSON.stringify(data),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
+    console.error('Error processing request:', error)
     const message = error instanceof Error ? error.message : 'An unknown error occurred'
     return new Response(
       JSON.stringify({ error: message }),

@@ -74,6 +74,7 @@ interface Trade {
   status: string;
   entry_price: number;
   current_size: string;
+  size?: string;
   expiration_date: string | null;
   created_at: string;
   closed_at: string | null;
@@ -277,7 +278,11 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
       const strike = trade.strike ? `$${trade.strike.toFixed(2)}` : "";
       return `${expiration} ${upperSymbol} ${strike} ${optionType}`;
     } else {
-      return `${upperSymbol} @ $${trade.entry_price.toFixed(2)} ${trade.current_size} Size`;
+      if (trade.current_size === '0') {
+        return `${upperSymbol} @ $${trade.entry_price.toFixed(2)}`;
+      } else {
+        return `${upperSymbol} @ $${trade.entry_price.toFixed(2)} ${trade.current_size} Size`;
+      }
     }
   };
 
@@ -414,7 +419,7 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
     {
       id: "current_size",
       header: "Size",
-      render: (trade: Trade) => trade.current_size?.toString() ?? '-',
+      render: (trade: Trade) => trade.current_size === '0' ? trade.size : trade.current_size?.toString() ?? '-',
     },
     {
       id: "expiration_date",

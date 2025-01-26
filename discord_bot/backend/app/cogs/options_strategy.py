@@ -11,7 +11,9 @@ from ..supabase_client import (
     add_to_os_trade,
     trim_os_trade,
     exit_os_trade,
-    add_note_to_os_trade
+    add_note_to_os_trade,
+    get_open_os_trades_for_autocomplete,
+    get_os_trade
 )
 
 logger = logging.getLogger(__name__)
@@ -47,12 +49,12 @@ async def get_open_os_trade_ids(ctx: discord.AutocompleteContext) -> list[discor
                 display = f"{symbol} @ {float(trade['average_net_cost']):.2f} - {name}"
                 sort_key = (symbol, datetime.max, name)
             
-            trade_info.append((trade['trade_id'], display, sort_key))
+            trade_info.append((trade['strategy_id'], display, sort_key))
         
         # Sort the trades
         sorted_trades = sorted(trade_info, key=lambda x: x[2])
         
-        return [discord.OptionChoice(name=f"{display} (ID: {trade_id})", value=trade_id) for trade_id, display, _ in sorted_trades]
+        return [discord.OptionChoice(name=f"{display} (ID: {strategy_id})", value=strategy_id) for strategy_id, display, _ in sorted_trades]
     except Exception as e:
         logger.error(f"Error in get_open_os_trade_ids: {str(e)}")
         return []
@@ -67,6 +69,27 @@ class OptionsStrategyCog(commands.Cog):
     async def get_logging_cog(self):
         return self.bot.get_cog('LoggingCog')
 
+    def split_option_legs(self, leg_string: str) -> list[str]:
+        # First leg is implicitly positive if no sign
+        if not leg_string.startswith('+') and not leg_string.startswith('-'):
+            leg_string = '+' + leg_string
+        
+        # Split the string by + or - while keeping the signs
+        legs = []
+        current_leg = ''
+        
+        for char in leg_string:
+            if char in ['+', '-'] and current_leg:
+                legs.append(current_leg)
+                current_leg = char
+            else:
+                current_leg += char
+        
+        # Add the last leg
+        if current_leg:
+            legs.append(current_leg)
+            
+        return legs
 
     @commands.slash_command(name="os", description="Open a new options strategy trade")
     async def os_trade(
@@ -86,7 +109,8 @@ class OptionsStrategyCog(commands.Cog):
             # Parse legs
             leg_list = []
             underlying_symbol = None
-            for leg in legs.split(','):
+
+            for leg in self.split_option_legs(legs):
                 parsed = utility_cog.parse_option_symbol(leg.strip())
                 if not parsed:
                     await logging_cog.log_to_channel(ctx.guild, f"Invalid option symbol format: {leg} by {ctx.user.name}")
@@ -119,18 +143,18 @@ class OptionsStrategyCog(commands.Cog):
                 size=size,
                 legs=leg_list,
                 configuration_id=config['id'],
-                is_day_trade=(trade_group == "day_trader"),
-                note=note
+                trade_group=trade_group
             )
 
             if trade_data:
                 # Create and send embed
                 embed = discord.Embed(title="New Options Strategy Created", color=discord.Color.green())
-                embed.add_field(name="Trade ID", value=trade_data["trade_id"], inline=False)
-                embed.add_field(name="Strategy", value=strategy_name, inline=True)
+                embed.description = f"### {strategy_name}"
                 embed.add_field(name="Symbol", value=leg_list[0]['symbol'], inline=True)
                 embed.add_field(name="Net Cost", value=f"${net_cost:,.2f}", inline=True)
                 embed.add_field(name="Size", value=size, inline=True)
+
+                embed.set_footer(text=f"Strategy ID: {trade_data['strategy_id']}")
                 
                 # Add leg details
                 for i, leg in enumerate(leg_list, 1):
@@ -155,7 +179,7 @@ class OptionsStrategyCog(commands.Cog):
     async def os_add(
         self,
         ctx: discord.ApplicationContext,
-        trade_id: discord.Option(str, description="The ID of the options strategy trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
+        strategy_id: discord.Option(str, description="The ID of the options strategy trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         net_cost: discord.Option(float, description="The net cost of the addition"),
         size: discord.Option(str, description="The size to add"),
         note: discord.Option(str, description="Optional note from the trader") = None,
@@ -167,23 +191,25 @@ class OptionsStrategyCog(commands.Cog):
         try:
 
             # Add to trade using Supabase function
-            updated_trade = await add_to_os_trade(trade_id, net_cost, size, note)
+            updated_trade = await add_to_os_trade(strategy_id, net_cost, size, note)
             if not updated_trade:
-                await logging_cog.log_to_channel(ctx.guild, f"Trade {trade_id} not found by {ctx.user.name}")
+                await logging_cog.log_to_channel(ctx.guild, f"Trade {strategy_id} not found by {ctx.user.name}")
                 return
 
             # Create embed
             embed = discord.Embed(title="Added to Options Strategy", color=discord.Color.blue())
+            embed.description = f"### {updated_trade['name']}"
+
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
             embed.add_field(name="Added Size", value=utility_cog.format_size(size), inline=True)
             embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
             embed.add_field(name="New Avg Cost", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
             if note:
                 embed.add_field(name="Note", value=note, inline=False)
-            embed.set_footer(text=f"Strategy ID: {trade_id}")
+            embed.set_footer(text=f"Strategy ID: {strategy_id}")    
 
-            await utility_cog.send_embed_by_configuration_id(ctx, config['id'], embed)
-            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_ADD command: Added to options strategy {trade_id} successfully.")
+            await utility_cog.send_embed_by_configuration_id(ctx, updated_trade['configuration_id'], embed)
+            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_ADD command: Added to options strategy {strategy_id} successfully.")
 
         except Exception as e:
             logger.error(f"Error adding to options strategy trade: {str(e)}")
@@ -196,33 +222,34 @@ class OptionsStrategyCog(commands.Cog):
     async def os_trim(
         self,
         ctx: discord.ApplicationContext,
-        trade_id: discord.Option(str, description="The ID of the options strategy trade to trim", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
+        strategy_id: discord.Option(str, description="The ID of the options strategy trade to trim", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         net_cost: discord.Option(float, description="The net cost of the trim"),
         size: discord.Option(str, description="The size to trim"),
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
-        await ctx.followup.send("Processing...", ephemeral=True, delete_after=0)
+        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
         try:
             # Trim trade using Supabase function
-            updated_trade = await trim_os_trade(trade_id, net_cost, size, note)
+            updated_trade = await trim_os_trade(strategy_id, net_cost, size, note)
             if not updated_trade:
-                await ctx.followup.send(f"Trade {trade_id} not found.", ephemeral=True)
+                await logging_cog.log_to_channel(ctx.guild, f"Trade {strategy_id} not found by {ctx.user.name}")
                 return
 
             # Create embed
             embed = discord.Embed(title="Trimmed Options Strategy", color=discord.Color.yellow())
+            embed.description = f"### {updated_trade['name']}"
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
             embed.add_field(name="Trimmed Size", value=utility_cog.format_size(size), inline=True)
             embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
             embed.add_field(name="Avg Cost", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
             
-            embed.set_footer(text=f"Strategy ID: {trade_id}")
+            embed.set_footer(text=f"Strategy ID: {strategy_id}")
 
             note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
             await utility_cog.send_embed_by_configuration_id(ctx, updated_trade['configuration_id'], embed, note_embed)
-            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_TRIM command: Trimmed options strategy {trade_id} successfully.")
+            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_TRIM command: Trimmed options strategy {strategy_id} successfully.")
 
         except Exception as e:
             logger.error(f"Error trimming options strategy trade: {str(e)}")
@@ -233,7 +260,7 @@ class OptionsStrategyCog(commands.Cog):
     async def os_exit(
         self,
         ctx: discord.ApplicationContext,
-        trade_id: discord.Option(str, description="The ID of the options strategy trade to exit", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
+        strategy_id: discord.Option(str, description="The ID of the options strategy trade to exit", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         net_cost: discord.Option(float, description="The net cost of the exit"),
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
@@ -243,9 +270,9 @@ class OptionsStrategyCog(commands.Cog):
 
         try:
             # Exit trade using Supabase function
-            updated_trade = await exit_os_trade(trade_id, net_cost, note)
+            updated_trade = await exit_os_trade(strategy_id, net_cost, note)
             if not updated_trade:
-                await ctx.followup.send(f"Trade {trade_id} not found.", ephemeral=True)
+                await logging_cog.log_to_channel(ctx.guild, f"Trade {strategy_id} not found by {ctx.user.name}")
                 return
 
             # Calculate P/L
@@ -255,16 +282,17 @@ class OptionsStrategyCog(commands.Cog):
 
             # Create embed
             embed = discord.Embed(title="Exited Options Strategy", color=discord.Color.red())
+            embed.description = f"### {updated_trade['name']}"
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
             embed.add_field(name="Exited Size", value=updated_trade['current_size'], inline=True)
             embed.add_field(name="Avg Entry Cost", value=f"${avg_entry_cost:.2f}", inline=True)
             embed.add_field(name="Avg Exit Cost", value=f"${avg_exit_cost:.2f}", inline=True)
             embed.add_field(name="P/L per Contract", value=f"${pl_per_contract:.2f}", inline=True)
-            embed.set_footer(text=f"Strategy ID: {trade_id}")
+            embed.set_footer(text=f"Strategy ID: {strategy_id}")
 
             note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
             await utility_cog.send_embed_by_configuration_id(ctx, updated_trade['configuration_id'], embed, note_embed)
-            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_EXIT command: Exited options strategy {trade_id} successfully.")
+            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_EXIT command: Exited options strategy {strategy_id} successfully.")
 
         except Exception as e:
             logger.error(f"Error exiting options strategy trade: {str(e)}")
@@ -275,7 +303,7 @@ class OptionsStrategyCog(commands.Cog):
     async def os_note(
         self,
         ctx: discord.ApplicationContext,
-        trade_id: discord.Option(str, description="The trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
+        strategy_id: discord.Option(str, description="The strategy to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         note: discord.Option(str, description="The note to add")
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -283,18 +311,19 @@ class OptionsStrategyCog(commands.Cog):
         utility_cog = await self.get_utility_cog()
         try:
             # Add note using Supabase function
-            updated_trade = await add_note_to_os_trade(trade_id, note)
-            if not updated_trade:
-                await logging_cog.log_to_channel(ctx.guild, f"Trade {trade_id} not found by {ctx.user.name}")
+            trade_data = await get_os_trade(strategy_id)
+            if not trade_data:
+                await logging_cog.log_to_channel(ctx.guild, f"Trade {strategy_id} not found by {ctx.user.name}")
                 return
 
             # Create embed
             embed = discord.Embed(title="Trade Note", color=discord.Color.blue())
+            embed.description = f"### {trade_data['underlying_symbol']} - {trade_data['name']}"
             embed.add_field(name="Note", value=note, inline=False)
             embed.set_footer(text=f"Posted by {ctx.user.name}")
 
-            await utility_cog.send_embed_by_configuration_id(ctx, updated_trade['configuration_id'], embed)
-            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_NOTE command: Note added to trade {trade_id}.")
+            await utility_cog.send_embed_by_configuration_id(ctx, trade_data['configuration_id'], embed)
+            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OS_NOTE command: Note added to trade {strategy_id}.")
 
         except Exception as e:
             logger.error(f"Error adding note to options strategy trade: {str(e)}")

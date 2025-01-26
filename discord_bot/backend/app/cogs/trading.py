@@ -11,7 +11,7 @@ import traceback
 
 from ..supabase_client import (
     create_trade, add_to_trade, trim_trade, exit_trade,
-    get_trade_by_id, get_open_trades_for_autocomplete, supabase
+    get_trade_by_id, get_open_trades_for_autocomplete, get_single_trade
 )
 
 logger = logging.getLogger(__name__)
@@ -402,6 +402,36 @@ class TradingCog(commands.Cog):
             logger.error(traceback.format_exc())
             if logging_cog:
                 await logging_cog.log_to_channel(ctx.guild, f"Error in EXIT command by {ctx.user.name}: {str(e)}")
+
+    @commands.slash_command(name="note", description="Add a note to an existing trade")
+    async def note_action(
+        self,
+        ctx: discord.ApplicationContext,
+        trade_id: discord.Option(str, description="The ID of the trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)),
+        note: discord.Option(str, description="The note to add")
+    ):
+        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        logging_cog = await self.get_logging_cog()
+        utility_cog = await self.get_utility_cog()
+        try:
+            trade_data = await get_single_trade(trade_id)
+            if not trade_data:
+                await logging_cog.log_to_channel(ctx.guild, f"Trade {trade_id} not found by {ctx.user.name}")
+                return
+
+            embed = discord.Embed(title="Trade Note", color=discord.Color.blue())
+            embed.description = f"{await self.create_trade_oneliner(trade_data, trade_data['average_price'], trade_data['size'])}"
+            embed.add_field(name="Note", value=note, inline=False)
+            embed.set_footer(text=f"Trade ID: {trade_data['trade_id']}")
+
+            await utility_cog.send_embed_by_configuration_id(ctx, trade_data['configuration_id'], embed)
+            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed NOTE command: Note added to trade {trade_id}.")
+
+        except Exception as e:
+            logger.error(f"Error in note_action command: {str(e)}")
+            logger.error(traceback.format_exc())
+            await logging_cog.log_to_channel(ctx.guild, f"Error in NOTE command by {ctx.user.name}: {str(e)}")
+
 
 
 

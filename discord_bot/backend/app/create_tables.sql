@@ -695,3 +695,237 @@ $$ LANGUAGE plpgsql;
 
 -- To run the cleanup and update:
 -- SELECT cleanup_and_update_trades();
+
+-- Function to update options strategy trade based on transactions
+CREATE OR REPLACE FUNCTION update_options_strategy_before_transaction_change()
+RETURNS TRIGGER AS $$
+DECLARE
+    strategy_record options_strategy_trades%ROWTYPE;
+    total_cost DECIMAL := 0;
+    total_size DECIMAL := 0;
+    total_exit_cost DECIMAL := 0;
+    total_exit_size DECIMAL := 0;
+    avg_entry_cost DECIMAL;
+    avg_exit_cost DECIMAL;
+    total_pl DECIMAL;
+BEGIN
+    -- Get the strategy record
+    SELECT * INTO strategy_record
+    FROM options_strategy_trades
+    WHERE strategy_id = COALESCE(NEW.strategy_id, OLD.strategy_id);
+
+    -- Calculate totals from all transactions except the current one being modified
+    WITH entry_totals AS (
+        SELECT 
+            SUM(net_cost * CAST(size AS DECIMAL)) as total_cost,
+            SUM(CAST(size AS DECIMAL)) as total_size
+        FROM options_strategy_transactions
+        WHERE strategy_id = strategy_record.strategy_id
+        AND transaction_id != COALESCE(NEW.transaction_id, OLD.transaction_id)
+        AND transaction_type IN ('OPEN', 'ADD')
+    ),
+    exit_totals AS (
+        SELECT 
+            SUM(net_cost * CAST(size AS DECIMAL)) as total_cost,
+            SUM(CAST(size AS DECIMAL)) as total_size
+        FROM options_strategy_transactions
+        WHERE strategy_id = strategy_record.strategy_id
+        AND transaction_id != COALESCE(NEW.transaction_id, OLD.transaction_id)
+        AND transaction_type IN ('TRIM', 'CLOSE')
+    )
+    SELECT 
+        COALESCE(entry_totals.total_cost, 0),
+        COALESCE(entry_totals.total_size, 0),
+        COALESCE(exit_totals.total_cost, 0),
+        COALESCE(exit_totals.total_size, 0)
+    INTO
+        total_cost, total_size,
+        total_exit_cost, total_exit_size
+    FROM (SELECT 1) t
+    LEFT JOIN entry_totals ON true
+    LEFT JOIN exit_totals ON true;
+
+    -- Add the new/updated transaction to the totals
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        IF NEW.transaction_type IN ('OPEN', 'ADD') THEN
+            total_cost := total_cost + (NEW.net_cost * CAST(NEW.size AS DECIMAL));
+            total_size := total_size + CAST(NEW.size AS DECIMAL);
+        ELSIF NEW.transaction_type IN ('TRIM', 'CLOSE') THEN
+            total_exit_cost := total_exit_cost + (NEW.net_cost * CAST(NEW.size AS DECIMAL));
+            total_exit_size := total_exit_size + CAST(NEW.size AS DECIMAL);
+        END IF;
+    END IF;
+
+    -- Calculate averages and P/L
+    IF total_size > 0 THEN
+        avg_entry_cost := total_cost / total_size;
+    END IF;
+
+    IF total_exit_size > 0 THEN
+        avg_exit_cost := total_exit_cost / total_exit_size;
+        -- For options strategies, P/L is (exit cost - entry cost) for the exited portion
+        total_pl := total_exit_cost - (avg_entry_cost * total_exit_size);
+    END IF;
+
+    -- Update the strategy
+    UPDATE options_strategy_trades
+    SET
+        average_net_cost = COALESCE(avg_entry_cost, average_net_cost),
+        average_exit_cost = COALESCE(avg_exit_cost, average_exit_cost),
+        current_size = CAST(total_size - total_exit_size AS TEXT),
+        profit_loss = COALESCE(total_pl, profit_loss),
+        status = CASE
+            WHEN total_size - total_exit_size <= 0 THEN 'CLOSED'
+            ELSE 'OPEN'
+        END,
+        closed_at = CASE
+            WHEN total_size - total_exit_size <= 0 THEN CURRENT_TIMESTAMP
+            ELSE NULL
+        END,
+        win_loss = CASE
+            WHEN total_size - total_exit_size <= 0 THEN
+                CASE
+                    WHEN COALESCE(total_pl, 0) > 0 THEN 'WIN'
+                    WHEN COALESCE(total_pl, 0) < 0 THEN 'LOSS'
+                    ELSE NULL
+                END
+            ELSE NULL
+        END
+    WHERE strategy_id = strategy_record.strategy_id;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for options strategy transactions
+CREATE TRIGGER options_strategy_transaction_before_change
+    BEFORE INSERT OR UPDATE OR DELETE ON options_strategy_transactions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_options_strategy_before_transaction_change();
+
+-- Function to update all options strategy trades
+CREATE OR REPLACE FUNCTION update_all_options_strategies()
+RETURNS void AS $$
+DECLARE
+    strategy_record options_strategy_trades%ROWTYPE;
+    last_transaction options_strategy_transactions%ROWTYPE;
+BEGIN
+    -- Loop through each strategy
+    FOR strategy_record IN SELECT * FROM options_strategy_trades
+    LOOP
+        RAISE NOTICE 'Processing strategy %', strategy_record.id;
+        
+        -- Find the most recent transaction for this strategy
+        SELECT * INTO last_transaction
+        FROM options_strategy_transactions
+        WHERE strategy_id = strategy_record.strategy_id
+        ORDER BY created_at DESC
+        LIMIT 1;
+        
+        IF FOUND THEN
+            -- Perform a no-op update on the last transaction to trigger recalculation
+            UPDATE options_strategy_transactions
+            SET created_at = created_at
+            WHERE id = last_transaction.id;
+            
+            RAISE NOTICE 'Updated strategy % via transaction %', strategy_record.id, last_transaction.id;
+        ELSE
+            RAISE NOTICE 'No transactions found for strategy %', strategy_record.id;
+        END IF;
+    END LOOP;
+    
+    RAISE NOTICE 'All options strategies have been updated';
+END;
+$$ LANGUAGE plpgsql;
+
+-- To run the update:
+-- SELECT update_all_options_strategies();
+
+-- Function to generate options strategy trade ID
+CREATE OR REPLACE FUNCTION generate_options_strategy_trade_id() RETURNS TEXT AS $$
+DECLARE
+    new_id TEXT;
+BEGIN
+    -- Generate a random 6-character string using uppercase letters and numbers
+    SELECT string_agg(substr('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', ceil(random() * 36)::integer, 1), '')
+    INTO new_id
+    FROM generate_series(1, 6);
+    
+    -- Add 'OST' prefix for Options Strategy Trade
+    new_id := 'OST' || new_id;
+    
+    -- Check if ID already exists and regenerate if needed
+    WHILE EXISTS (SELECT 1 FROM options_strategy_trades WHERE strategy_id = new_id) LOOP
+        SELECT string_agg(substr('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', ceil(random() * 36)::integer, 1), '')
+        INTO new_id
+        FROM generate_series(1, 6);
+        new_id := 'OST' || new_id;
+    END LOOP;
+    
+    RETURN new_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to generate options strategy transaction ID
+CREATE OR REPLACE FUNCTION generate_options_strategy_transaction_id() RETURNS TEXT AS $$
+DECLARE
+    new_id TEXT;
+BEGIN
+    -- Generate a random 6-character string using uppercase letters and numbers
+    SELECT string_agg(substr('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', ceil(random() * 36)::integer, 1), '')
+    INTO new_id
+    FROM generate_series(1, 6);
+    
+    -- Add 'OSTX' prefix for Options Strategy Transaction
+    new_id := 'OSTX' || new_id;
+    
+    -- Check if ID already exists and regenerate if needed
+    WHILE EXISTS (SELECT 1 FROM options_strategy_transactions WHERE transaction_id = new_id) LOOP
+        SELECT string_agg(substr('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', ceil(random() * 36)::integer, 1), '')
+        INTO new_id
+        FROM generate_series(1, 6);
+        new_id := 'OSTX' || new_id;
+    END LOOP;
+    
+    RETURN new_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for auto-generating strategy IDs
+CREATE OR REPLACE FUNCTION set_options_strategy_trade_id()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.strategy_id IS NULL THEN
+        NEW.strategy_id := generate_options_strategy_trade_id();
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for auto-generating transaction IDs
+CREATE OR REPLACE FUNCTION set_options_strategy_transaction_id()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.transaction_id IS NULL THEN
+        NEW.transaction_id := generate_options_strategy_transaction_id();
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create triggers for both tables
+DROP TRIGGER IF EXISTS set_options_strategy_trade_id ON options_strategy_trades;
+CREATE TRIGGER set_options_strategy_trade_id
+    BEFORE INSERT ON options_strategy_trades
+    FOR EACH ROW
+    EXECUTE FUNCTION set_options_strategy_trade_id();
+
+DROP TRIGGER IF EXISTS set_options_strategy_transaction_id ON options_strategy_transactions;
+CREATE TRIGGER set_options_strategy_transaction_id
+    BEFORE INSERT ON options_strategy_transactions
+    FOR EACH ROW
+    EXECUTE FUNCTION set_options_strategy_transaction_id();

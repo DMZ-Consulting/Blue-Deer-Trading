@@ -40,6 +40,14 @@ class UtilityCog(commands.Cog):
         - SPY240119C510 (Standard)
         """
         try:
+            if option_string.startswith('+'):
+                buy_sell = 'BTO'
+                option_string = option_string[1:]
+            elif option_string.startswith('-'):
+                buy_sell = 'STO'
+                option_string = option_string[1:]
+            else:
+                buy_sell = 'BTO'
             # Remove any leading dots (for weeklies)
             clean_string = option_string.strip('.')
             
@@ -79,7 +87,7 @@ class UtilityCog(commands.Cog):
                 'expiration_date': expiration_date,
                 'strike': strike,
                 'option_type': option_type,
-                'trade_type': 'BTO'  # Default to BTO
+                'trade_type': buy_sell
             }
         except Exception as e:
             logger.error(f"Error parsing option symbol: {str(e)}")

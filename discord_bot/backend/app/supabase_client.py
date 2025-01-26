@@ -23,6 +23,11 @@ if not supabase_url or not supabase_key:
 
 supabase = AsyncClient(supabase_url, supabase_key) if supabase_url and supabase_key else None
 
+class TradeStatus:
+    OPEN = 'OPEN'
+    CLOSED = 'CLOSED'
+    CANCELLED = 'CANCELLED'
+
 # Autocomplete functions (direct table access)
 async def get_open_trades_for_autocomplete() -> List[Dict[str, Any]]:
     """Get all open trades directly from the trades table for autocomplete."""
@@ -32,7 +37,7 @@ async def get_open_trades_for_autocomplete() -> List[Dict[str, Any]]:
     try:
         # TODO: All status and types should be capitalized
         #response = await supabase.table('trades').select('*').eq('status', 'open').execute()
-        response = await supabase.table('trades').select('*').in_('status', ['open', 'OPEN']).execute()
+        response = await supabase.table('trades').select('*').in_('status', [TradeStatus.OPEN]).execute()
         return response.data
     except Exception as e:
         logger.error(f"Error getting open trades for autocomplete: {str(e)}")
@@ -44,7 +49,7 @@ async def get_open_os_trades_for_autocomplete() -> List[Dict[str, Any]]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.table('options_strategy_trades').select('*').eq('status', 'open').execute()
+        response = await supabase.table('options_strategy_trades').select('*').eq('status', TradeStatus.OPEN).execute()
         return response.data
     except Exception as e:
         logger.error(f"Error getting open options strategy trades for autocomplete: {str(e)}")
@@ -234,6 +239,13 @@ async def get_trade(trade_id: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Full exception: {traceback.format_exc()}")
         raise
 
+async def get_single_trade(trade_id: str) -> Optional[Dict[str, Any]]:
+    """Get a single trade by ID using direct table access."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+    response = await supabase.table('trades').select('*').eq('trade_id', trade_id).execute()
+    return response.data[0] if response.data else None
+
 async def get_open_trades() -> List[Dict[str, Any]]:
     """Get all open trades using direct table query."""
     if not supabase:
@@ -247,15 +259,24 @@ async def get_open_trades() -> List[Dict[str, Any]]:
         return []
 
 # Options Strategy functions
+
+async def get_os_trade(strategy_id: str) -> Optional[Dict[str, Any]]:
+    """Get an options strategy trade by ID."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+    print(strategy_id)
+    response = await supabase.table('options_strategy_trades').select('*').eq('strategy_id', strategy_id).execute()
+    print(response)
+    return response.data[0] if response.data else None
+
 async def create_os_trade(
     strategy_name: str,
     underlying_symbol: str,
     net_cost: float,
     size: str,
     legs: List[Dict[str, Any]],
+    trade_group: str,
     configuration_id: int,
-    is_day_trade: bool = False,
-    note: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Create a new options strategy trade."""
     if not supabase:
@@ -270,28 +291,35 @@ async def create_os_trade(
                 'strike': leg['strike'],
                 'expiration_date': leg['expiration_date'].isoformat() if leg['expiration_date'] else None,
                 'option_type': leg['option_type'],
-                'size': leg['size'],
-                'net_cost': leg['net_cost']
+                'trade_type': leg['trade_type']
             })
 
-        # Create the trade
-        trade_data = {
-            'name': strategy_name,
-            'underlying_symbol': underlying_symbol,
-            'average_net_cost': net_cost,
-            'current_size': size,
-            'legs': serialized_legs,
-            'configuration_id': configuration_id,
-            'is_day_trade': is_day_trade,
-            'status': 'open',
-            'note': note,
-            'created_at': datetime.utcnow().isoformat()
-        }
+        response = await supabase.functions.invoke(
+            "options-strategies",
+            invoke_options={
+                "body": {
+                    "action": "createOptionsStrategy",
+                    "input": {
+                        "name": strategy_name,
+                        "underlying_symbol": underlying_symbol,
+                        "legs": json.dumps(serialized_legs),
+                        "net_cost": net_cost,
+                        "size": size,
+                        "trade_group": trade_group,
+                        "configuration_id": configuration_id
+                    }
+                }
+            }
+        )
+        
+        if isinstance(response, bytes):
+            response_data = json.loads(response.decode('utf-8'))
+        else:
+            response_data = response
 
-        response = await supabase.table('options_strategy_trades').insert(trade_data).execute()
-        if response.data:
-            logger.info(f"Created options strategy trade: {response.data[0]}")
-            return response.data[0]
+        if response_data:
+            logger.info(f"Created options strategy trade: {response_data}")
+            return response_data
         return None
 
     except Exception as e:
@@ -305,7 +333,7 @@ async def get_open_os_trades() -> List[Dict[str, Any]]:
 
     try:
         response = await supabase.functions.invoke(
-            "trades",
+            "options-strategies",
             invoke_options={"body": {"action": "getOSTrades", "filters": {"status": "OPEN"}}}
         )
         logger.info(f"Edge function raw response: {response}")
@@ -328,7 +356,7 @@ async def get_open_os_trades() -> List[Dict[str, Any]]:
         return []
 
 async def add_to_os_trade(
-    trade_id: str,
+    strategy_id: str,
     net_cost: float,
     size: str,
     note: Optional[str] = None
@@ -339,11 +367,11 @@ async def add_to_os_trade(
 
     try:
         response = await supabase.functions.invoke(
-            "trades",
+            "options-strategies",
             invoke_options={
                 "body": {
-                    "action": "addToOSTrade",
-                    "trade_id": trade_id,
+                    "action": "addToStrategy",
+                    "strategy_id": strategy_id,
                     "net_cost": net_cost,
                     "size": size,
                     "note": note
@@ -370,7 +398,7 @@ async def add_to_os_trade(
         raise
 
 async def trim_os_trade(
-    trade_id: str,
+    strategy_id: str,
     net_cost: float,
     size: str,
     note: Optional[str] = None
@@ -381,11 +409,11 @@ async def trim_os_trade(
 
     try:
         response = await supabase.functions.invoke(
-            "trades",
+            "options-strategies",
             invoke_options={
                 "body": {
-                    "action": "trimOSTrade",
-                    "trade_id": trade_id,
+                    "action": "trimStrategy",
+                    "strategy_id": strategy_id,
                     "net_cost": net_cost,
                     "size": size,
                     "note": note
@@ -412,7 +440,7 @@ async def trim_os_trade(
         raise
 
 async def exit_os_trade(
-    trade_id: str,
+    strategy_id: str,
     net_cost: float,
     note: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -422,11 +450,11 @@ async def exit_os_trade(
 
     try:
         response = await supabase.functions.invoke(
-            "trades",
+            "options-strategies",
             invoke_options={
                 "body": {
-                    "action": "exitOSTrade",
-                    "trade_id": trade_id,
+                    "action": "exitStrategy",
+                    "strategy_id": strategy_id,
                     "net_cost": net_cost,
                     "note": note
                 }
@@ -452,7 +480,7 @@ async def exit_os_trade(
         raise
 
 async def add_note_to_os_trade(
-    trade_id: str,
+    strategy_id: str,
     note: str
 ) -> Dict[str, Any]:
     """Add a note to an options strategy trade."""
@@ -461,11 +489,11 @@ async def add_note_to_os_trade(
 
     try:
         response = await supabase.functions.invoke(
-            "trades",
+            "options-strategies",
             invoke_options={
                 "body": {
-                    "action": "addNoteToOSTrade",
-                    "trade_id": trade_id,
+                    "action": "addNoteToStrategy",
+                    "strategy_id": strategy_id,
                     "note": note
                 }
             }

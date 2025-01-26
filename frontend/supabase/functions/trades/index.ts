@@ -150,7 +150,7 @@ serve(async (req: Request) => {
 
         if (filters) {
           if (filters.status && filters.status !== 'ALL') {
-            query = query.eq('status', filters.status.toLowerCase())
+            query = query.eq('status', filters.status.toUpperCase())
           }
           
           if (filters.configName && filters.configName !== 'all') {
@@ -188,7 +188,7 @@ serve(async (req: Request) => {
             query = query.gte('average_price', filters.minEntryPrice)
           }
 
-          if (filters.weekFilter && filters.status?.toLowerCase() === 'closed') {
+          if (filters.weekFilter && filters.status?.toUpperCase() === TradeStatus.CLOSED) {
             const day = new Date(filters.weekFilter)
             const monday = new Date(day.setDate(day.getDate() - day.getDay()))
             const friday = new Date(day.setDate(day.getDate() + 4))

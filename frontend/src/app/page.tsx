@@ -34,9 +34,10 @@ export default function Home() {
                 <SelectValue placeholder="Select trade group" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="swing_trader">Swing Trader</SelectItem>
                 <SelectItem value="day_trader">Day Trader</SelectItem>
-                <SelectItem value="options_trader">Options Trader</SelectItem>
+                <SelectItem value="swing_trader">Swing Trader</SelectItem>
+                <SelectItem value="long_term_trader">Long Term Trader</SelectItem>
+                <SelectItem value="all">All Groups</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={(value: 'OPEN' | 'CLOSED') => setStatusFilter(value)}>
