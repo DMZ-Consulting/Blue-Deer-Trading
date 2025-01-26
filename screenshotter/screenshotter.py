@@ -13,31 +13,48 @@ from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.firefox.service import Service
 from pyvirtualdisplay import Display
+import platform
 
 def setup_driver():
-    """Set up Firefox WebDriver with virtual display for headless Linux"""
+    """Set up Firefox WebDriver with platform-specific configuration"""
     from selenium.webdriver.firefox.service import Service
     from selenium.webdriver.firefox.options import Options
     
-    # Start virtual display
-    display = Display(visible=0, size=(1920, 1080))
-    display.start()
-    
     options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--width=1920')
     options.add_argument('--height=1080')
     
-    service = Service('/usr/local/bin/geckodriver')
-    
-    try:
-        driver = webdriver.Firefox(service=service, options=options)
-        return driver
-    except Exception as e:
-        display.stop()
-        raise e
+    # Platform specific setup
+    system = platform.system()
+    if system == 'Darwin':  # macOS
+        # For macOS, we use the default geckodriver location from Homebrew
+        service = Service('/opt/homebrew/bin/geckodriver')
+        options.add_argument('--headless')
+        
+        try:
+            driver = webdriver.Firefox(service=service, options=options)
+            return driver
+        except Exception as e:
+            print(f"Error setting up WebDriver: {str(e)}")
+            raise e
+            
+    else:  # Linux
+        # Start virtual display for headless Linux
+        display = Display(visible=0, size=(1920, 1080))
+        display.start()
+        
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        
+        service = Service('/usr/local/bin/geckodriver')
+        
+        try:
+            driver = webdriver.Firefox(service=service, options=options)
+            return driver
+        except Exception as e:
+            display.stop()
+            raise e
 
 def take_table_screenshot(driver, filename):
     """Take a screenshot of the trades table"""
@@ -369,7 +386,8 @@ def send_discord_message(webhook_url, message, image_path=None, avatar_path=None
             print(f"Error sending message: {str(e)}")
 
 def capture_all_trade_views(driver):
-    trade_types = ["Regular Trades", "Options Trades", "Options Strategies"]
+    #trade_types = ["Regular Trades", "Options Trades", "Options Strategies"]
+    trade_types = ["Trades", "Options Strategies"]
     trader_groups = ["Day Trader", "Swing Trader", "Long Term Trader"]
     
     for trade_type in trade_types:
@@ -407,6 +425,31 @@ def capture_all_trade_views(driver):
             filename = f"{trader_group.lower().replace(' ', '_')}_{trade_type.lower().replace(' ', '_')}.png"
             take_table_screenshot(driver, filename)
 
+def handle_login(driver):
+    """Handle the login screen if it appears"""
+    try:
+        # Wait briefly to see if login screen appears
+        password_input = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']"))
+        )
+        
+        # Enter password
+        password_input.send_keys("bluedeer")
+        
+        # Find and click enter button
+        enter_button = driver.find_element(By.XPATH, "//button[text()='Enter']")
+        enter_button.click()
+        
+        # Wait for login to complete
+        time.sleep(2)
+        return True
+    except TimeoutException:
+        # Login screen didn't appear, which is fine
+        return False
+    except Exception as e:
+        print(f"Error during login: {str(e)}")
+        raise
+
 def main():
     if not os.path.exists("screenshots"):
         os.makedirs("screenshots")
@@ -414,22 +457,21 @@ def main():
     driver = setup_driver()
     
     try:
-        driver.get("http://localhost:3000")
+        driver.get("https://blue-deer-trading-dylanzellers-projects.vercel.app/")
         WebDriverWait(driver, 10).until(
             lambda d: d.execute_script("return document.readyState") == "complete"
         )
         time.sleep(2)
 
-        # Change status to open
-        #change_status_to_open(driver)
-        time.sleep(1)
+        # Handle login if needed
+        handle_login(driver)
 
         # Capture all combinations
         capture_all_trade_views(driver)
 
         capture_portfolio_for_all_groups(driver)
 
-        send_screenshot_to_discord(debug=False)
+        #send_screenshot_to_discord(debug=False)
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
