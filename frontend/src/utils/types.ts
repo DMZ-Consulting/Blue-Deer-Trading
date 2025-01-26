@@ -87,7 +87,7 @@ export interface PortfolioStrategyTrade extends PortfolioTrade {
 }
 
 export interface OptionsStrategyTrade {
-  trade_id: string;
+  strategy_id: string;
   name: string;
   underlying_symbol: string;
   status: 'OPEN' | 'CLOSED';
@@ -98,4 +98,7 @@ export interface OptionsStrategyTrade {
   created_at: string;
   closed_at?: string;
   legs: string
+  average_exit_cost: number;
+  win_loss: string;
+  profit_loss: number;
 }

@@ -215,14 +215,14 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
           </TableHeader>
           <TableBody>
             {sortedTrades.map((trade) => (
-              <TableRow key={trade.trade_id}>
+              <TableRow key={trade.strategy_id}>
                 <TableCell>
                   <Button
                     variant="ghost"
-                    onClick={() => toggleExpand(trade.trade_id)}
+                    onClick={() => toggleExpand(trade.strategy_id)}
                     className="h-8 w-8 p-0"
                   >
-                    {expandedTrades.has(trade.trade_id) ? 
+                    {expandedTrades.has(trade.strategy_id) ? 
                       <ChevronUp className="h-4 w-4" /> : 
                       <ChevronDown className="h-4 w-4" />
                     }

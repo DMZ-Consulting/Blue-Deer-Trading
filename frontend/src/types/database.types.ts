@@ -82,8 +82,7 @@ export interface Database {
       }
       options_strategy_trades: {
         Row: {
-          id: number
-          trade_id: string
+          strategy_id: number
           name: string
           underlying_symbol: string
           status: string
@@ -94,12 +93,14 @@ export interface Database {
           legs: string
           net_cost: number
           average_net_cost: number
+          average_exit_cost: number
+          win_loss: string
+          profit_loss: number
           size: string
           current_size: string
         }
         Insert: {
-          id?: number
-          trade_id: string
+          strategy_id: number
           name: string
           underlying_symbol: string
           status: string
@@ -114,8 +115,7 @@ export interface Database {
           current_size: string
         }
         Update: {
-          id?: number
-          trade_id?: string
+          strategy_id?: number
           name?: string
           underlying_symbol?: string
           status?: string
@@ -126,30 +126,33 @@ export interface Database {
           legs?: string
           net_cost?: number
           average_net_cost?: number
+          average_exit_cost?: number
+          win_loss?: string
+          profit_loss?: number
           size?: string
           current_size?: string
         }
       }
       transactions: {
         Row: {
-          id: string
-          trade_id: string
+          transaction_id: string
+          strategy_id: number
           transaction_type: string
           amount: number
           size: string
           created_at: string
         }
         Insert: {
-          id: string
-          trade_id: string
+          transaction_id: string
+          strategy_id: number
           transaction_type: string
           amount: number
           size: string
           created_at?: string
         }
         Update: {
-          id?: string
-          trade_id?: string
+          transaction_id?: string
+          strategy_id?: number
           transaction_type?: string
           amount?: number
           size?: string
@@ -158,7 +161,7 @@ export interface Database {
       }
       options_strategy_transactions: {
         Row: {
-          id: number
+          transaction_id: number
           strategy_id: number
           transaction_type: string
           net_cost: number
@@ -166,7 +169,7 @@ export interface Database {
           created_at: string
         }
         Insert: {
-          id?: number
+          transaction_id?: number
           strategy_id: number
           transaction_type: string
           net_cost: number
@@ -174,7 +177,7 @@ export interface Database {
           created_at?: string
         }
         Update: {
-          id?: number
+          transaction_id?: number
           strategy_id?: number
           transaction_type?: string
           net_cost?: number

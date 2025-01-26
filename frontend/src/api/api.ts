@@ -90,7 +90,7 @@ export const getOptionsStrategyTradesByConfiguration = async (filters: StrategyF
   if (!supabase) return []
   const data = await api.optionsStrategyTrades.getByFilters(filters)
   return data.map(trade => ({
-    trade_id: trade.id.toString(),
+    strategy_id: trade.strategy_id.toString(),
     name: trade.name,
     underlying_symbol: trade.underlying_symbol,
     status: trade.status as 'OPEN' | 'CLOSED',
@@ -100,7 +100,10 @@ export const getOptionsStrategyTradesByConfiguration = async (filters: StrategyF
     current_size: trade.current_size,
     created_at: trade.created_at,
     closed_at: trade.closed_at || undefined,
-    legs: trade.legs
+    legs: trade.legs,
+    average_exit_cost: trade.average_exit_cost,
+    win_loss: trade.win_loss,
+    profit_loss: trade.profit_loss
   }))
 }
 
