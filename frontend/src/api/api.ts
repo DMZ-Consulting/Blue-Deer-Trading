@@ -1,188 +1,324 @@
-import axios from 'axios';
-import { PortfolioEndpoint, StrategyTrade, OptionsStrategyTrade } from '../utils/types';
+import { createClient } from '@supabase/supabase-js'
+import { Database } from '@/types/database.types'
+import { OptionsStrategyTrade as UtilsOptionsStrategyTrade } from '@/utils/types'
 
-const API_BASE_URL = 'http://localhost:8000'; // Update this with your API URL
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-const api = axios.create({
-  baseURL: API_BASE_URL,
-});
+const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient<Database>(supabaseUrl, supabaseAnonKey)
+  : null
 
-export const getTrades = async () => {
-  try {
-    const response = await api.get('/trades');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching trades:', error);
-    throw error;
-  }
-};
-
-export const getTrade = async (tradeId: string) => {
-  try {
-    const response = await api.get(`/trades/${tradeId}`);
-    return response.data;
-  } catch (error) {
-    console.error(`Error fetching trade ${tradeId}:`, error);
-    throw error;
-  }
-};
-
-interface FilterOptions {
-  status?: string;
-  startDate?: string;
-  endDate?: string;
-  //timeFrame?: string;
-  weekFilter?: string;
-  monthFilter?: string;
-  yearFilter?: string;
-  optionType?: string;
+type Trade = Database['public']['Tables']['trades']['Row'] & {
+  trade_configurations: Database['public']['Tables']['trade_configurations']['Row'] | null
 }
 
-export async function getTradesByConfiguration(configName: string, options: {
-  status: string;
-  weekFilter: string;
-  optionType?: string;
-  symbol?: string;
-  tradeGroup?: string;
-  minEntryPrice?: number;
-  maxEntryPrice?: number;
-  showAllTrades?: boolean;
-}) {
-  try {
-    const queryParams = new URLSearchParams();
-
-    if (configName !== "all") {
-      queryParams.append('configName', configName);
-    }
-    
-    if (options.status !== "all") {
-      queryParams.append('status', options.status);
-    }
-    
-    if (options.weekFilter) {
-      queryParams.append('weekFilter', options.weekFilter);
-    }
-    
-    // Only append optionType if it's defined
-    if (options.optionType) {
-      queryParams.append('optionType', options.optionType);
-      console.log("Setting option_type to:", options.optionType);
-    }
-    
-    if (options.symbol) {
-      queryParams.append('symbol', options.symbol);
-    }
-    
-    if (options.tradeGroup) {
-      queryParams.append('configName', options.tradeGroup);
-    }
-    
-    if (options.minEntryPrice) {
-      queryParams.append('minEntryPrice', String(options.minEntryPrice));
-    }
-    
-    if (options.maxEntryPrice) {
-      queryParams.append('maxEntryPrice', String(options.maxEntryPrice));
-    }
-    
-    if (options.showAllTrades) {
-      queryParams.append('showAllTrades', String(options.showAllTrades));
-    }
-
-    console.log("API Request URL:", `/trades?${queryParams.toString()}`);
-    const response = await api.get(`/trades?${queryParams.toString()}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching trades:', error);
-    throw error;
-  }
+type DatabaseOptionsStrategyTrade = Database['public']['Tables']['options_strategy_trades']['Row'] & {
+  trade_configurations: Database['public']['Tables']['trade_configurations']['Row'] | null
 }
 
-export async function getStrategyTradesByConfiguration(configName: string, filterOptions: FilterOptions): Promise<StrategyTrade[]> {
-  const queryParams = new URLSearchParams();
-  queryParams.append('configName', configName);
-  Object.entries(filterOptions).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      queryParams.append(key, value);
-    }
-  });
-  const response = await api.get(`/strategy_trades?${queryParams.toString()}`);
-  return response.data;
+type Transaction = Database['public']['Tables']['transactions']['Row']
+type OptionsStrategyTransaction = Database['public']['Tables']['options_strategy_transactions']['Row']
+type TradeConfiguration = Database['public']['Tables']['trade_configurations']['Row']
+
+interface TradeFilters {
+  configName: string
+  status?: 'ALL' | 'OPEN' | 'CLOSED'
+  skip?: number
+  limit?: number
+  symbol?: string
+  tradeType?: string
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  weekFilter?: string
+  monthFilter?: string
+  yearFilter?: string
+  optionType?: 'options' | 'common'
+  maxEntryPrice?: number
+  minEntryPrice?: number
+  showAllTrades?: boolean
 }
 
-export async function getPortfolio(configName: string, filterOptions: FilterOptions): Promise<PortfolioEndpoint> {
-  const queryParams = new URLSearchParams();
-  
-  queryParams.append('configName', configName);
-  Object.entries(filterOptions).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      queryParams.append(key, value);
-    }
-  });
-
-  const response = await api.get(`/portfolio?${queryParams.toString()}`);
-  if (response.status !== 200) {
-    throw new Error('Failed to fetch portfolio');
-  }
-  return response.data;
+interface StrategyFilters {
+  skip?: number
+  limit?: number
+  status?: 'OPEN' | 'CLOSED'
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  configName?: string
+  weekFilter?: string
 }
 
-// Add a new function to handle data refresh
-/*export const refreshData = async (configName: string, filterOptions: FilterOptions) => {
-  try {
-    const [tradesResponse, portfolioResponse] = await Promise.all([
-      getTradesByConfiguration(configName, filterOptions),
-      getPortfolio(configName, filterOptions)
-    ]);
-    
-    return {
-      trades: tradesResponse,
-      portfolio: portfolioResponse
-    };
-  } catch (error) {
-    console.error('Error refreshing data:', error);
-    throw error;
-  }
-};*/
-
-// Add more API functions as needed
-
-export async function getOptionsStrategyTradesByConfiguration(
-  configName: string,
-  status: string,
-  date?: string
-): Promise<OptionsStrategyTrade[]> {
-  const params = new URLSearchParams({
-    configName: configName,
-    status: status,
-    ...(date && { date: date }),
-  });
-
-  try {
-    const response = await api.get(`/strategy_trades?${params.toString()}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching options strategy trades:', error);
-    throw new Error('Failed to fetch options strategy trades');
-  }
+interface PortfolioFilters {
+  skip?: number
+  limit?: number
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  configName?: string
+  weekFilter?: string
 }
 
 export interface MonthlyPL {
-  month: string;
-  profit_loss: number;
+  month: string
+  profit_loss: number
 }
 
-export async function getMonthlyPL(configName: string): Promise<MonthlyPL[]> {
-  const queryParams = new URLSearchParams();
-  if (configName) {
-    queryParams.append('configName', configName);
-  }
+interface PortfolioStats {
+  totalTrades: number
+  winRate: number
+  averageWin: number
+  averageLoss: number
+  profitFactor: number
+  totalProfitLoss: number
+  averageRiskRewardRatio: number
+}
 
-  try {
-    const response = await api.get(`/portfolio/monthly-pl?${queryParams.toString()}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching monthly P/L:', error);
-    throw error;
+interface PortfolioStatsFilters {
+  configName: string
+  status: string
+  weekFilter?: string
+  optionType?: string
+}
+
+// Helper functions
+export const getTradesByConfiguration = async (filters: TradeFilters): Promise<Trade[]> => {
+  if (!supabase) return []
+  return api.trades.getByFilters(filters)
+}
+
+export const getOptionsStrategyTradesByConfiguration = async (filters: StrategyFilters): Promise<UtilsOptionsStrategyTrade[]> => {
+  if (!supabase) return []
+  const data = await api.optionsStrategyTrades.getByFilters(filters)
+  return data.map(trade => ({
+    strategy_id: trade.strategy_id.toString(),
+    name: trade.name,
+    underlying_symbol: trade.underlying_symbol,
+    status: trade.status as 'OPEN' | 'CLOSED',
+    net_cost: trade.net_cost,
+    average_net_cost: trade.average_net_cost,
+    size: trade.size,
+    current_size: trade.current_size,
+    created_at: trade.created_at,
+    closed_at: trade.closed_at || undefined,
+    legs: trade.legs,
+    average_exit_cost: trade.average_exit_cost,
+    win_loss: trade.win_loss,
+    profit_loss: trade.profit_loss
+  }))
+}
+
+export const getPortfolio = async (filters: PortfolioFilters) => {
+  if (!supabase) return { regular_trades: [], strategy_trades: [] }
+  return api.portfolio.getTrades(filters)
+}
+
+export const getMonthlyPL = async (configName: string) => {
+  if (!supabase) return []
+  return api.portfolio.getMonthlyPL(configName)
+}
+
+export const api = {
+  trades: {
+    getAll: async (): Promise<Trade[]> => {
+      if (!supabase) return []
+      const { data, error } = await supabase.functions.invoke('trades', {
+        body: { action: 'getAll' }
+      })
+      if (error) throw error
+      return data
+    },
+
+    getByFilters: async (filters: TradeFilters): Promise<Trade[]> => {
+      if (!supabase) return []
+      const { data, error } = await supabase.functions.invoke('trades', {
+        body: { action: 'getTrades', filters }
+      })
+      if (error) throw error
+      return data
+    },
+
+    create: async (input: {
+      symbol: string
+      trade_type: string
+      entry_price: number
+      size: string
+      expiration_date?: string
+      strike?: number
+      configuration_id?: number
+      is_contract?: boolean
+      is_day_trade?: boolean
+      option_type?: string
+    }): Promise<Trade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('trades', {
+        body: { action: 'createTrade', input }
+      })
+      if (error) throw error
+      return data
+    },
+
+    addToTrade: async (trade_id: string, price: number, size: string): Promise<Trade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('trades', {
+        body: { action: 'addToTrade', trade_id, price, size }
+      })
+      if (error) throw error
+      return data
+    },
+
+    trimTrade: async (trade_id: string, price: number, size: string): Promise<Trade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('trades', {
+        body: { action: 'trimTrade', trade_id, price, size }
+      })
+      if (error) throw error
+      return data
+    },
+
+    exitTrade: async (trade_id: string, price: number): Promise<Trade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('trades', {
+        body: { action: 'exitTrade', trade_id, price }
+      })
+      if (error) throw error
+      return data
+    }
+  },
+
+  optionsStrategyTrades: {
+    getAll: async (): Promise<DatabaseOptionsStrategyTrade[]> => {
+      if (!supabase) return []
+      const { data, error } = await supabase.functions.invoke('options-strategies', {
+        body: { action: 'getAll' }
+      })
+      if (error) throw error
+      return data
+    },
+
+    getByFilters: async (filters: StrategyFilters): Promise<DatabaseOptionsStrategyTrade[]> => {
+      if (!supabase) return []
+      const { data, error } = await supabase.functions.invoke('options-strategies', {
+        body: { action: 'getStrategyTrades', filters }
+      })
+      if (error) throw error
+      return data
+    },
+
+    create: async (input: {
+      name: string
+      underlying_symbol: string
+      legs: string
+      net_cost: number
+      size: string
+      trade_group?: string
+      configuration_id?: number
+    }): Promise<DatabaseOptionsStrategyTrade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('options-strategies', {
+        body: { action: 'createOptionsStrategy', input }
+      })
+      if (error) throw error
+      return data
+    },
+
+    addToStrategy: async (strategy_id: number, net_cost: number, size: string): Promise<DatabaseOptionsStrategyTrade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('options-strategies', {
+        body: { action: 'addToStrategy', strategy_id, net_cost, size }
+      })
+      if (error) throw error
+      return data
+    },
+
+    trimStrategy: async (strategy_id: number, net_cost: number, size: string): Promise<DatabaseOptionsStrategyTrade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('options-strategies', {
+        body: { action: 'trimStrategy', strategy_id, net_cost, size }
+      })
+      if (error) throw error
+      return data
+    },
+
+    exitStrategy: async (strategy_id: number, net_cost: number): Promise<DatabaseOptionsStrategyTrade> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('options-strategies', {
+        body: { action: 'exitStrategy', strategy_id, net_cost }
+      })
+      if (error) throw error
+      return data
+    }
+  },
+
+  portfolio: {
+    getTrades: async (filters: PortfolioFilters) => {
+      if (!supabase) return { regular_trades: [], strategy_trades: [] }
+      const { data, error } = await supabase.functions.invoke('portfolio', {
+        body: { action: 'getPortfolioTrades', filters }
+      })
+      if (error) throw error
+      return data
+    },
+
+    getMonthlyPL: async (configName?: string) => {
+      if (!supabase) return []
+      const { data, error } = await supabase.functions.invoke('portfolio', {
+        body: { action: 'getMonthlyPL', configName }
+      })
+      if (error) throw error
+      return data
+    },
+
+    getStats: async (filters: PortfolioStatsFilters): Promise<PortfolioStats> => {
+      if (!supabase) return {
+        totalTrades: 0,
+        winRate: 0,
+        averageWin: 0,
+        averageLoss: 0,
+        profitFactor: 0,
+        totalProfitLoss: 0,
+        averageRiskRewardRatio: 0
+      }
+      const { data, error } = await supabase.functions.invoke('portfolio', {
+        body: { action: 'getStats', filters }
+      })
+      if (error) throw error
+      return data
+    }
+  },
+
+  tradeConfigurations: {
+    getAll: async (): Promise<TradeConfiguration[]> => {
+      if (!supabase) return []
+      const { data, error } = await supabase
+        .from('trade_configurations')
+        .select('*')
+        .order('name', { ascending: true })
+      if (error) throw error
+      return data
+    }
   }
+}
+
+export async function deleteTransaction(transactionId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase client not initialized');
+  
+  const { error } = await supabase.functions.invoke('transactions', {
+    body: { action: 'deleteTransaction', transactionId }
+  });
+  
+  if (error) throw error;
+}
+
+export async function updateTransaction(transactionId: string, data: {
+  transaction_type: string;
+  amount: number;
+  size: string;
+}): Promise<void> {
+  if (!supabase) throw new Error('Supabase client not initialized');
+  
+  const { error } = await supabase.functions.invoke('transactions', {
+    body: { action: 'updateTransaction', transactionId, data }
+  });
+  
+  if (error) throw error;
 }

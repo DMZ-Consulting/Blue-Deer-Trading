@@ -4,21 +4,25 @@ export interface Trade {
   trade_id: string
   symbol: string
   trade_type: string
-  status: string
+  status: 'OPEN' | 'CLOSED'
   entry_price: number
-  average_price: number
-  current_size: number
+  average_price: number | null
+  current_size: string | null
+  size: string
   is_contract: boolean
   created_at: string
-  closed_at?: string
-  exit_price?: number
-  profit_loss?: number
-  risk_reward_ratio?: number
-  win_loss?: string
+  closed_at: string | null
+  exit_price: number | null
+  profit_loss: number | null
+  risk_reward_ratio: number | null
+  win_loss: string | null
   transactions?: Transaction[]
-  expiration_date?: string
-  option_type?: string
-  strike?: number
+  expiration_date: string | null
+  option_type: string | null
+  strike: number | null
+  trade_configurations?: {
+    name: string
+  } | null
 }
 
 export interface StrategyTransaction {
@@ -83,7 +87,7 @@ export interface PortfolioStrategyTrade extends PortfolioTrade {
 }
 
 export interface OptionsStrategyTrade {
-  trade_id: string;
+  strategy_id: string;
   name: string;
   underlying_symbol: string;
   status: 'OPEN' | 'CLOSED';
@@ -94,4 +98,7 @@ export interface OptionsStrategyTrade {
   created_at: string;
   closed_at?: string;
   legs: string
+  average_exit_cost: number;
+  win_loss: string;
+  profit_loss: number;
 }

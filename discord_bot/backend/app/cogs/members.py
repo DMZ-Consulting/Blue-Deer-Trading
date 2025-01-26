@@ -1,3 +1,5 @@
+# type: ignore[type-arg]
+
 import discord
 from discord.ext import commands
 import logging
@@ -13,26 +15,6 @@ class Members(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_member = None
-        print("Members cog initialized")  # Debug print
-        
-    '''@discord.slash_command(name="member_cog_test", description="Test if the members cog is working")
-    async def test_members_cog(self, ctx):
-        print("Test command received in Members cog")
-        await ctx.respond("Members cog is working!", ephemeral=True)
-
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """Test event to verify the cog is loaded"""
-        print("Members cog is ready!")
-        logger.info("Members cog is ready!")
-
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        """Test event to verify basic event handling"""
-        if message.author == self.bot.user:
-            return
-        print(f"Message received in Members cog: {message.content[:20]}...")
-        logger.info(f"Message received in Members cog from {message.author.name}")'''
 
     @commands.Cog.listener()
     async def on_member_join(self, member):

@@ -71,6 +71,7 @@ def get_db():
 class SortOrder(str, Enum):
     asc = "asc"
     desc = "desc"
+
 @app.get("/trades", response_model=List[schemas.Trade])
 def read_trades(
     skip: int = Query(0, ge=0, description="Number of trades to skip"),
