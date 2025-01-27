@@ -30,9 +30,12 @@ class LoggingCog(commands.Cog):
                 log_channel_id = 1283513132546920650
             else:
                 # Get log channel from Supabase configuration
-                config = supabase.table('bot_configuration').select('log_channel_id').single().execute()
+                config = await supabase.table('bot_configuration').select('log_channel_id').single().execute()
                 if config and config.get('log_channel_id', None):
                     log_channel_id = config.get('log_channel_id')
+                else:
+                    logger.error("No log channel ID found in Supabase configuration")
+                    return
 
             log_channel = guild.get_channel(int(log_channel_id))
             if log_channel:
