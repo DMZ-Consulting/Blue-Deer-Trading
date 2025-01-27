@@ -556,7 +556,7 @@ async def get_verification_config(message_id: str) -> Dict[str, Any]:
     if not supabase:
         raise Exception("Supabase client not initialized")
 
-    return await supabase.table('verification_config').select('*').eq('message_id', message_id).single()
+    return await supabase.table('verification_configs').select('*').eq('message_id', message_id).single()
 
 async def add_verification_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Add a new verification config."""
@@ -565,7 +565,7 @@ async def add_verification_config(config: Dict[str, Any]) -> Dict[str, Any]:
     
     # Convert SQLAlchemy model to dict if needed
     config_data = config.to_dict() if hasattr(config, 'to_dict') else config
-    return await supabase.table('verification_config').insert(config_data).execute()
+    return await supabase.table('verification_configs').insert(config_data).execute()
 
 async def add_verification(verification: Dict[str, Any]) -> Dict[str, Any]:
     """Add a new verification."""

@@ -23,7 +23,7 @@ class VerificationModal(discord.ui.Modal):
         self.role_to_remove = role_to_remove
         self.role_to_add = role_to_add
 
-        self.agree_to_terms = discord.ui.TextInput(
+        self.agree_to_terms = discord.ui.InputText(
             label="Do you agree to the terms? (Yes/No)",
             placeholder="Type 'Yes' to agree",
             required=True,
@@ -32,7 +32,7 @@ class VerificationModal(discord.ui.Modal):
         )
         self.add_item(self.agree_to_terms)
 
-        self.full_name = discord.ui.TextInput(
+        self.full_name = discord.ui.InputText(
             label="Full Name",
             placeholder="Enter your full name",
             required=True,
@@ -41,7 +41,7 @@ class VerificationModal(discord.ui.Modal):
         )
         self.add_item(self.full_name)
 
-        self.email = discord.ui.TextInput(
+        self.email = discord.ui.InputText(
             label="Email Address",
             placeholder="Enter your email address",
             required=True,
