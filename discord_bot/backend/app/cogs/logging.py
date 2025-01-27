@@ -31,8 +31,8 @@ class LoggingCog(commands.Cog):
             else:
                 # Get log channel from Supabase configuration
                 config = supabase.table('bot_configuration').select('log_channel_id').single().execute()
-                if config and config.data and config.data.get('log_channel_id'):
-                    log_channel_id = config.data['log_channel_id']
+                if config and config.get('log_channel_id', None):
+                    log_channel_id = config.get('log_channel_id')
 
             log_channel = guild.get_channel(int(log_channel_id))
             if log_channel:
