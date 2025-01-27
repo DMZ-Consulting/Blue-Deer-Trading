@@ -95,8 +95,8 @@ class VerificationModal(discord.ui.Modal):
 class VerificationButton(discord.ui.Button):
     def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role):
         super().__init__(
-            label="Verify",
-            style=discord.ButtonStyle.primary,
+            label="Start Verification",
+            style=discord.ButtonStyle.success,
             custom_id="verify_button"
         )
         self.bot = bot
