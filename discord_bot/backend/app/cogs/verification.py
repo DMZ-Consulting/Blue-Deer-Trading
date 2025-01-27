@@ -168,13 +168,13 @@ class VerificationCog(commands.Cog):
             verification_message = await channel.send(embed=embed, view=view)
 
             # Save verification configuration
-            await add_verification_config(
-                channel_id=str(channel.id),
-                message_id=str(verification_message.id),
-                role_to_remove_id=str(role_to_remove.id),
-                role_to_add_id=str(role_to_add.id),
-                log_channel_id=str(log_channel.id)
-            )
+            await add_verification_config({
+                'channel_id': str(channel.id),
+                'message_id': str(verification_message.id),
+                'role_to_remove_id': str(role_to_remove.id),
+                'role_to_add_id': str(role_to_add.id),
+                'log_channel_id': str(log_channel.id)
+            })
 
             await ctx.followup.send(
                 f"Verification message has been set up in {channel.mention}. "
