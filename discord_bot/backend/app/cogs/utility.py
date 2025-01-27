@@ -188,5 +188,36 @@ class UtilityCog(commands.Cog):
             logger.error(f"Error sending embed by configuration ID: {str(e)}")
             logger.error(traceback.format_exc())
 
+    @commands.slash_command(name="wl", description="Send a watchlist update")
+    async def watchlist_update(
+        self,
+        ctx: discord.ApplicationContext,
+        message: discord.Option(str, description="The watchlist update message")
+    ):
+        logging_cog = self.bot.get_cog('LoggingCog')
+        try:
+            config = await supabase.table('bot_configurations').select('watchlist_channel_id').single().execute()
+            if not config or not config.data or not config.data.get('watchlist_channel_id', None):
+                await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed WL command: Watchlist channel not configured. Use /set_watchlist_channel first.")
+                await ctx.response.defer(ephemeral=True)
+                return
+
+            channel = ctx.guild.get_channel(int(config.data.get('watchlist_channel_id', None)))
+            if not channel:
+                await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed WL command: Configured watchlist channel not found.")
+                await ctx.response.defer(ephemeral=True)
+                return
+
+            embed = discord.Embed(title="Watchlist Update", description=message, color=discord.Color.blue())
+            embed.set_footer(text=f"Posted by {ctx.user.name}")
+            await channel.send(embed=embed)
+            await ctx.response.send_message("Watchlist update sent successfully.", ephemeral=True)
+            await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed WL command: Watchlist update sent successfully.")
+        except Exception as e:
+            logger.error(f"Error sending watchlist update: {str(e)}")
+            logger.error(traceback.format_exc())
+            await logging_cog.log_to_channel(ctx.guild, f"Error in WL command by {ctx.user.name}: {str(e)}")
+            await ctx.response.defer(ephemeral=True)
+
 def setup(bot):
     bot.add_cog(UtilityCog(bot)) 
