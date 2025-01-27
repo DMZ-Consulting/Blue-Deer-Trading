@@ -169,11 +169,8 @@ class VerificationCog(commands.Cog):
 
             # Save verification configuration
             await add_verification_config(
-                guild_id=str(ctx.guild.id),
                 channel_id=str(channel.id),
                 message_id=str(verification_message.id),
-                terms_link=terms_link,
-                terms_summary=terms_summary,
                 role_to_remove_id=str(role_to_remove.id),
                 role_to_add_id=str(role_to_add.id),
                 log_channel_id=str(log_channel.id)
