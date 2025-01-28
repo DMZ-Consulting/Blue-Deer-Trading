@@ -159,7 +159,7 @@ class OptionsStrategyCog(commands.Cog):
                 # Add leg details
                 for i, leg in enumerate(leg_list, 1):
                     leg_str = (
-                        f"{leg['symbol']} ${leg['strike']:,.2f} "
+                        f"{leg['trade_type']} {leg['symbol']} ${leg['strike']:,.2f} "
                         f"{leg['expiration_date'].strftime('%m/%d/%y')} {leg['option_type']}"
                     )
                     embed.add_field(name=f"Leg {i}", value=leg_str, inline=False)
