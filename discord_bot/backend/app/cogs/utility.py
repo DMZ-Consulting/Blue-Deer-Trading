@@ -163,8 +163,6 @@ class UtilityCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error determining trade group: {str(e)}")
             return "day_trader"  # Default to day trader on error'''
-        
-    @
 
     @staticmethod
     async def get_configuration(trade_group: str):
