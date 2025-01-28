@@ -89,7 +89,12 @@ class UtilityCog(commands.Cog):
                 raise ValueError("No strike price found in option symbol")
             
             # Convert strike price (handle decimal point)
-            strike = float(strike_str) / 1000 if len(strike_str) >= 4 else float(strike_str)
+            if '.' in strike_str:
+                strike = float(strike_str)
+            elif len(strike_str) > 4:
+                strike = float(strike_str) / 1000
+            else:
+                strike = int(strike_str)
             
             return {
                 'symbol': symbol,
