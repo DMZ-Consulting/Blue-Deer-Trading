@@ -176,7 +176,7 @@ class UtilityCog(commands.Cog):
             }
         
         try:
-            response = supabase.table('trade_configurations').select('*').eq('name', trade_group).single().execute()
+            response = await supabase.table('trade_configurations').select('*').eq('name', trade_group).single().execute()
             return response.data if response.data else None
         except Exception as e:
             logger.error(f"Error getting trade configuration: {str(e)}")
@@ -206,7 +206,7 @@ class UtilityCog(commands.Cog):
             }
         
         try:
-            response = supabase.table('trade_configurations').select('*').eq('id', configuration_id).single().execute()
+            response = await supabase.table('trade_configurations').select('*').eq('id', configuration_id).single().execute()
             return response.data if response.data else None
         except Exception as e:
             logger.error(f"Error getting trade configuration: {str(e)}")
