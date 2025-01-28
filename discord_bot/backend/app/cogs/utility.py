@@ -10,6 +10,15 @@ from ..supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
+class TradeGroupEnum:
+    DAY_TRADER = "day_trader"
+    SWING_TRADER = "swing_trader"
+    LONG_TERM_TRADER = "long_term_trader"
+    
+    @staticmethod
+    def get_trade_group(expiration_date: str, trade_type: str, symbol: str) -> str:
+        return UtilityCog.determine_trade_group(expiration_date, trade_type, symbol)
+
 class UtilityCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -100,7 +109,37 @@ class UtilityCog(commands.Cog):
         if os.getenv("LOCAL_TEST", "false").lower() == "true":
             return "day_trader"
         
+        if symbol == "ES":
+            return TradeGroupEnum.DAY_TRADER
+        
+        if not expiration_date and (trade_type == "sto" or trade_type == "bto"):
+            return TradeGroupEnum.SWING_TRADER
+        
         try:
+            # Try parsing with 2-digit year first
+            exp_date = datetime.strptime(expiration_date, "%m/%d/%y").date()
+        except ValueError:
+            try:
+                # If that fails, try with 4-digit year
+                exp_date = datetime.strptime(expiration_date, "%m/%d/%Y").date()
+            except ValueError:
+                # If both fail, return default
+                return TradeGroupEnum.SWING_TRADER
+        
+        days_to_expiration = (exp_date - datetime.now().date()).days
+        print("days_to_expiration", days_to_expiration)
+        
+        if days_to_expiration <= 3:
+            print(f"Returning DAY_TRADER for {expiration_date}")
+            return TradeGroupEnum.DAY_TRADER
+        elif days_to_expiration <= 90:
+            print(f"Returning SWING_TRADER for {expiration_date}")
+            return TradeGroupEnum.SWING_TRADER
+        else:
+            print(f"Returning LONG_TERM_TRADER for {expiration_date}")
+            return TradeGroupEnum.LONG_TERM_TRADER
+        
+        '''try:
             # Get trade group configuration from Supabase
             config = await supabase.table('trade_group_rules').select('*').execute()
             if not config.data:
@@ -123,7 +162,9 @@ class UtilityCog(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error determining trade group: {str(e)}")
-            return "day_trader"  # Default to day trader on error
+            return "day_trader"  # Default to day trader on error'''
+        
+    @
 
     @staticmethod
     async def get_configuration(trade_group: str):
