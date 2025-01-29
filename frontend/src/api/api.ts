@@ -112,7 +112,7 @@ export const getPortfolio = async (filters: PortfolioFilters) => {
   return api.portfolio.getTrades(filters)
 }
 
-export const getMonthlyPL = async (configName: string) => {
+export const getMonthlyPL = async (configName?: string) => {
   if (!supabase) return []
   return api.portfolio.getMonthlyPL(configName)
 }

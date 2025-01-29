@@ -41,6 +41,12 @@ export function Header() {
               Portfolio View
             </Link>
             <Link
+              href="/reports"
+              className={pathname === "/reports" ? "text-foreground" : "text-foreground/60 transition-colors hover:text-foreground"}
+            >
+              Reports
+            </Link>
+            <Link
               href="/search"
               className={pathname === "/search" ? "text-foreground" : "text-foreground/60 transition-colors hover:text-foreground"}
             >
