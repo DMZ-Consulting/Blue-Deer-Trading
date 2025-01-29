@@ -24,11 +24,11 @@ class VerificationModal(discord.ui.Modal):
         self.role_to_add = role_to_add
 
         self.agree_to_terms = discord.ui.InputText(
-            label="Do you agree to the terms? (Yes/No)",
-            placeholder="Type 'Yes' to agree",
+            label="You must agree to the terms by typing 'I AGREE'.",
+            placeholder="Type 'I AGREE' to agree",
             required=True,
-            min_length=2,
-            max_length=3
+            min_length=7,
+            max_length=7
         )
         self.add_item(self.agree_to_terms)
 
@@ -51,7 +51,7 @@ class VerificationModal(discord.ui.Modal):
         self.add_item(self.email)
 
     async def callback(self, interaction: discord.Interaction):
-        if self.agree_to_terms.value.lower() != "yes":
+        if self.agree_to_terms.value.upper() != "I AGREE":
             await interaction.response.send_message("You must agree to the terms to proceed.", ephemeral=True)
             return
 
@@ -122,7 +122,55 @@ class VerificationView(discord.ui.View):
 
 class VerificationCog(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: discord.Bot = bot
+        self.bot.loop.create_task(self.load_verification_configs())
+
+    async def load_verification_configs(self):
+        """Load all verification configurations from database on startup"""
+        try:
+            # Wait for bot to be ready
+            await self.bot.wait_until_ready()
+            
+            # Get all verification configs from database
+            configs = await get_verification_config()
+            
+            for config in configs:
+                try:
+                    channel = self.bot.get_channel(int(config['channel_id']))
+                    if not channel:
+                        continue
+
+                    # Get the message
+                    try:
+                        message = await channel.fetch_message(int(config['message_id']))
+                    except discord.NotFound:
+                        logger.warning(f"Verification message {config['message_id']} not found in channel {channel.id}")
+                        continue
+
+                    # Get the roles
+                    guild = channel.guild
+                    role_to_remove = guild.get_role(int(config['role_to_remove_id']))
+                    role_to_add = guild.get_role(int(config['role_to_add_id']))
+
+                    # Create and set up the view
+                    view = VerificationView(
+                        self.bot,
+                        config['terms_link'],
+                        config['terms_summary'],
+                        role_to_remove,
+                        role_to_add
+                    )
+                    
+                    # Add the view to the message
+                    self.bot.add_view(view, message_id=int(config['message_id']))
+                    
+                except Exception as e:
+                    logger.error(f"Error loading verification config: {str(e)}")
+                    logger.error(traceback.format_exc())
+
+        except Exception as e:
+            logger.error(f"Error in load_verification_configs: {str(e)}")
+            logger.error(traceback.format_exc())
 
     async def get_logging_cog(self):
         return self.bot.get_cog('LoggingCog')
@@ -149,7 +197,7 @@ class VerificationCog(commands.Cog):
                 description=(
                     f"Please read our terms and conditions before proceeding:\n\n"
                     f"**Terms Summary:**\n{terms_summary}\n\n"
-                    f"**Full Terms:**\n{terms_link}\n\n"
+                    f"**Full Terms:**\n[CLICK HERE]({terms_link})\n\n"
                     f"Click the button below to verify and agree to the terms."
                 ),
                 color=discord.Color.blue()

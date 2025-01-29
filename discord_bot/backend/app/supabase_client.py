@@ -551,12 +551,14 @@ async def reopen_trade(trade_id: str) -> Dict[str, Any]:
         logger.error(f"Error reopening trade: {str(e)}")
         raise 
 
-async def get_verification_config(message_id: str) -> Dict[str, Any]:
-    """Get the verification config for a message."""
-    if not supabase:
-        raise Exception("Supabase client not initialized")
-
-    return await supabase.table('verification_configs').select('*').eq('message_id', message_id).single()
+async def get_verification_config() -> list[dict]:
+    """Get all verification configurations"""
+    try:
+        response = await supabase.table('verification_configs').select('*').execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Error getting verification config: {str(e)}")
+        return []
 
 async def add_verification_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Add a new verification config."""
