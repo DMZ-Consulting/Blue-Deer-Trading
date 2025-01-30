@@ -7,9 +7,9 @@ import traceback
 from datetime import datetime
 
 from ..supabase_client import (
-    get_verification_config,
+    get_verification_configs,
     add_verification_config,
-    add_verification
+    add_verification    
 )
 
 logger = logging.getLogger(__name__)
@@ -132,7 +132,7 @@ class VerificationCog(commands.Cog):
             await self.bot.wait_until_ready()
             
             # Get all verification configs from database
-            configs = await get_verification_config()
+            configs = await get_verification_configs()
             
             for config in configs:
                 try:

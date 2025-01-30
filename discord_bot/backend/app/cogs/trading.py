@@ -183,7 +183,7 @@ class TradingCog(commands.Cog):
                 return
 
             # Create trade using Supabase edge function
-            response = await create_trade(
+            trade_data = await create_trade(
                 symbol=parsed['symbol'],
                 trade_type=parsed['trade_type'],
                 entry_price=price,
@@ -196,7 +196,6 @@ class TradingCog(commands.Cog):
                 option_type=parsed['option_type']
             )
 
-            trade_data = response['trade']
             if trade_data:
                 # Create and send embed
                 embed = discord.Embed(title="New Trade Opened", color=discord.Color.green())
@@ -214,6 +213,9 @@ class TradingCog(commands.Cog):
 
                 await utility_cog.send_embed_by_configuration_id(ctx, config['id'], embed)
                 await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed OPEN command: Trade has been opened successfully.")
+
+            else:
+                await logging_cog.log_to_channel(ctx.guild, f"Error in open_trade command, trade data returned: {trade_data}")
 
         except Exception as e:
             logger.error(f"Error in open_trade command: {str(e)}")
@@ -265,7 +267,7 @@ class TradingCog(commands.Cog):
                 return
 
             # Create trade using Supabase edge function
-            response = await create_trade(
+            trade_data = await create_trade(
                 symbol=symbol,
                 trade_type="BTO",
                 entry_price=entry_price,
@@ -274,7 +276,6 @@ class TradingCog(commands.Cog):
                 is_day_trade=(trade_group == TradeGroupEnum.DAY_TRADER)
             )
 
-            trade_data = response['trade']
             if trade_data:
                 # Create and send embed
                 embed = discord.Embed(title="New Trade Opened", color=discord.Color.green())
@@ -289,6 +290,9 @@ class TradingCog(commands.Cog):
 
                 await utility_cog.send_embed_by_configuration_id(ctx, config['id'], embed, note_embed)
                 await logging_cog.log_to_channel(ctx.guild, f"User {ctx.user.name} executed {trade_group.upper()} command: Trade has been opened successfully.")
+
+            else:
+                await logging_cog.log_to_channel(ctx.guild, f"Error in {trade_group} command, trade data returned: {trade_data}")
 
         except Exception as e:
             logger.error(f"Error in {trade_group} command: {str(e)}")

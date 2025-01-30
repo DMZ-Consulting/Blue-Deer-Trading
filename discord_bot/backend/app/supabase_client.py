@@ -10,8 +10,8 @@ import json
 # Load environment variables
 load_dotenv()
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
+# set up file logging
+logging.basicConfig(filename='supabase_client.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Initialize Supabase client
@@ -551,13 +551,20 @@ async def reopen_trade(trade_id: str) -> Dict[str, Any]:
         logger.error(f"Error reopening trade: {str(e)}")
         raise 
 
-async def get_verification_config() -> list[dict]:
+async def get_verification_config(message_id: str) -> Dict[str, Any]:
+    """Get the verification config for a message."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+
+    return await supabase.table('verification_configs').select('*').eq('message_id', message_id).single()
+
+async def get_verification_configs() -> list[dict]:
     """Get all verification configurations"""
     try:
         response = await supabase.table('verification_configs').select('*').execute()
         return response.data
     except Exception as e:
-        logger.error(f"Error getting verification config: {str(e)}")
+        logger.error(f"Error getting verification configs: {str(e)}")
         return []
 
 async def add_verification_config(config: Dict[str, Any]) -> Dict[str, Any]:
