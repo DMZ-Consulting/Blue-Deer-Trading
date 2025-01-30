@@ -155,8 +155,8 @@ class VerificationCog(commands.Cog):
                     # Create and set up the view
                     view = VerificationView(
                         self.bot,
-                        config['terms_link'],
-                        config['terms_summary'],
+                        config['terms_link'] if 'terms_link' in config else None,
+                        config['terms_summary'] if 'terms_summary' in config else None,
                         role_to_remove,
                         role_to_add
                     )
