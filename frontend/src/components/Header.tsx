@@ -46,6 +46,12 @@ export function Header() {
             >
               Search
             </Link>
+            <Link
+              href="/position-sizing"
+              className={pathname === "/position-sizing" ? "text-foreground" : "text-foreground/60 transition-colors hover:text-foreground"}
+            >
+              Position Sizing
+            </Link>
           </nav>
         </div>
         <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">

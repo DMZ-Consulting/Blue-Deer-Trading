@@ -20,6 +20,7 @@ interface PortfolioFilters {
 }
 
 interface Transaction {
+  transaction_id: string
   transaction_type: TransactionType
   amount: number
   size: string
@@ -50,7 +51,7 @@ interface Trade {
 }
 
 interface Strategy {
-  id: number
+  strategy_id: number
   name: string
   underlying_symbol: string
   status: string
@@ -215,7 +216,7 @@ serve(async (req: Request) => {
           }
 
           let totalRealizedPL = 0
-          if (trade.average_exit_price) {
+          if (trade.average_exit_price !== null && trade.average_exit_price !== undefined) {
             totalRealizedPL = (trade.average_exit_price - trade.average_price) * closedSize
           } else {
             totalRealizedPL = openTransactions.reduce((sum: number, t: Transaction) => 
@@ -311,17 +312,26 @@ serve(async (req: Request) => {
         console.log('Processing strategy trades')
         for (const strategy of strategies as Strategy[]) {
           if (!strategy.options_strategy_transactions) {
-            console.log(`Skipping strategy ${strategy.id} - no transactions found`)
+            console.log(`Skipping strategy ${strategy.strategy_id} - no transactions found`)
             continue
           }
 
-          console.log(`Processing strategy ${strategy.id}:`, {
+          console.log(`Processing strategy ${strategy.strategy_id}:`, {
             name: strategy.name,
             symbol: strategy.underlying_symbol,
             status: strategy.status
           })
 
-          const [realizedPL, avgExitPrice] = calculateStrategyPL(strategy)
+          // query the open transactions for the strategy
+          const { data: openTransactions } = await supabase
+            .from('options_strategy_transactions')
+            .select('*')
+            .eq('strategy_id', strategy.strategy_id)
+            .in('transaction_type', [TransactionType.OPEN, TransactionType.ADD])
+
+          console.log('Open transactions:', openTransactions)
+
+          const [realizedPL, avgExitPrice] = calculateStrategyPL(strategy, openTransactions)
           const pctChange = (avgExitPrice - strategy.average_net_cost) / strategy.average_net_cost * 100
 
           console.log('Strategy calculations:', {
@@ -358,7 +368,7 @@ serve(async (req: Request) => {
             }),
             strategy_trades: strategyTrades.filter(t => {
               const matches = t.trade.trade_configurations?.name === filters.configName || filters.configName === 'all'
-              console.log(`Strategy trade ${t.trade.id} config match:`, {
+              console.log(`Strategy trade ${t.trade.strategy_id} config match:`, {
                 trade_config: t.trade.trade_configurations?.name,
                 filter_config: filters.configName,
                 matches 
@@ -494,22 +504,25 @@ serve(async (req: Request) => {
 })
 
 // Helper functions
-function calculateStrategyPL(strategy: Strategy): [number, number] {
+function calculateStrategyPL(strategy: Strategy, openTransactions: Transaction[]): [number, number] {
+  console.log('Calculating strategy P/L for strategy:', strategy)
   const transactions = strategy.options_strategy_transactions
-  const openTransactions = transactions.filter((t: Transaction) => 
-    t.transaction_type === TransactionType.OPEN || t.transaction_type === TransactionType.ADD
-  )
+
+  console.log('Transactions:', transactions)
+
   const closeTransactions = transactions.filter((t: Transaction) => 
     t.transaction_type === TransactionType.CLOSE || t.transaction_type === TransactionType.TRIM
   )
 
-  const totalCost = openTransactions.reduce((sum: number, t: Transaction) => 
-    sum + ((t.net_cost || 0) * parseFloat(t.size)), 0
-  )
-  const totalSize = openTransactions.reduce((sum: number, t: Transaction) => 
-    sum + parseFloat(t.size), 0
-  )
-  const avgEntryCost = totalCost / totalSize
+  console.log('Open transactions:', openTransactions)
+
+  const totalCost = openTransactions.reduce((sum: number, t: Transaction) => {
+    return sum + ((t.net_cost || 0) * parseFloat(t.size || '0'));
+  }, 0);
+  //const totalSize = openTransactions.reduce((sum: number, t: Transaction) => 
+  //  sum + parseFloat(t.size), 0
+  //)
+  //const avgEntryCost = totalCost / totalSize
 
   const totalExitValue = closeTransactions.reduce((sum: number, t: Transaction) => 
     sum + ((t.net_cost || 0) * parseFloat(t.size)), 0
@@ -519,8 +532,14 @@ function calculateStrategyPL(strategy: Strategy): [number, number] {
   )
   const avgExitCost = totalExitValue / totalExitSize
 
-  const realizedPL = (avgExitCost - avgEntryCost) * parseFloat(strategy.size) * 100
+  console.log('Strategy P/L calculations:', {
+    totalCost,
+    totalExitValue,
+    avgExitCost,
+  })
 
+  //const realizedPL = (avgExitCost - avgEntryCost) * parseFloat(strategy.size) * 100
+  const realizedPL = totalExitValue - totalCost
   return [realizedPL, avgExitCost]
 }
 
