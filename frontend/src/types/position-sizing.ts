@@ -1,6 +1,12 @@
-export interface PositionSizingConfig {
+export interface TimeframeConfig {
   portfolioSize: number;
   riskTolerancePercent: number;
+}
+
+export interface PositionSizingConfig {
+  dayTrading: TimeframeConfig;  // 1-5 Days
+  swingTrading: TimeframeConfig;  // 6-90 Days
+  longTermInvesting: TimeframeConfig;  // >90 Days
 }
 
 export interface PositionSizingCalculations {

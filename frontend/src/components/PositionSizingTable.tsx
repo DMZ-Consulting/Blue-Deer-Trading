@@ -3,7 +3,7 @@
 import React from 'react'
 import { TradesTableComponent } from './TradesTable'
 import { calculateUnitPrice, calculatePositionMetrics } from '@/utils/position-sizing'
-import { PositionSizingConfig } from '@/types/position-sizing'
+import { TimeframeConfig } from '@/types/position-sizing'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/utils/cn"
 
@@ -17,7 +17,7 @@ interface PositionSizingTableProps {
     minEntryPrice?: number;
     maxEntryPrice?: number;
   };
-  positionSizingConfig: PositionSizingConfig;
+  positionSizingConfig: TimeframeConfig;
 }
 
 interface Transaction {
