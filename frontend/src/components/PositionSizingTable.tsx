@@ -104,7 +104,7 @@ export function PositionSizingTable({
 
   const calculateTotalRealizedPL = useCallback((trades: Trade[]) => {
     return trades.reduce((total, trade) => {
-      if (!trade.profit_loss || !trade.transactions) return total;
+      if (!trade.average_exit_price || !trade.average_price || !trade.transactions) return total;
       
       const tradeConfig = getConfigForTrade(trade);
       const unitsPerRisk = calculateUnitsPerRisk(trade);
@@ -121,7 +121,7 @@ export function PositionSizingTable({
         return sum + transactionRiskPositions;
       }, 0);
       
-      const realizedValue = totalRiskPositions > 0 ? trade.profit_loss * totalRiskPositions : 0;
+      const realizedValue = totalRiskPositions > 0 ? (trade.average_exit_price - trade.average_price) * totalRiskPositions : 0;
       return total + realizedValue;
     }, 0);
   }, [getConfigForTrade, calculateUnitsPerRisk]);
@@ -171,7 +171,7 @@ export function PositionSizingTable({
       return sum + transactionRiskPositions;
     }, 0);
     
-    const realizedValue = totalRiskPositions > 0 ? trade.profit_loss * totalRiskPositions : undefined;
+    const realizedValue = totalRiskPositions > 0 && trade.average_exit_price != null && trade.average_price != null ? (trade.average_exit_price - trade.average_price) * totalRiskPositions : undefined;
 
     return (
       <>

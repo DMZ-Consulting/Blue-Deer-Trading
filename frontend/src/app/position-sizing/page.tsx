@@ -26,15 +26,15 @@ interface RealizedPL {
 export default function PositionSizingPage() {
   const [config, setConfig] = useState<PositionSizingConfig>({
     dayTrading: {
-      portfolioSize: 25000,
-      riskTolerancePercent: 1
+      portfolioSize: 250000,
+      riskTolerancePercent: 5
     },
     swingTrading: {
-      portfolioSize: 50000,
-      riskTolerancePercent: 2
+      portfolioSize: 500000,
+      riskTolerancePercent: 5
     },
     longTermInvesting: {
-      portfolioSize: 100000,
+      portfolioSize: 250000,
       riskTolerancePercent: 5
     }
   });
