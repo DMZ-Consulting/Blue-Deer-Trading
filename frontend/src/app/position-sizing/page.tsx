@@ -5,6 +5,7 @@ import { PositionSizingInputs } from '@/components/PositionSizingInputs';
 import { PositionSizingTable } from '@/components/PositionSizingTable';
 import { PositionSizingConfig } from '@/types/position-sizing';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/utils/cn";
 
 // Update the type to include 'all' as a possible value
 type TimeframeSelection = keyof PositionSizingConfig | 'all';
@@ -14,6 +15,13 @@ const TIMEFRAME_TO_CONFIG: Record<keyof PositionSizingConfig, string> = {
   swingTrading: 'swing_trader',
   longTermInvesting: 'long_term_trader'
 };
+
+interface RealizedPL {
+  dayTrading: number;
+  swingTrading: number;
+  longTermInvesting: number;
+  all: number;
+}
 
 export default function PositionSizingPage() {
   const [config, setConfig] = useState<PositionSizingConfig>({
@@ -29,6 +37,12 @@ export default function PositionSizingPage() {
       portfolioSize: 100000,
       riskTolerancePercent: 5
     }
+  });
+  const [realizedPL, setRealizedPL] = useState<RealizedPL>({
+    dayTrading: 0,
+    swingTrading: 0,
+    longTermInvesting: 0,
+    all: 0
   });
   const [selectedTimeframe, setSelectedTimeframe] = useState<TimeframeSelection>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -80,6 +94,13 @@ export default function PositionSizingPage() {
     return config[timeframe];
   };
 
+  const handleRealizedPLUpdate = (timeframe: TimeframeSelection, value: number) => {
+    setRealizedPL(prev => ({
+      ...prev,
+      [timeframe]: value
+    }));
+  };
+
   if (isLoading) {
     return (
       <main className="container mx-auto p-4">
@@ -116,31 +137,35 @@ export default function PositionSizingPage() {
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-3">Position Sizing Summary</h2>
           
-          {/* Total Portfolio Summary */}
-          <div className="bg-blue-50 p-4 rounded-lg mb-4">
-            <h3 className="text-lg font-semibold text-blue-800 mb-2">Total Portfolio</h3>
-            <p className="text-2xl font-bold text-blue-900">${totalPortfolioSize.toLocaleString()}</p>
-          </div>
-
           {/* Individual Timeframe Summaries */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Day Trading Summary */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="text-lg font-semibold mb-2">Day Trading</h3>
               <div className="space-y-2">
-                <div>
-                  <p className="text-sm text-gray-600">Portfolio Size</p>
-                  <p className="text-xl font-bold">${config.dayTrading.portfolioSize.toLocaleString()}</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Portfolio Size</p>
+                    <p className="text-xl font-bold">${config.dayTrading.portfolioSize.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Risk Tolerance</p>
+                    <p className="text-lg font-semibold">{config.dayTrading.riskTolerancePercent}%</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">Risk Tolerance</p>
-                  <p className="text-lg font-semibold">{config.dayTrading.riskTolerancePercent}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Max Position Size</p>
-                  <p className="text-lg font-semibold text-blue-700">
-                    ${calculateMaxPositionSize('dayTrading').toLocaleString()}
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Max Position Size</p>
+                    <p className="text-lg font-semibold text-blue-700">
+                      ${calculateMaxPositionSize('dayTrading').toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Per Risk Unit Max</p>
+                    <p className="text-lg font-semibold text-blue-700">
+                      ${((config.dayTrading.portfolioSize * config.dayTrading.riskTolerancePercent) / 600).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -149,19 +174,29 @@ export default function PositionSizingPage() {
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="text-lg font-semibold mb-2">Swing Trading</h3>
               <div className="space-y-2">
-                <div>
-                  <p className="text-sm text-gray-600">Portfolio Size</p>
-                  <p className="text-xl font-bold">${config.swingTrading.portfolioSize.toLocaleString()}</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Portfolio Size</p>
+                    <p className="text-xl font-bold">${config.swingTrading.portfolioSize.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Risk Tolerance</p>
+                    <p className="text-lg font-semibold">{config.swingTrading.riskTolerancePercent}%</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">Risk Tolerance</p>
-                  <p className="text-lg font-semibold">{config.swingTrading.riskTolerancePercent}%</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Max Position Size</p>
-                  <p className="text-lg font-semibold text-blue-700">
-                    ${calculateMaxPositionSize('swingTrading').toLocaleString()}
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Max Position Size</p>
+                    <p className="text-lg font-semibold text-blue-700">
+                      ${calculateMaxPositionSize('swingTrading').toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Per Risk Unit Max</p>
+                    <p className="text-lg font-semibold text-blue-700">
+                      ${((config.swingTrading.portfolioSize * config.swingTrading.riskTolerancePercent) / 600).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -170,19 +205,82 @@ export default function PositionSizingPage() {
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="text-lg font-semibold mb-2">Long Term Investing</h3>
               <div className="space-y-2">
-                <div>
-                  <p className="text-sm text-gray-600">Portfolio Size</p>
-                  <p className="text-xl font-bold">${config.longTermInvesting.portfolioSize.toLocaleString()}</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Portfolio Size</p>
+                    <p className="text-xl font-bold">${config.longTermInvesting.portfolioSize.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Risk Tolerance</p>
+                    <p className="text-lg font-semibold">{config.longTermInvesting.riskTolerancePercent}%</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">Risk Tolerance</p>
-                  <p className="text-lg font-semibold">{config.longTermInvesting.riskTolerancePercent}%</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Max Position Size</p>
+                    <p className="text-lg font-semibold text-blue-700">
+                      ${calculateMaxPositionSize('longTermInvesting').toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Per Risk Unit Max</p>
+                    <p className="text-lg font-semibold text-blue-700">
+                      ${((config.longTermInvesting.portfolioSize * config.longTermInvesting.riskTolerancePercent) / 600).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Total Portfolio Summary */}
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold text-blue-800 mb-2">Total Portfolio</h3>
+              <div className="space-y-4">
                 <div>
-                  <p className="text-sm text-gray-600">Max Position Size</p>
-                  <p className="text-lg font-semibold text-blue-700">
-                    ${calculateMaxPositionSize('longTermInvesting').toLocaleString()}
-                  </p>
+                  <p className="text-sm text-gray-600">Total Size</p>
+                  <p className="text-2xl font-bold text-blue-900">${totalPortfolioSize.toLocaleString()}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  <div>
+                    <p className="text-sm text-gray-600">Day Trading P/L</p>
+                    <p className={cn(
+                      "text-lg font-semibold",
+                      realizedPL.dayTrading > 0 ? "text-green-600" : 
+                      realizedPL.dayTrading < 0 ? "text-red-600" : "text-gray-600"
+                    )}>
+                      ${realizedPL.dayTrading.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Swing Trading P/L</p>
+                    <p className={cn(
+                      "text-lg font-semibold",
+                      realizedPL.swingTrading > 0 ? "text-green-600" : 
+                      realizedPL.swingTrading < 0 ? "text-red-600" : "text-gray-600"
+                    )}>
+                      ${realizedPL.swingTrading.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Long Term P/L</p>
+                    <p className={cn(
+                      "text-lg font-semibold",
+                      realizedPL.longTermInvesting > 0 ? "text-green-600" : 
+                      realizedPL.longTermInvesting < 0 ? "text-red-600" : "text-gray-600"
+                    )}>
+                      ${realizedPL.longTermInvesting.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-blue-200">
+                    <p className="text-sm font-medium text-gray-600">Total P/L</p>
+                    <p className={cn(
+                      "text-xl font-bold",
+                      realizedPL.all > 0 ? "text-green-600" : 
+                      realizedPL.all < 0 ? "text-red-600" : "text-gray-600"
+                    )}>
+                      ${realizedPL.all.toLocaleString()}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -221,6 +319,8 @@ export default function PositionSizingPage() {
               maxEntryPrice: undefined
             }}
             positionSizingConfig={getTableConfig(selectedTimeframe)}
+            allConfigs={config}
+            onRealizedPLUpdate={handleRealizedPLUpdate}
           />
         </div>
       </div>

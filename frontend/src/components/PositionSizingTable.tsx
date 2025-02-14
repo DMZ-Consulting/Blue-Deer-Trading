@@ -1,9 +1,9 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { TradesTableComponent } from './TradesTable'
 import { calculateUnitPrice, calculatePositionMetrics } from '@/utils/position-sizing'
-import { TimeframeConfig } from '@/types/position-sizing'
+import { TimeframeConfig, PositionSizingConfig } from '@/types/position-sizing'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/utils/cn"
 
@@ -18,6 +18,8 @@ interface PositionSizingTableProps {
     maxEntryPrice?: number;
   };
   positionSizingConfig: TimeframeConfig;
+  allConfigs: PositionSizingConfig;
+  onRealizedPLUpdate: (timeframe: keyof PositionSizingConfig | 'all', value: number) => void;
 }
 
 interface Transaction {
@@ -47,50 +49,103 @@ interface Trade {
   strike?: number;
   is_contract?: boolean;
   transactions?: Transaction[];
+  trade_configurations?: {
+    name: string;
+  };
 }
 
-export function PositionSizingTable({ configName, filterOptions, positionSizingConfig }: PositionSizingTableProps) {
-  const calculateRiskPositions = (size: number, availableUnits: number) => {
-    // Prevent division by zero or very small numbers
-    if (availableUnits <= 0 || !isFinite(availableUnits)) {
-      return 0;
+export function PositionSizingTable({ 
+  configName, 
+  filterOptions, 
+  positionSizingConfig, 
+  allConfigs,
+  onRealizedPLUpdate 
+}: PositionSizingTableProps) {
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const lastUpdateRef = React.useRef<string>('');
+
+  const getConfigForTrade = useCallback((trade: Trade): TimeframeConfig => {
+    if (!trade.trade_configurations?.name) {
+      return positionSizingConfig;
     }
-    return Math.floor(size / availableUnits);
-  };
 
-  const calculateUnitsPerRisk = (trade: Trade) => {
+    const configMap: Record<string, TimeframeConfig> = {
+      'day_trader': allConfigs.dayTrading,
+      'swing_trader': allConfigs.swingTrading,
+      'long_term_trader': allConfigs.longTermInvesting
+    };
+
+    return configMap[trade.trade_configurations.name] || positionSizingConfig;
+  }, [positionSizingConfig, allConfigs]);
+
+  const calculateRiskPercentage = useCallback((maxRiskPercent: number): number => {
+    const perLevelRisk = maxRiskPercent / 6;
+    return perLevelRisk;
+  }, []);
+
+  const calculateUnitsPerRisk = useCallback((trade: Trade) => {
+    const tradeConfig = getConfigForTrade(trade);
     const unitPrice = calculateUnitPrice({
       symbol: trade.symbol,
       entry_price: trade.entry_price,
       is_contract: trade.is_contract || false
     });
 
-    // Calculate one risk unit
-    const riskUnit = positionSizingConfig.portfolioSize * (positionSizingConfig.riskTolerancePercent / 100);
+    const riskPercentage = calculateRiskPercentage(tradeConfig.riskTolerancePercent);
+    const riskUnit = tradeConfig.portfolioSize * (riskPercentage / 100);
     
-    // Calculate how many units we can buy with one risk unit
     return Math.floor(riskUnit / unitPrice);
+  }, [getConfigForTrade, calculateRiskPercentage]);
+
+  const calculateRiskPercentageForLevel = (maxRiskPercent: number, riskLevel: number = 6): number => {
+    const perLevelRisk = maxRiskPercent / 6;
+    return perLevelRisk * riskLevel;
   };
 
-  const renderPositionSizingColumns = (trade: Trade) => {
+  const calculateTotalRealizedPL = useCallback((trades: Trade[]) => {
+    return trades.reduce((total, trade) => {
+      if (!trade.profit_loss || !trade.transactions) return total;
+      
+      const tradeConfig = getConfigForTrade(trade);
+      const unitsPerRisk = calculateUnitsPerRisk(trade);
+      
+      const closedTransactions = trade.transactions.filter(t => 
+        t.transaction_type === 'CLOSE' || t.transaction_type === 'TRIM'
+      );
+      
+      const totalRiskPositions = closedTransactions.reduce((sum, t) => {
+        const transactionSize = parseFloat(t.size || '0');
+        const transactionRiskPositions = transactionSize > 0 && unitsPerRisk > 0 
+          ? Math.ceil(transactionSize * unitsPerRisk) 
+          : 0;
+        return sum + transactionRiskPositions;
+      }, 0);
+      
+      const realizedValue = totalRiskPositions > 0 ? trade.profit_loss * totalRiskPositions : 0;
+      return total + realizedValue;
+    }, 0);
+  }, [getConfigForTrade, calculateUnitsPerRisk]);
+
+  const handleTradesUpdate = (updatedTrades: Trade[]) => {
+    setTrades(updatedTrades);
+  };
+
+  const renderPositionSizingColumns = useCallback((trade: Trade) => {
+    const tradeConfig = getConfigForTrade(trade);
     const unitPrice = calculateUnitPrice({
       symbol: trade.symbol,
       entry_price: trade.entry_price,
       is_contract: trade.is_contract || false
     });
 
-    // Calculate one risk unit
-    const riskUnit = positionSizingConfig.portfolioSize * (positionSizingConfig.riskTolerancePercent / 100);
-    
-    // Calculate how many units we can buy with one risk unit
+    const riskPercentage = calculateRiskPercentage(tradeConfig.riskTolerancePercent);
+    const riskUnit = tradeConfig.portfolioSize * (riskPercentage / 100);
     const unitsPerRisk = Math.floor(riskUnit / unitPrice);
     
-    // Calculate total closed positions
     const closedTransactions = trade.transactions?.filter(t => 
       t.transaction_type === 'CLOSE' || t.transaction_type === 'TRIM'
     ) || [];
     
-    // Only calculate realized values if there are closed transactions and profit/loss exists
     if (closedTransactions.length === 0 || trade.profit_loss === null) {
       return (
         <>
@@ -101,34 +156,22 @@ export function PositionSizingTable({ configName, filterOptions, positionSizingC
             {unitsPerRisk > 0 ? unitsPerRisk.toLocaleString() : '-'}
           </TableCell>
           <TableCell className="text-right">-</TableCell>
+          <TableCell className="text-right">
+            {trade.trade_configurations?.name || '-'}
+          </TableCell>
         </>
       );
     }
 
-    // Calculate risk positions for each closed transaction
     const totalRiskPositions = closedTransactions.reduce((sum, t) => {
       const transactionSize = parseFloat(t.size || '0');
       const transactionRiskPositions = transactionSize > 0 && unitsPerRisk > 0 
-        ? Math.ceil(transactionSize / unitsPerRisk) 
+        ? Math.ceil(transactionSize * unitsPerRisk) 
         : 0;
       return sum + transactionRiskPositions;
     }, 0);
     
-    // Calculate realized value by multiplying profit/loss by total risk positions from closed transactions
     const realizedValue = totalRiskPositions > 0 ? trade.profit_loss * totalRiskPositions : undefined;
-
-    console.log('Realized Value Debug:', {
-      symbol: trade.symbol,
-      profitLoss: trade.profit_loss,
-      closedTransactions: closedTransactions.map(t => ({
-        type: t.transaction_type,
-        size: t.size,
-        riskPositions: Math.ceil(parseFloat(t.size || '0') / unitsPerRisk)
-      })),
-      unitsPerRisk,
-      totalRiskPositions,
-      realizedValue
-    });
 
     return (
       <>
@@ -144,45 +187,31 @@ export function PositionSizingTable({ configName, filterOptions, positionSizingC
             : '-'
           }
         </TableCell>
+        <TableCell className="text-right">
+          {trade.trade_configurations?.name || '-'}
+        </TableCell>
       </>
     );
-  };
+  }, [getConfigForTrade, calculateRiskPercentage]);
 
-  const renderTransactionSizing = (transaction: Transaction, trade: Trade) => {
+  const renderTransactionSizing = useCallback((transaction: Transaction, trade: Trade) => {
+    const tradeConfig = getConfigForTrade(trade);
     const unitPrice = calculateUnitPrice({
       symbol: trade.symbol,
       entry_price: trade.entry_price,
       is_contract: trade.is_contract || false
     });
 
-    // Calculate one risk unit
-    const riskUnit = positionSizingConfig.portfolioSize * (positionSizingConfig.riskTolerancePercent / 100);
-    
-    // Calculate how many units we can buy with one risk unit
+    const riskPercentage = calculateRiskPercentage(tradeConfig.riskTolerancePercent);
+    const riskUnit = tradeConfig.portfolioSize * (riskPercentage / 100);
     const unitsPerRisk = Math.floor(riskUnit / unitPrice);
     
-    // Calculate risk positions for this transaction by dividing transaction size by units per risk
     const transactionSize = parseFloat(transaction.size || '0');
     const riskPositions = transactionSize > 0 && unitsPerRisk > 0 ? Math.ceil(transactionSize * unitsPerRisk) : 0;
-
-    console.log('Transaction Sizing Debug:', {
-      transactionType: transaction.transaction_type,
-      transactionSize,
-      unitPrice,
-      riskUnit,
-      unitsPerRisk,
-      riskPositions,
-      amount: transaction.amount,
-      isContract: trade.is_contract
-    });
     
-    // Calculate position value based on transaction type
     let positionValue: number | undefined;
     if (riskPositions > 0) {
-      // For any transaction type, multiply the amount by number of risk positions
       positionValue = transaction.amount * riskPositions;
-      
-      // If this is a contract trade, multiply the position value by 100
       if (trade.is_contract) {
         positionValue *= 100;
       }
@@ -201,7 +230,44 @@ export function PositionSizingTable({ configName, filterOptions, positionSizingC
         </TableCell>
       </>
     );
-  };
+  }, [getConfigForTrade, calculateRiskPercentage]);
+
+  useEffect(() => {
+    if (onRealizedPLUpdate && trades.length > 0) {
+      // Calculate total realized P/L for all trades
+      const totalPL = calculateTotalRealizedPL(trades);
+      
+      // Calculate realized P/L for each timeframe
+      const dayTradingPL = calculateTotalRealizedPL(
+        trades.filter((t: Trade) => t.trade_configurations?.name === 'day_trader')
+      );
+      
+      const swingTradingPL = calculateTotalRealizedPL(
+        trades.filter((t: Trade) => t.trade_configurations?.name === 'swing_trader')
+      );
+      
+      const longTermPL = calculateTotalRealizedPL(
+        trades.filter((t: Trade) => t.trade_configurations?.name === 'long_term_trader')
+      );
+
+      // Only update if values have changed
+      const newValues = {
+        all: totalPL,
+        dayTrading: dayTradingPL,
+        swingTrading: swingTradingPL,
+        longTermInvesting: longTermPL
+      };
+
+      // Store previous values in a ref to compare
+      const prevValues = JSON.stringify(newValues);
+      if (prevValues !== lastUpdateRef.current) {
+        Object.entries(newValues).forEach(([timeframe, value]) => {
+          onRealizedPLUpdate(timeframe as keyof PositionSizingConfig | 'all', value);
+        });
+        lastUpdateRef.current = prevValues;
+      }
+    }
+  }, [trades, onRealizedPLUpdate, calculateTotalRealizedPL]);
 
   return (
     <div className="space-y-4">
@@ -210,6 +276,7 @@ export function PositionSizingTable({ configName, filterOptions, positionSizingC
         filterOptions={filterOptions}
         renderAdditionalColumns={renderPositionSizingColumns}
         renderTransactionColumns={renderTransactionSizing}
+        onTradesUpdate={handleTradesUpdate}
       />
     </div>
   );

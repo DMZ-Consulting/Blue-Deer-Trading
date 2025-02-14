@@ -43,6 +43,7 @@ interface TradesTableProps {
   renderAdditionalColumns?: (trade: Trade) => React.ReactNode;
   renderTransactionColumns?: (transaction: Transaction, trade: Trade) => React.ReactNode;
   debugMode?: boolean;
+  onTradesUpdate?: (trades: Trade[]) => void;
 }
 
 // Add these type definitions at the top of the file
@@ -96,7 +97,8 @@ export function TradesTableComponent({
   allowTransactionActions = false, 
   renderAdditionalColumns,
   renderTransactionColumns,
-  debugMode = false 
+  debugMode = false,
+  onTradesUpdate
 }: TradesTableProps) {
   const [trades, setTrades] = useState<Trade[]>([])
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
@@ -153,6 +155,12 @@ export function TradesTableComponent({
   useEffect(() => {
     setLocalDebugMode(debugMode);
   }, [debugMode]);
+
+  useEffect(() => {
+    if (onTradesUpdate) {
+      onTradesUpdate(trades);
+    }
+  }, [trades, onTradesUpdate]);
 
   const getHeaderText = () => {
     if (filterOptions.status === 'OPEN') {
@@ -604,11 +612,11 @@ export function TradesTableComponent({
                                   {isDevelopment && localDebugMode && <TableHead className="text-center">Transaction ID</TableHead>}
                                   <TableHead className="text-center w-24">Type</TableHead>
                                   <TableHead className="text-center w-24">Price</TableHead>
-                                  <TableHead className="text-center w-16">Size</TableHead>
+                                  <TableHead className="text-center w-16">Risk</TableHead>
                                   <TableHead className="text-center w-40">Date</TableHead>
                                   {renderTransactionColumns && (
                                     <>
-                                      <TableHead className="text-center">Risk Positions</TableHead>
+                                      <TableHead className="text-center">Position Size</TableHead>
                                       <TableHead className="text-center">Position Value</TableHead>
                                     </>
                                   )}
