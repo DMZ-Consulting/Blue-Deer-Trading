@@ -40,6 +40,9 @@ interface TradesTableProps {
   filterOptions: FilterOptions;
   showAllTrades?: boolean;
   allowTransactionActions?: boolean;
+  renderAdditionalColumns?: (trade: Trade) => React.ReactNode;
+  renderTransactionColumns?: (transaction: Transaction, trade: Trade) => React.ReactNode;
+  debugMode?: boolean;
 }
 
 // Add these type definitions at the top of the file
@@ -86,11 +89,19 @@ interface Trade {
   transactions?: Transaction[];
 }
 
-export function TradesTableComponent({ configName, filterOptions, showAllTrades = false, allowTransactionActions = false }: TradesTableProps) {
+export function TradesTableComponent({ 
+  configName, 
+  filterOptions, 
+  showAllTrades = false, 
+  allowTransactionActions = false, 
+  renderAdditionalColumns,
+  renderTransactionColumns,
+  debugMode = false 
+}: TradesTableProps) {
   const [trades, setTrades] = useState<Trade[]>([])
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
-  const [debugMode, setDebugMode] = useState(false)
+  const [localDebugMode, setLocalDebugMode] = useState(debugMode)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [editingTransaction, setEditingTransaction] = useState<{ id: string; trade_id: string } | null>(null)
@@ -138,6 +149,10 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
   useEffect(() => {
     fetchTrades()
   }, [fetchTrades])
+
+  useEffect(() => {
+    setLocalDebugMode(debugMode);
+  }, [debugMode]);
 
   const getHeaderText = () => {
     if (filterOptions.status === 'OPEN') {
@@ -468,182 +483,193 @@ export function TradesTableComponent({ configName, filterOptions, showAllTrades 
 
   return (
     <div className="space-y-4">
-      {isDevelopment && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Debug Options</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2">
-              <Input
-                type="checkbox"
-                checked={debugMode}
-                onChange={(e) => setDebugMode(e.target.checked)}
-              />
-              <span>Debug Mode</span>
-            </label>
-          </CardContent>
-        </Card>
-      )}
-      
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">{getHeaderText()}</h2>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="ml-auto">
-              <Settings2 className="h-4 w-4" />
-              <span className="ml-2">Columns</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {columns.map((column) => (
-              <DropdownMenuCheckboxItem
-                key={column.id as string}
-                checked={columnVisibility[column.id as keyof typeof columnVisibility]}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, [column.id as string]: checked }))
-                }
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle>{getHeaderText()}</CardTitle>
+          <div className="flex items-center space-x-2">
+            {isDevelopment && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setLocalDebugMode(!localDebugMode)}
+                className={cn(
+                  "transition-colors",
+                  localDebugMode && "bg-blue-100 hover:bg-blue-200"
+                )}
               >
-                {column.header as string}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {loading ? (
-        <p>Loading trades...</p>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="max-h-[800px] overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-center whitespace-nowrap w-[50px] sticky top-0 bg-white">
-                      <Button variant="ghost" size="sm">
-                        {/* Expand/Collapse column */}
-                      </Button>
+                {localDebugMode ? "Debug Mode: ON" : "Debug Mode: OFF"}
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="ml-auto">
+                  <Settings2 className="mr-2 h-4 w-4" />
+                  View
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {Object.keys(columnVisibility).map((column) => (
+                  <DropdownMenuCheckboxItem
+                    key={column}
+                    checked={columnVisibility[column as keyof typeof columnVisibility]}
+                    onCheckedChange={(value) =>
+                      setColumnVisibility((prev) => ({ ...prev, [column]: value }))
+                    }
+                  >
+                    {column.charAt(0).toUpperCase() + column.slice(1).replace(/_/g, ' ')}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[40px]"></TableHead>
+                {isDevelopment && localDebugMode && <TableHead>ID</TableHead>}
+                {Object.entries(columnVisibility).map(([column, isVisible]) => {
+                  if (!isVisible) return null;
+                  return (
+                    <TableHead
+                      key={column}
+                      className="cursor-pointer"
+                      onClick={() => handleSort(column as SortField)}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>{column.charAt(0).toUpperCase() + column.slice(1).replace(/_/g, ' ')}</span>
+                        {renderSortIcon(column as SortField)}
+                      </div>
                     </TableHead>
-                    {isDevelopment && debugMode && (
-                      <TableHead className="text-center whitespace-nowrap sticky top-0 bg-white">Trade ID</TableHead>
+                  );
+                })}
+                {/* Add headers for position sizing columns if they exist */}
+                {renderAdditionalColumns && (
+                  <>
+                    <TableHead className="text-right">Unit Price</TableHead>
+                    <TableHead className="text-right">Units per Risk</TableHead>
+                    <TableHead className="text-right">Realized Value</TableHead>
+                  </>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortedTrades.map(trade => (
+                <React.Fragment key={trade.trade_id}>
+                  <TableRow
+                    className={cn(
+                      "hover:bg-muted/50 data-[state=selected]:bg-muted",
+                      expandedTrades.has(trade.trade_id) ? "bg-muted/50" : ""
                     )}
-                    {columns.map((column) => {
-                      if (!columnVisibility[column.id as keyof typeof columnVisibility]) return null;
-                      
+                  >
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleTradeExpansion(trade.trade_id)}
+                      >
+                        {expandedTrades.has(trade.trade_id) ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TableCell>
+                    {isDevelopment && localDebugMode && <TableCell>{trade.trade_id}</TableCell>}
+                    {Object.entries(columnVisibility).map(([column, isVisible]) => {
+                      if (!isVisible) return null;
+                      const columnDef = columns.find(col => col.id === column);
+                      if (!columnDef) return null;
                       return (
-                        <TableHead key={column.id} className="text-center whitespace-nowrap sticky top-0 bg-white">
-                          <Button variant="ghost" onClick={() => handleSort(column.id as SortField)}>
-                            {column.header as string} {renderSortIcon(column.id as SortField)}
-                          </Button>
-                        </TableHead>
+                        <TableCell key={column} className="text-center whitespace-nowrap">
+                          {columnDef.render(trade)}
+                        </TableCell>
                       );
                     })}
+                    {/* Add position sizing columns if they exist */}
+                    {renderAdditionalColumns && renderAdditionalColumns(trade)}
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedTrades.map(trade => (
-                    <React.Fragment key={trade.trade_id}>
-                      <TableRow>
-                        <TableCell className="text-center whitespace-nowrap">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleTradeExpansion(trade.trade_id)}
-                          >
-                            {expandedTrades.has(trade.trade_id) ? (
-                              <ChevronUp className="h-4 w-4" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </TableCell>
-                        {isDevelopment && debugMode && <TableCell className="text-center whitespace-nowrap">{trade.trade_id}</TableCell>}
-                        {columns.map((column) => {
-                          if (!columnVisibility[column.id as keyof typeof columnVisibility]) return null;
-                          
-                          return (
-                            <TableCell key={column.id} className="text-center whitespace-nowrap">
-                              {column.render(trade)}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                      {expandedTrades.has(trade.trade_id) && (
-                        <TableRow>
-                          <TableCell colSpan={Object.values(columnVisibility).filter(Boolean).length + (isDevelopment && debugMode ? 2 : 1)}>
-                            <Card>
-                              <CardHeader>
-                                <CardTitle>Transactions</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      {isDevelopment && debugMode && <TableHead className="text-center">Transaction ID</TableHead>}
-                                      <TableHead className="text-center w-24">Type</TableHead>
-                                      <TableHead className="text-center w-24">Price</TableHead>
-                                      <TableHead className="text-center w-16">Size</TableHead>
-                                      <TableHead className="text-center w-40">Date</TableHead>
-                                      {allowTransactionActions && (
-                                        <TableHead className="text-center w-32">Actions</TableHead>
-                                      )}
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {trade.transactions?.sort((a, b) => 
-                                      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                                    ).map((transaction, index, array) => (
-                                      <TableRow key={String(transaction.id)}>
-                                        {isDevelopment && debugMode && <TableCell className="text-center">{String(transaction.id)}</TableCell>}
-                                        <TableCell className="text-center">
-                                          <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
-                                            {transaction.transaction_type}
-                                          </span>
-                                        </TableCell>
-                                        <TableCell className="text-center">${transaction.amount.toFixed(2)}</TableCell>
-                                        <TableCell className="text-center">{transaction.size}</TableCell>
-                                        <TableCell className="text-center whitespace-nowrap">{new Date(transaction.created_at).toLocaleString()}</TableCell>
-                                        {allowTransactionActions && (
-                                          <TableCell>
-                                            <div className="flex justify-center space-x-2">
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleEditTransaction(String(transaction.id), trade.trade_id)}
-                                              >
-                                                Edit
-                                              </Button>
-                                              {index === array.length - 1 && transaction.transaction_type !== 'OPEN' && (
-                                                <Button
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="text-red-600 hover:text-red-800"
-                                                  onClick={() => handleDeleteTransaction(String(transaction.id), trade.trade_id)}
-                                                >
-                                                  Delete
-                                                </Button>
-                                              )}
-                                            </div>
-                                          </TableCell>
-                                        )}
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                              </CardContent>
-                            </Card>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                  {expandedTrades.has(trade.trade_id) && (
+                    <TableRow>
+                      <TableCell colSpan={Object.values(columnVisibility).filter(Boolean).length + (isDevelopment && localDebugMode ? 2 : 1)}>
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Transactions</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {isDevelopment && localDebugMode && <TableHead className="text-center">Transaction ID</TableHead>}
+                                  <TableHead className="text-center w-24">Type</TableHead>
+                                  <TableHead className="text-center w-24">Price</TableHead>
+                                  <TableHead className="text-center w-16">Size</TableHead>
+                                  <TableHead className="text-center w-40">Date</TableHead>
+                                  {renderTransactionColumns && (
+                                    <>
+                                      <TableHead className="text-center">Risk Positions</TableHead>
+                                      <TableHead className="text-center">Position Value</TableHead>
+                                    </>
+                                  )}
+                                  {allowTransactionActions && (
+                                    <TableHead className="text-center w-32">Actions</TableHead>
+                                  )}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {trade.transactions?.sort((a, b) => 
+                                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                                ).map((transaction, index, array) => (
+                                  <TableRow key={String(transaction.id)}>
+                                    {isDevelopment && localDebugMode && <TableCell className="text-center">{String(transaction.id)}</TableCell>}
+                                    <TableCell className="text-center">
+                                      <span className={`px-2 py-1 rounded-full text-xs ${getTransactionTypeColor(transaction.transaction_type)}`}>
+                                        {transaction.transaction_type}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="text-center">${transaction.amount.toFixed(2)}</TableCell>
+                                    <TableCell className="text-center">{transaction.size}</TableCell>
+                                    <TableCell className="text-center whitespace-nowrap">{new Date(transaction.created_at).toLocaleString()}</TableCell>
+                                    {renderTransactionColumns && renderTransactionColumns(transaction, trade)}
+                                    {allowTransactionActions && (
+                                      <TableCell>
+                                        <div className="flex justify-center space-x-2">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleEditTransaction(String(transaction.id), trade.trade_id)}
+                                          >
+                                            Edit
+                                          </Button>
+                                          {index === array.length - 1 && transaction.transaction_type !== 'OPEN' && (
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="text-red-600 hover:text-red-800"
+                                              onClick={() => handleDeleteTransaction(String(transaction.id), trade.trade_id)}
+                                            >
+                                              Delete
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    )}
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </Card>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Dialog open={editingTransaction !== null} onOpenChange={() => {
         setEditingTransaction(null);

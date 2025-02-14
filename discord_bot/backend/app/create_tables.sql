@@ -449,10 +449,9 @@ $$ LANGUAGE plpgsql;
 -- Function to update monthly P/L
 CREATE OR REPLACE FUNCTION update_monthly_pl() RETURNS TRIGGER AS $$
 DECLARE
-    trade_record trades%ROWTYPE;  -- Use %ROWTYPE to match table structure
+    trade_record trades%ROWTYPE;
     transaction_month DATE;
-    regular_pl DOUBLE PRECISION;
-    strategy_pl DOUBLE PRECISION;
+    realized_pl DOUBLE PRECISION;
 BEGIN
     -- Only process TRIM and CLOSE transactions
     IF UPPER(NEW.transaction_type) NOT IN ('TRIM', 'CLOSE') THEN
@@ -473,30 +472,16 @@ BEGIN
     -- Calculate the first day of the month for the transaction
     transaction_month := DATE_TRUNC('month', NEW.created_at::DATE);
 
-    -- Calculate P/L values with default to 0
-    regular_pl := CASE 
-        WHEN NOT EXISTS (
-            SELECT 1 FROM options_strategy_trades ost 
-            WHERE ost.trade_id = trade_record.trade_id
-        ) THEN COALESCE(calculate_realized_pl_for_transaction(trade_record, NEW), 0)
-        ELSE 0
-    END;
-
-    strategy_pl := CASE 
-        WHEN EXISTS (
-            SELECT 1 FROM options_strategy_trades ost 
-            WHERE ost.trade_id = trade_record.trade_id
-        ) THEN COALESCE(calculate_realized_pl_for_transaction(trade_record, NEW), 0)
-        ELSE 0
-    END;
+    -- Calculate P/L for this transaction
+    realized_pl := COALESCE(calculate_realized_pl_for_transaction(trade_record, NEW), 0);
 
     -- Insert or update monthly P/L record
     INSERT INTO monthly_pl (configuration_id, month, regular_trades_pl, strategy_trades_pl)
     VALUES (
         trade_record.configuration_id, 
         transaction_month,
-        regular_pl,
-        strategy_pl
+        realized_pl,
+        0  -- Strategy P/L will be handled by a separate function
     )
     ON CONFLICT (configuration_id, month)
     DO UPDATE SET 
@@ -510,25 +495,6 @@ BEGIN
             WHERE t.configuration_id = trade_record.configuration_id
             AND DATE_TRUNC('month', tx.created_at) = transaction_month
             AND UPPER(tx.transaction_type) IN ('TRIM', 'CLOSE')
-            AND NOT EXISTS (
-                SELECT 1 FROM options_strategy_trades ost 
-                WHERE ost.trade_id = t.trade_id
-            )
-        ), 0),
-        strategy_trades_pl = COALESCE((
-            -- Sum of all realized P/L from TRIM and CLOSE transactions in this month
-            SELECT SUM(
-                COALESCE(calculate_realized_pl_for_transaction(t, tx), 0)
-            )
-            FROM trades t
-            JOIN transactions tx ON t.trade_id = tx.trade_id
-            WHERE t.configuration_id = trade_record.configuration_id
-            AND DATE_TRUNC('month', tx.created_at) = transaction_month
-            AND UPPER(tx.transaction_type) IN ('TRIM', 'CLOSE')
-            AND EXISTS (
-                SELECT 1 FROM options_strategy_trades ost 
-                WHERE ost.trade_id = t.trade_id
-            )
         ), 0),
         updated_at = CURRENT_TIMESTAMP;
 
