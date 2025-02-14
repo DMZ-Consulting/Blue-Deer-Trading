@@ -1,4 +1,4 @@
-import { Trade, StrategyTrade, PortfolioTrade, PositionSizingConfig, PositionSizingCalculations } from '../types/position-sizing';
+import { Trade, StrategyTrade } from '../types/position-sizing';
 
 export function calculateUnitPrice(trade: Trade | StrategyTrade): number {
   if ('symbol' in trade) {
@@ -24,22 +24,3 @@ export function calculateAvailableUnits(
 ): number {
   return Math.floor(maxPosition / unitPrice);
 }
-
-export function calculatePositionMetrics(
-  trade: PortfolioTrade,
-  config: PositionSizingConfig
-): PositionSizingCalculations {
-  const unitPrice = calculateUnitPrice(trade.trade);
-  const maxPosition = calculateMaxPosition(
-    config.portfolioSize,
-    config.riskTolerancePercent
-  );
-  const availableUnits = calculateAvailableUnits(maxPosition, unitPrice);
-  
-  return {
-    unitPrice,
-    maxPositionSize: maxPosition,
-    availableUnits,
-    realizedValue: trade.realized_pl ? trade.realized_pl * availableUnits : undefined
-  };
-} 

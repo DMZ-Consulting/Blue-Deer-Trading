@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import { TradesTableComponent } from './TradesTable'
-import { calculateUnitPrice, calculatePositionMetrics } from '@/utils/position-sizing'
+import { calculateUnitPrice } from '@/utils/position-sizing'
 import { TimeframeConfig, PositionSizingConfig } from '@/types/position-sizing'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/utils/cn"
