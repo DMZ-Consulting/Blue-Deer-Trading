@@ -71,7 +71,7 @@ export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) 
           </p>
         </div>
         
-        <div className="p-4 bg-gray-100 rounded">
+        {/* <div className="p-4 bg-gray-100 rounded">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-semibold">Monthly Breakdown</h3>
             <div className="text-right">
@@ -84,7 +84,7 @@ export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) 
           <Suspense fallback={<p>Loading monthly data...</p>}>
             <MonthlyBreakdown configName={configName} setTotalPL={setTotalPL} />
           </Suspense>
-        </div>
+        </div> */}  
       </div>
     </div>
   );
