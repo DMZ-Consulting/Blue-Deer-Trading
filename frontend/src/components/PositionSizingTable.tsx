@@ -102,29 +102,51 @@ export function PositionSizingTable({
     return perLevelRisk * riskLevel;
   };
 
-  const calculateTotalRealizedPL = useCallback((trades: Trade[]) => {
-    return trades.reduce((total, trade) => {
-      if (!trade.average_exit_price || !trade.average_price || !trade.transactions) return total;
-      
-      const tradeConfig = getConfigForTrade(trade);
-      const unitsPerRisk = calculateUnitsPerRisk(trade);
-      
-      const closedTransactions = trade.transactions.filter(t => 
-        t.transaction_type === 'CLOSE' || t.transaction_type === 'TRIM'
-      );
-      
-      const totalRiskPositions = closedTransactions.reduce((sum, t) => {
-        const transactionSize = parseFloat(t.size || '0');
-        const transactionRiskPositions = transactionSize > 0 && unitsPerRisk > 0 
-          ? Math.ceil(transactionSize * unitsPerRisk) 
-          : 0;
-        return sum + transactionRiskPositions;
-      }, 0);
-      
-      const realizedValue = totalRiskPositions > 0 ? (trade.average_exit_price - trade.average_price) * totalRiskPositions : 0;
-      return total + realizedValue;
+  const calculateTradeRealizedValue = useCallback((trade: Trade) => {
+    if (!trade.average_exit_price || !trade.average_price || !trade.transactions) return 0;
+
+    const tradeConfig = getConfigForTrade(trade);
+    const unitPrice = calculateUnitPrice({
+      symbol: trade.symbol,
+      entry_price: trade.entry_price,
+      is_contract: trade.is_contract || false
+    });
+
+    const riskPercentage = calculateRiskPercentage(tradeConfig.riskTolerancePercent);
+    const riskUnit = tradeConfig.portfolioSize * (riskPercentage / 100);
+    const unitsPerRisk = Math.floor(riskUnit / unitPrice);
+
+    // Track open positions as we process transactions chronologically
+    let openRiskPositions = 0;
+    const totalRiskPositions = trade.transactions.reduce((sum, t) => {
+      const transactionSize = parseFloat(t.size || '0');
+      const transactionRiskPositions = transactionSize > 0 && unitsPerRisk > 0 
+        ? Math.ceil(transactionSize * unitsPerRisk) 
+        : 0;
+
+      if (t.transaction_type === 'OPEN' || t.transaction_type === 'ADD') {
+        openRiskPositions += transactionRiskPositions;
+        return sum;
+      } else if (t.transaction_type === 'TRIM' || t.transaction_type === 'CLOSE') {
+        // Can only close up to the number of positions currently open
+        const closablePositions = Math.min(transactionRiskPositions, openRiskPositions);
+        openRiskPositions -= closablePositions;
+        return sum + closablePositions;
+      }
+      return sum;
     }, 0);
-  }, [getConfigForTrade, calculateUnitsPerRisk]);
+
+    let realizedValue = totalRiskPositions > 0 ? (trade.average_exit_price - trade.average_price) * totalRiskPositions : 0;
+    if (trade.is_contract) {
+      realizedValue *= 100;
+    }
+    
+    return realizedValue;
+  }, [getConfigForTrade, calculateRiskPercentage]);
+
+  const calculateTotalRealizedPL = useCallback((trades: Trade[]) => {
+    return trades.reduce((total, trade) => total + calculateTradeRealizedValue(trade), 0);
+  }, [calculateTradeRealizedValue]);
 
   const handleTradesUpdate = (updatedTrades: Trade[]) => {
     setTrades(updatedTrades);
@@ -142,36 +164,7 @@ export function PositionSizingTable({
     const riskUnit = tradeConfig.portfolioSize * (riskPercentage / 100);
     const unitsPerRisk = Math.floor(riskUnit / unitPrice);
     
-    const closedTransactions = trade.transactions?.filter(t => 
-      t.transaction_type === 'CLOSE' || t.transaction_type === 'TRIM'
-    ) || [];
-    
-    if (closedTransactions.length === 0 || trade.profit_loss === null) {
-      return (
-        <>
-          <TableCell className="text-right">
-            ${unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </TableCell>
-          <TableCell className="text-right">
-            {unitsPerRisk > 0 ? unitsPerRisk.toLocaleString() : '-'}
-          </TableCell>
-          <TableCell className="text-right">-</TableCell>
-          <TableCell className="text-right">
-            {trade.trade_configurations?.name || '-'}
-          </TableCell>
-        </>
-      );
-    }
-
-    const totalRiskPositions = closedTransactions.reduce((sum, t) => {
-      const transactionSize = parseFloat(t.size || '0');
-      const transactionRiskPositions = transactionSize > 0 && unitsPerRisk > 0 
-        ? Math.ceil(transactionSize * unitsPerRisk) 
-        : 0;
-      return sum + transactionRiskPositions;
-    }, 0);
-    
-    const realizedValue = totalRiskPositions > 0 && trade.average_exit_price != null && trade.average_price != null ? (trade.average_exit_price - trade.average_price) * totalRiskPositions : undefined;
+    const realizedValue = calculateTradeRealizedValue(trade);
 
     return (
       <>
@@ -182,7 +175,7 @@ export function PositionSizingTable({
           {unitsPerRisk > 0 ? unitsPerRisk.toLocaleString() : '-'}
         </TableCell>
         <TableCell className="text-right">
-          {realizedValue !== undefined
+          {realizedValue !== 0
             ? `$${realizedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             : '-'
           }
@@ -192,7 +185,7 @@ export function PositionSizingTable({
         </TableCell>
       </>
     );
-  }, [getConfigForTrade, calculateRiskPercentage]);
+  }, [getConfigForTrade, calculateRiskPercentage, calculateTradeRealizedValue]);
 
   const renderTransactionSizing = useCallback((transaction: Transaction, trade: Trade) => {
     const tradeConfig = getConfigForTrade(trade);
@@ -207,7 +200,32 @@ export function PositionSizingTable({
     const unitsPerRisk = Math.floor(riskUnit / unitPrice);
     
     const transactionSize = parseFloat(transaction.size || '0');
-    const riskPositions = transactionSize > 0 && unitsPerRisk > 0 ? Math.ceil(transactionSize * unitsPerRisk) : 0;
+    let riskPositions = 0;
+
+    if (transaction.transaction_type === 'CLOSE') {
+      // For CLOSE, calculate remaining open risk positions
+      const openPositions = trade.transactions
+        ?.filter(t => t.transaction_type === 'OPEN' || t.transaction_type === 'ADD')
+        .reduce((sum, t) => {
+          const size = parseFloat(t.size || '0');
+          return sum + (size > 0 && unitsPerRisk > 0 ? Math.ceil(size * unitsPerRisk) : 0);
+        }, 0);
+
+      const trimPositions = trade.transactions
+        ?.filter(t => t.transaction_type === 'TRIM')
+        .reduce((sum, t) => {
+          const size = parseFloat(t.size || '0');
+          return sum + (size > 0 && unitsPerRisk > 0 ? Math.ceil(size * unitsPerRisk) : 0);
+        }, 0);
+
+      const remainingOpen = openPositions ? openPositions - (trimPositions || 0) : 0;
+      riskPositions = Math.min(
+        transactionSize > 0 && unitsPerRisk > 0 ? Math.ceil(transactionSize * unitsPerRisk) : 0,
+        remainingOpen
+      );
+    } else {
+      riskPositions = transactionSize > 0 && unitsPerRisk > 0 ? Math.ceil(transactionSize * unitsPerRisk) : 0;
+    }
     
     let positionValue: number | undefined;
     if (riskPositions > 0) {
