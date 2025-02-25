@@ -118,12 +118,16 @@ interface RequestPayload {
 serve(async (req: Request) => {
   logger.info('Received request:', req.method, req.url)
 
+  logger.info('Received request:', req.method, req.url)
+
   if (req.method === 'OPTIONS') {
+    logger.debug('Handling OPTIONS request')
     logger.debug('Handling OPTIONS request')
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    logger.debug('Initializing Supabase client')
     logger.debug('Initializing Supabase client')
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -132,12 +136,14 @@ serve(async (req: Request) => {
 
     const payload = await req.json() as RequestPayload
     logger.info('Request payload:', payload)
+    logger.info('Request payload:', payload)
     const { action, filters, input, trade_id, price, size } = payload
 
     let data
 
     switch (action) {
       case 'getAll':
+        logger.debug('Handling getAll action')
         logger.debug('Handling getAll action')
         const { data: allTrades, error: allError } = await supabaseClient
           .from('trades')
@@ -149,9 +155,11 @@ serve(async (req: Request) => {
         if (allError) throw allError
         data = allTrades
         logger.debug('Retrieved all trades:', data)
+        logger.debug('Retrieved all trades:', data)
         break
 
       case 'getTrades':
+        logger.debug('Handling getTrades action')
         logger.debug('Handling getTrades action')
         let query = supabaseClient
           .from('trades')
@@ -172,11 +180,13 @@ serve(async (req: Request) => {
 
         if (filters) {
           logger.debug('Applying filters:', filters)
+          logger.debug('Applying filters:', filters)
           if (filters.status && filters.status !== 'ALL') {
             query = query.eq('status', filters.status.toUpperCase())
           }
           
           if (filters.configName && filters.configName !== 'all') {
+            logger.debug('Fetching config data for:', filters.configName)
             logger.debug('Fetching config data for:', filters.configName)
             const { data: configData, error: configError } = await supabaseClient
               .from('trade_configurations')
@@ -236,20 +246,24 @@ serve(async (req: Request) => {
         if (filterError) throw filterError
         data = filteredTrades
         logger.debug('Retrieved filtered trades:', data)
+        logger.debug('Retrieved filtered trades:', data)
         break
 
       case 'createTrade':
+        logger.debug('Handling createTrade action')
         logger.debug('Handling createTrade action')
         if (!input) throw new Error('Input is required for creating a trade')
 
         // Handle expiration date timezone
         if (input.expiration_date) {
           logger.debug('Processing expiration date:', input.expiration_date)
+          logger.debug('Processing expiration date:', input.expiration_date)
           const [month, day, yearShort] = input.expiration_date.split('/')
           const year = `20${yearShort}`
           const dateString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
           const expirationDate = new Date(`${dateString}T16:30:00-04:00`)
           input.expiration_date = expirationDate.toISOString()
+          logger.debug('Processed expiration date:', input.expiration_date)
           logger.debug('Processed expiration date:', input.expiration_date)
         }
 
@@ -347,9 +361,11 @@ serve(async (req: Request) => {
         if (fetchError) throw fetchError
         data = updatedTrade
         logger.debug('Retrieved updated trade:', data)
+        logger.debug('Retrieved updated trade:', data)
         break
 
       case 'addToTrade':
+        logger.debug('Handling addToTrade action')
         logger.debug('Handling addToTrade action')
         if (!trade_id || !price || !size) {
           throw new Error('Missing required parameters: trade_id, price, and size are required for adding to a trade')
@@ -369,6 +385,7 @@ serve(async (req: Request) => {
 
         if (addTransactionError) throw addTransactionError
         logger.debug('Created ADD transaction')
+        logger.debug('Created ADD transaction')
 
         // Fetch updated trade after trigger has run
         const { data: addedTrade, error: addFetchError } = await supabaseClient
@@ -380,9 +397,11 @@ serve(async (req: Request) => {
         if (addFetchError) throw addFetchError
         data = addedTrade
         logger.debug('Retrieved updated trade:', data)
+        logger.debug('Retrieved updated trade:', data)
         break
 
       case 'trimTrade':
+        logger.debug('Handling trimTrade action')
         logger.debug('Handling trimTrade action')
         if (!trade_id || !price || !size) {
           throw new Error('Missing required parameters: trade_id, price, and size are required for trimming a trade')
@@ -397,10 +416,12 @@ serve(async (req: Request) => {
             transaction_type: TransactionType.TRIM,
             amount: price,
             size: size,
+            size: size,
             created_at: new Date().toISOString()
           })
 
         if (trimTransactionError) throw trimTransactionError
+        logger.debug('Created TRIM transaction')
         logger.debug('Created TRIM transaction')
 
         // Fetch updated trade after trigger has run
@@ -413,9 +434,11 @@ serve(async (req: Request) => {
         if (trimFetchError) throw trimFetchError
         data = trimmedTrade
         logger.debug('Retrieved updated trade:', data)
+        logger.debug('Retrieved updated trade:', data)
         break
 
       case 'exitTrade':
+        logger.debug('Handling exitTrade action')
         logger.debug('Handling exitTrade action')
         if (!trade_id || !price) {
           throw new Error('Missing required parameters: trade_id and price are required for exiting a trade')
@@ -429,6 +452,7 @@ serve(async (req: Request) => {
           .single()
 
         if (exitTradeError) throw exitTradeError
+        logger.debug('Retrieved trade for exit:', exitTrade)
         logger.debug('Retrieved trade for exit:', exitTrade)
 
         // Create CLOSE transaction
@@ -445,6 +469,7 @@ serve(async (req: Request) => {
 
         if (exitTransactionError) throw exitTransactionError
         logger.debug('Created CLOSE transaction')
+        logger.debug('Created CLOSE transaction')
 
         // Fetch updated trade after trigger has run
         const { data: closedTrade, error: closeFetchError } = await supabaseClient
@@ -455,6 +480,7 @@ serve(async (req: Request) => {
 
         if (closeFetchError) throw closeFetchError
         logger.debug('Retrieved closed trade:', closedTrade)
+        logger.debug('Retrieved closed trade:', closedTrade)
 
         // Add unit_profit_loss and exit_size to the response
         const responseData = {
@@ -464,19 +490,23 @@ serve(async (req: Request) => {
         }
         data = responseData
         logger.debug('Final response data:', data)
+        logger.debug('Final response data:', data)
         break
 
       default:
         logger.error('Unknown action:', action)
+        logger.error('Unknown action:', action)
         throw new Error(`Unknown action: ${action}`)
     }
 
+    logger.info('Successfully processed request')
     logger.info('Successfully processed request')
     return new Response(
       JSON.stringify(data),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
+    logger.error('Error processing request:', error)
     logger.error('Error processing request:', error)
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
