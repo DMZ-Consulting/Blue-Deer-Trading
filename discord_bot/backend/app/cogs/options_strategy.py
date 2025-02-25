@@ -149,7 +149,7 @@ class OptionsStrategyCog(commands.Cog):
             if trade_data:
                 # Create and send embed
                 embed = discord.Embed(title="New Options Strategy Created", color=discord.Color.green())
-                embed.description = f"### {strategy_name}"
+                embed.description = f"### {strategy_name}\n{self.create_trade_oneliner_os(trade_data, utility_cog)}"
                 embed.add_field(name="Symbol", value=leg_list[0]['symbol'], inline=True)
                 embed.add_field(name="Net Cost", value=f"${net_cost:,.2f}", inline=True)
                 embed.add_field(name="Size", value=size, inline=True)
@@ -198,7 +198,7 @@ class OptionsStrategyCog(commands.Cog):
 
             # Create embed
             embed = discord.Embed(title="Added to Options Strategy", color=discord.Color.blue())
-            embed.description = f"### {updated_trade['name']}"
+            embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
 
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
             embed.add_field(name="Added Size", value=utility_cog.format_size(size), inline=True)
@@ -239,7 +239,7 @@ class OptionsStrategyCog(commands.Cog):
 
             # Create embed
             embed = discord.Embed(title="Trimmed Options Strategy", color=discord.Color.yellow())
-            embed.description = f"### {updated_trade['name']}"
+            embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
             embed.add_field(name="Trimmed Size", value=utility_cog.format_size(size), inline=True)
             embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
@@ -282,7 +282,7 @@ class OptionsStrategyCog(commands.Cog):
 
             # Create embed
             embed = discord.Embed(title="Exited Options Strategy", color=discord.Color.red())
-            embed.description = f"### {updated_trade['name']}"
+            embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
             embed.add_field(name="Exited Size", value=updated_trade['current_size'], inline=True)
             embed.add_field(name="Avg Entry Cost", value=f"${avg_entry_cost:.2f}", inline=True)
@@ -318,7 +318,7 @@ class OptionsStrategyCog(commands.Cog):
 
             # Create embed
             embed = discord.Embed(title="Trade Note", color=discord.Color.blue())
-            embed.description = f"### {trade_data['underlying_symbol']} - {trade_data['name']}"
+            embed.description = f"### {trade_data['underlying_symbol']} - {trade_data['name']}\n{self.create_trade_oneliner_os(trade_data, utility_cog)}"
             embed.add_field(name="Note", value=note, inline=False)
             embed.set_footer(text=f"Posted by {ctx.user.name}")
 
@@ -330,20 +330,27 @@ class OptionsStrategyCog(commands.Cog):
             logger.error(traceback.format_exc())
             await logging_cog.log_to_channel(ctx.guild, f"Error in OS_NOTE command by {ctx.user.name}: {str(e)}")
 
-    def create_trade_oneliner_os(self, strategy) -> str:
+    def create_trade_oneliner_os(self, strategy, utility_cog) -> str:
         """Create a one-line summary of an options strategy trade."""
         try:
-            legs = self.deserialize_legs(strategy.legs)
+            legs = self.deserialize_legs(strategy['legs'])
+            legs_str = ""
             latest_expiration = None
             for leg in legs:
                 if not latest_expiration or leg['expiration_date'] > latest_expiration:
                     latest_expiration = leg['expiration_date']
+                if legs_str != "":
+                    if leg['trade_type'] == 'BTO':
+                        legs_str += " + "
+                    else:
+                        legs_str += " - "
+                legs_str += f"{leg['strike']}{leg['option_type'][0]}"
             
             if latest_expiration:
                 expiration_str = latest_expiration.strftime('%m/%d/%y')
-                return f"{strategy['underlying_symbol']} {expiration_str} - {strategy['name']} @ ${strategy['average_net_cost']:,.2f} x {format_size(strategy['current_size'])}"
+                return f"{strategy['underlying_symbol']} - {strategy['name']} ({expiration_str}) {legs_str}"
             else:
-                return f"{strategy['underlying_symbol']} - {strategy['name']} @ ${strategy['average_net_cost']:,.2f} x {format_size(strategy['current_size'])}"
+                return f"{strategy['underlying_symbol']} - {strategy['name']} {legs_str}"
         except Exception as e:
             logger.error(f"Error in create_trade_oneliner_os: {str(e)}")
             return "Error creating strategy summary"
