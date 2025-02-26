@@ -136,33 +136,39 @@ class VerificationCog(commands.Cog):
             
             for config in configs:
                 try:
-                    channel = self.bot.get_channel(int(config['channel_id']))
-                    if not channel:
-                        continue
-
-                    # Get the message
-                    try:
-                        message = await channel.fetch_message(int(config['message_id']))
-                    except discord.NotFound:
-                        logger.warning(f"Verification message {config['message_id']} not found in channel {channel.id}")
-                        continue
-
+                    # Create a persistent view with the same custom_id
+                    view = discord.ui.View(timeout=None)
+                    
                     # Get the roles
-                    guild = channel.guild
-                    role_to_remove = guild.get_role(int(config['role_to_remove_id']))
-                    role_to_add = guild.get_role(int(config['role_to_add_id']))
-
-                    # Create and set up the view
-                    view = VerificationView(
+                    guild = self.bot.get_guild(int(config.get('guild_id')))
+                    if not guild:
+                        # Try to get guild from channel
+                        channel = self.bot.get_channel(int(config['channel_id']))
+                        if channel:
+                            guild = channel.guild
+                        else:
+                            logger.warning(f"Could not find guild for verification config {config['message_id']}")
+                            continue
+                    
+                    role_to_remove = guild.get_role(int(config['role_to_remove_id'])) if config.get('role_to_remove_id') else None
+                    role_to_add = guild.get_role(int(config['role_to_add_id'])) if config.get('role_to_add_id') else None
+                    
+                    # Create the button with the same custom_id
+                    button = VerificationButton(
                         self.bot,
-                        config['terms_link'] if 'terms_link' in config else None,
-                        config['terms_summary'] if 'terms_summary' in config else None,
+                        config.get('terms_link', ''),
+                        config.get('terms_summary', ''),
                         role_to_remove,
                         role_to_add
                     )
                     
-                    # Add the view to the message
-                    self.bot.add_view(view, message_id=int(config['message_id']))
+                    # Add the button to the view
+                    view.add_item(button)
+                    
+                    # Register the view with the bot
+                    self.bot.add_view(view)
+                    
+                    logger.info(f"Verification config loaded for message {config['message_id']} in channel {config['channel_id']}")
                     
                 except Exception as e:
                     logger.error(f"Error loading verification config: {str(e)}")
