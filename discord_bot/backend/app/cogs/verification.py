@@ -93,11 +93,14 @@ class VerificationModal(discord.ui.Modal):
                 )
 
 class VerificationButton(discord.ui.Button):
-    def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role):
+    def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role, message_id: str = None):
+        # Create a unique custom_id for each verification message
+        custom_id = f"verify_button_{message_id}" if message_id else "verify_button"
+        
         super().__init__(
             label="Start Verification",
             style=discord.ButtonStyle.success,
-            custom_id="verify_button"
+            custom_id=custom_id
         )
         self.bot = bot
         self.terms_link = terms_link
@@ -116,9 +119,9 @@ class VerificationButton(discord.ui.Button):
         await interaction.response.send_modal(modal)
 
 class VerificationView(discord.ui.View):
-    def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role):
+    def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role, message_id: str = None):
         super().__init__(timeout=None)
-        self.add_item(VerificationButton(bot, terms_link, terms_summary, role_to_remove, role_to_add))
+        self.add_item(VerificationButton(bot, terms_link, terms_summary, role_to_remove, role_to_add, message_id))
 
 class VerificationCog(commands.Cog):
     def __init__(self, bot):
@@ -136,9 +139,6 @@ class VerificationCog(commands.Cog):
             
             for config in configs:
                 try:
-                    # Create a persistent view with the same custom_id
-                    view = discord.ui.View(timeout=None)
-                    
                     # Get the roles
                     try:
                         guild = self.bot.get_guild(int(config.get('guild_id', 0)))
@@ -158,17 +158,15 @@ class VerificationCog(commands.Cog):
                     role_to_remove = guild.get_role(int(config['role_to_remove_id'])) if config.get('role_to_remove_id') else None
                     role_to_add = guild.get_role(int(config['role_to_add_id'])) if config.get('role_to_add_id') else None
                     
-                    # Create the button with the same custom_id
-                    button = VerificationButton(
+                    # Create a new view with the unique button
+                    view = VerificationView(
                         self.bot,
                         config.get('terms_link', ''),
                         config.get('terms_summary', ''),
                         role_to_remove,
-                        role_to_add
+                        role_to_add,
+                        config['message_id']  # Pass message_id to create unique custom_id
                     )
-                    
-                    # Add the button to the view
-                    view.add_item(button)
                     
                     # Register the view with the bot
                     self.bot.add_view(view)
@@ -214,7 +212,7 @@ class VerificationCog(commands.Cog):
                 color=discord.Color.blue()
             )
 
-            # Create view with verification button
+            # Create view with verification button (without message_id since it doesn't exist yet)
             view = VerificationView(
                 self.bot,
                 terms_link,
@@ -225,6 +223,18 @@ class VerificationCog(commands.Cog):
 
             # Send verification message
             verification_message = await channel.send(embed=embed, view=view)
+
+            # Now that we have the message_id, update the view with a unique custom_id
+            # We need to create a new view with the message_id and register it
+            updated_view = VerificationView(
+                self.bot,
+                terms_link,
+                terms_summary,
+                role_to_remove,
+                role_to_add,
+                str(verification_message.id)
+            )
+            self.bot.add_view(updated_view)
 
             # Save verification configuration
             await add_verification_config({
