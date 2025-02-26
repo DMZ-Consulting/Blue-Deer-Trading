@@ -94,8 +94,10 @@ class VerificationModal(discord.ui.Modal):
 
 class VerificationButton(discord.ui.Button):
     def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role, message_id: str = None):
-        # Create a unique custom_id for each verification message
-        custom_id = f"verify_button_{message_id}" if message_id else "verify_button"
+        # Create a unique custom_id that's not too long
+        # Use the last 16 characters of the message_id to keep it shorter but still unique
+        message_suffix = message_id[-16:] if message_id and len(message_id) > 16 else message_id
+        custom_id = f"verify_{message_suffix}" if message_suffix else "verify_button"
         
         super().__init__(
             label="Start Verification",
@@ -126,37 +128,45 @@ class VerificationView(discord.ui.View):
 class VerificationCog(commands.Cog):
     def __init__(self, bot):
         self.bot: discord.Bot = bot
-        self.bot.loop.create_task(self.load_verification_configs())
+        # Wait until bot is ready before loading configs
+        self.bot.add_listener(self.on_ready, "on_ready")
+        
+    async def on_ready(self):
+        """Called when the bot is ready, load verification configs"""
+        await self.load_verification_configs()
+        logger.info("Verification configs loaded on bot ready")
 
     async def load_verification_configs(self):
         """Load all verification configurations from database on startup"""
         try:
-            # Wait for bot to be ready
-            await self.bot.wait_until_ready()
-            
             # Get all verification configs from database
             configs = await get_verification_configs()
+            logger.info(f"Found {len(configs)} verification configs to load")
             
             for config in configs:
                 try:
-                    # Get the roles
-                    try:
-                        guild = self.bot.get_guild(int(config.get('guild_id', 0)))
-                    except Exception as e:
-                        logger.error(f"Error getting guild for verification config {config['message_id']}: {str(e)}")
-                        logger.error(traceback.format_exc())
-                        continue
-                    if not guild:
-                        # Try to get guild from channel
-                        channel = self.bot.get_channel(int(config['channel_id']))
-                        if channel:
-                            guild = channel.guild
-                        else:
-                            logger.warning(f"Could not find guild for verification config {config['message_id']}")
-                            continue
+                    # Get the channel first
+                    channel_id = int(config['channel_id'])
+                    channel = self.bot.get_channel(channel_id)
                     
+                    if not channel:
+                        logger.warning(f"Could not find channel {channel_id} for verification config")
+                        continue
+                        
+                    guild = channel.guild
+                    
+                    # Get the roles
                     role_to_remove = guild.get_role(int(config['role_to_remove_id'])) if config.get('role_to_remove_id') else None
                     role_to_add = guild.get_role(int(config['role_to_add_id'])) if config.get('role_to_add_id') else None
+                    
+                    # Try to fetch the actual message to verify it exists
+                    try:
+                        message_id = int(config['message_id'])
+                        message = await channel.fetch_message(message_id)
+                        logger.info(f"Found verification message {message_id} in channel {channel_id}")
+                    except Exception as e:
+                        logger.warning(f"Could not fetch message {config['message_id']} in channel {channel_id}: {str(e)}")
+                        # Continue anyway to register the view
                     
                     # Create a new view with the unique button
                     view = VerificationView(
@@ -165,13 +175,13 @@ class VerificationCog(commands.Cog):
                         config.get('terms_summary', ''),
                         role_to_remove,
                         role_to_add,
-                        config['message_id']  # Pass message_id to create unique custom_id
+                        config['message_id']
                     )
                     
                     # Register the view with the bot
                     self.bot.add_view(view)
                     
-                    logger.info(f"Verification config loaded for message {config['message_id']} in channel {config['channel_id']}")
+                    logger.info(f"Verification view registered for message {config['message_id']} in channel {channel_id}")
                     
                 except Exception as e:
                     logger.error(f"Error loading verification config: {str(e)}")
