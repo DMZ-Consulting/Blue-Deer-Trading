@@ -140,7 +140,12 @@ class VerificationCog(commands.Cog):
                     view = discord.ui.View(timeout=None)
                     
                     # Get the roles
-                    guild = self.bot.get_guild(int(config.get('guild_id')))
+                    try:
+                        guild = self.bot.get_guild(int(config.get('guild_id')))
+                    except Exception as e:
+                        logger.error(f"Error getting guild for verification config {config['message_id']}: {str(e)}")
+                        logger.error(traceback.format_exc())
+                        continue
                     if not guild:
                         # Try to get guild from channel
                         channel = self.bot.get_channel(int(config['channel_id']))
