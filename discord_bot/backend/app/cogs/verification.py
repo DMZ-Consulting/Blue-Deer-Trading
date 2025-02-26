@@ -141,7 +141,7 @@ class VerificationCog(commands.Cog):
                     
                     # Get the roles
                     try:
-                        guild = self.bot.get_guild(int(config.get('guild_id')))
+                        guild = self.bot.get_guild(int(config.get('guild_id', 0)))
                     except Exception as e:
                         logger.error(f"Error getting guild for verification config {config['message_id']}: {str(e)}")
                         logger.error(traceback.format_exc())
