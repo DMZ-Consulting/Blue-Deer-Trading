@@ -24,7 +24,7 @@ class VerificationModal(discord.ui.Modal):
         self.role_to_add = role_to_add
 
         self.agree_to_terms = discord.ui.InputText(
-            label="You must agree to the terms by typing 'I AGREE'.",
+            label="Agree by typing 'I AGREE'.",
             placeholder="Type 'I AGREE' to agree",
             required=True,
             min_length=7,
