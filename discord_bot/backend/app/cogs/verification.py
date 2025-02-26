@@ -67,12 +67,14 @@ class VerificationModal(discord.ui.Modal):
             # Log verification
             logging_cog = self.bot.get_cog('LoggingCog')
             if logging_cog:
-                await logging_cog.log_to_channel(
-                    interaction.guild,
-                    f"User {interaction.user.name} has been verified:\n"
-                    f"- Full Name: {self.full_name.value}\n"
-                    f"- Email: {self.email.value}"
+                embed = discord.Embed(
+                    title="User Verification",
+                    description=f"User {interaction.user.name} has been verified",
+                    color=discord.Color.green()
                 )
+                embed.add_field(name="Full Name", value=self.full_name.value, inline=False)
+                embed.add_field(name="Email", value=self.email.value, inline=False)
+                await logging_cog.log_to_channel(interaction.guild, None, embed=embed)
 
             await interaction.response.send_message(
                 "Thank you for verifying! Your roles have been updated.",
@@ -93,48 +95,66 @@ class VerificationModal(discord.ui.Modal):
                 )
 
 class VerificationButton(discord.ui.Button):
-    def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role, message_id: str = None):
-        # Create a unique custom_id that's not too long
-        # Use the last 16 characters of the message_id to keep it shorter but still unique
-        message_suffix = message_id[-16:] if message_id and len(message_id) > 16 else message_id
-        custom_id = f"verify_{message_suffix}" if message_suffix else "verify_button"
-        
+    def __init__(self):
+        # Use a simple, consistent custom_id
         super().__init__(
             label="Start Verification",
             style=discord.ButtonStyle.success,
-            custom_id=custom_id
+            custom_id="verification_button"
         )
-        self.bot = bot
-        self.terms_link = terms_link
-        self.terms_summary = terms_summary
-        self.role_to_remove = role_to_remove
-        self.role_to_add = role_to_add
-
-    async def callback(self, interaction: discord.Interaction):
-        modal = VerificationModal(
-            self.bot,
-            self.terms_link,
-            self.terms_summary,
-            self.role_to_remove,
-            self.role_to_add
-        )
-        await interaction.response.send_modal(modal)
+        
+    # Remove the callback method - we'll handle it globally
 
 class VerificationView(discord.ui.View):
-    def __init__(self, bot, terms_link: str, terms_summary: str, role_to_remove: discord.Role, role_to_add: discord.Role, message_id: str = None):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(VerificationButton(bot, terms_link, terms_summary, role_to_remove, role_to_add, message_id))
+        self.add_item(VerificationButton())
 
 class VerificationCog(commands.Cog):
     def __init__(self, bot):
         self.bot: discord.Bot = bot
-        # Wait until bot is ready before loading configs
+        self.verification_configs = {}  # Store configs by message_id for quick lookup
         self.bot.add_listener(self.on_ready, "on_ready")
+        self.bot.add_listener(self.on_interaction, "on_interaction")
         
     async def on_ready(self):
         """Called when the bot is ready, load verification configs"""
         await self.load_verification_configs()
         logger.info("Verification configs loaded on bot ready")
+        
+    async def on_interaction(self, interaction: discord.Interaction):
+        """Global interaction handler for verification buttons"""
+        if not interaction.data:
+            return
+            
+        custom_id = interaction.data.get('custom_id')
+        if custom_id != "verification_button":
+            return
+            
+        # Find the config for this message
+        message_id = str(interaction.message.id)
+        config = self.verification_configs.get(message_id)
+        
+        if not config:
+            logger.warning(f"No verification config found for message {message_id}")
+            await interaction.response.send_message("This verification button is not properly configured. Please contact an administrator.", ephemeral=True)
+            return
+            
+        # Get the roles
+        guild = interaction.guild
+        role_to_remove = guild.get_role(int(config['role_to_remove_id'])) if config.get('role_to_remove_id') else None
+        role_to_add = guild.get_role(int(config['role_to_add_id'])) if config.get('role_to_add_id') else None
+        
+        # Show the verification modal
+        modal = VerificationModal(
+            self.bot,
+            config.get('terms_link', ''),
+            config.get('terms_summary', ''),
+            role_to_remove,
+            role_to_add
+        )
+        
+        await interaction.response.send_modal(modal)
 
     async def load_verification_configs(self):
         """Load all verification configurations from database on startup"""
@@ -143,50 +163,14 @@ class VerificationCog(commands.Cog):
             configs = await get_verification_configs()
             logger.info(f"Found {len(configs)} verification configs to load")
             
-            for config in configs:
-                try:
-                    # Get the channel first
-                    channel_id = int(config['channel_id'])
-                    channel = self.bot.get_channel(channel_id)
-                    
-                    if not channel:
-                        logger.warning(f"Could not find channel {channel_id} for verification config")
-                        continue
-                        
-                    guild = channel.guild
-                    
-                    # Get the roles
-                    role_to_remove = guild.get_role(int(config['role_to_remove_id'])) if config.get('role_to_remove_id') else None
-                    role_to_add = guild.get_role(int(config['role_to_add_id'])) if config.get('role_to_add_id') else None
-                    
-                    # Try to fetch the actual message to verify it exists
-                    try:
-                        message_id = int(config['message_id'])
-                        message = await channel.fetch_message(message_id)
-                        logger.info(f"Found verification message {message_id} in channel {channel_id}")
-                    except Exception as e:
-                        logger.warning(f"Could not fetch message {config['message_id']} in channel {channel_id}: {str(e)}")
-                        # Continue anyway to register the view
-                    
-                    # Create a new view with the unique button
-                    view = VerificationView(
-                        self.bot,
-                        config.get('terms_link', ''),
-                        config.get('terms_summary', ''),
-                        role_to_remove,
-                        role_to_add,
-                        config['message_id']
-                    )
-                    
-                    # Register the view with the bot
-                    self.bot.add_view(view)
-                    
-                    logger.info(f"Verification view registered for message {config['message_id']} in channel {channel_id}")
-                    
-                except Exception as e:
-                    logger.error(f"Error loading verification config: {str(e)}")
-                    logger.error(traceback.format_exc())
-
+            # Store configs by message_id for quick lookup
+            self.verification_configs = {config['message_id']: config for config in configs}
+            
+            # Register a single persistent view for all verification buttons
+            self.bot.add_view(VerificationView())
+            
+            logger.info(f"Registered global verification view for {len(configs)} messages")
+            
         except Exception as e:
             logger.error(f"Error in load_verification_configs: {str(e)}")
             logger.error(traceback.format_exc())
@@ -222,38 +206,26 @@ class VerificationCog(commands.Cog):
                 color=discord.Color.blue()
             )
 
-            # Create view with verification button (without message_id since it doesn't exist yet)
-            view = VerificationView(
-                self.bot,
-                terms_link,
-                terms_summary,
-                role_to_remove,
-                role_to_add
-            )
+            # Create a simple view with the verification button
+            view = VerificationView()
 
             # Send verification message
             verification_message = await channel.send(embed=embed, view=view)
-
-            # Now that we have the message_id, update the view with a unique custom_id
-            # We need to create a new view with the message_id and register it
-            updated_view = VerificationView(
-                self.bot,
-                terms_link,
-                terms_summary,
-                role_to_remove,
-                role_to_add,
-                str(verification_message.id)
-            )
-            self.bot.add_view(updated_view)
-
-            # Save verification configuration
-            await add_verification_config({
+            
+            # Create config
+            config = {
                 'channel_id': str(channel.id),
                 'message_id': str(verification_message.id),
                 'role_to_remove_id': str(role_to_remove.id),
                 'role_to_add_id': str(role_to_add.id),
-                'log_channel_id': str(log_channel.id)
-            })
+                'log_channel_id': str(log_channel.id),
+            }
+            
+            # Store in memory
+            self.verification_configs[str(verification_message.id)] = config
+
+            # Save verification configuration to database
+            await add_verification_config(config)
 
             await ctx.followup.send(
                 f"Verification message has been set up in {channel.mention}. "

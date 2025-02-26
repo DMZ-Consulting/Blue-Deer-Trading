@@ -23,7 +23,7 @@ class LoggingCog(commands.Cog):
             logger.error(f"Error logging command usage: {str(e)}")
             logger.error(traceback.format_exc())
 
-    async def log_to_channel(self, guild, message):
+    async def log_to_channel(self, guild, message, embed=None):
         """Log a message to the appropriate logging channel."""
         try:
             if os.getenv("LOCAL_TEST", "false").lower() == "true":
@@ -40,7 +40,10 @@ class LoggingCog(commands.Cog):
 
             log_channel = guild.get_channel(int(log_channel_id))
             if log_channel:
-                await log_channel.send(message)
+                if embed:
+                    await log_channel.send(embed=embed)
+                else:
+                    await log_channel.send(message)
         except Exception as e:
             logger.error(f"Error logging to channel: {str(e)}")
             logger.error(traceback.format_exc())
