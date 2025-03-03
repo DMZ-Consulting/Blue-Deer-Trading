@@ -109,12 +109,12 @@ export function TradesTableComponent({
   const [editingTransaction, setEditingTransaction] = useState<{ id: string; trade_id: string } | null>(null)
   const [columnVisibility, setColumnVisibility] = useState({
     symbol: true,
-    trade_type: false,
+    trade_type: true,
     status: true,
     entry_price: true,
-    current_size: true,
-    expiration_date: false,
-    created_at: true,
+    current_size: false,
+    expiration_date: true,
+    created_at: false,
     closed_at: false,
     average_exit_price: true,
     profit_loss: true,
@@ -204,6 +204,23 @@ export function TradesTableComponent({
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
+      timeZone: 'America/New_York'
+    };
+
+    return utcDate.toLocaleString('en-US', options);
+  }
+
+  const formatExpirationDate = (dateString: string | null): string => {
+    if (!dateString) return 'N/A';
+
+    // Parse the UTC date string
+    const utcDate = new Date(dateString);
+    
+    // Create options for EST date formatting
+    const options: Intl.DateTimeFormatOptions = {
+      year: '2-digit',
+      month: '2-digit', 
+      day: '2-digit',
       timeZone: 'America/New_York'
     };
 
@@ -447,7 +464,7 @@ export function TradesTableComponent({
     {
       id: "expiration_date",
       header: "Expiration Date",
-      render: (trade: Trade) => trade.expiration_date ? formatDateTime(trade.expiration_date) : '-',
+      render: (trade: Trade) => trade.expiration_date ? formatExpirationDate(trade.expiration_date) : '-',
     },
     {
       id: "created_at",
@@ -535,17 +552,17 @@ export function TradesTableComponent({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[40px]"></TableHead>
-                {isDevelopment && localDebugMode && <TableHead>ID</TableHead>}
+                <TableHead className="w-[40px] text-center"></TableHead>
+                {isDevelopment && localDebugMode && <TableHead className="text-center">ID</TableHead>}
                 {Object.entries(columnVisibility).map(([column, isVisible]) => {
                   if (!isVisible) return null;
                   return (
                     <TableHead
                       key={column}
-                      className="cursor-pointer"
+                      className="cursor-pointer text-center"
                       onClick={() => handleSort(column as SortField)}
                     >
-                      <div className="flex items-center space-x-1">
+                      <div className="flex items-center justify-center space-x-1">
                         <span>{column.charAt(0).toUpperCase() + column.slice(1).replace(/_/g, ' ')}</span>
                         {renderSortIcon(column as SortField)}
                       </div>
@@ -555,9 +572,9 @@ export function TradesTableComponent({
                 {/* Add headers for position sizing columns if they exist */}
                 {renderAdditionalColumns && (
                   <>
-                    <TableHead className="text-right">Unit Price</TableHead>
-                    <TableHead className="text-right">Units per Risk</TableHead>
-                    <TableHead className="text-right">Realized Value</TableHead>
+                    <TableHead className="text-center">Unit Price</TableHead>
+                    <TableHead className="text-center">Units per Risk</TableHead>
+                    <TableHead className="text-center">Realized Value</TableHead>
                   </>
                 )}
               </TableRow>
