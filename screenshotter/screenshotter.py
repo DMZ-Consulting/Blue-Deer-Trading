@@ -14,7 +14,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.firefox.service import Service
 from pyvirtualdisplay import Display
 import platform
-
+import shutil
 def setup_driver():
     """Set up Firefox WebDriver with platform-specific configuration"""
     from selenium.webdriver.firefox.service import Service
@@ -296,9 +296,10 @@ DEBUG_WEBHOOKS = {
 DISCORD_FILE_ORDER = ['day_trader_open.png', 'day_trader_portfolio.png', 'swing_trader_open.png', 'swing_trader_portfolio.png', 'long_term_trader_open.png', 'long_term_trader_portfolio.png']
 
 DISCORD_FILE_GROUPS = {
-    "day_trader": { "open": ["day_trader_regular_trades.png", "day_trader_options_trades.png", "day_trader_options_strategies.png"], "portfolio": ["day_trader_portfolio.png"] },
-    "swing_trader": { "open": ["swing_trader_regular_trades.png", "swing_trader_options_trades.png", "swing_trader_options_strategies.png"], "portfolio": ["swing_trader_portfolio.png"] },
-    "long_term_trader": { "open": ["long_term_trader_regular_trades.png", "long_term_trader_options_trades.png", "long_term_trader_options_strategies.png"], "portfolio": ["long_term_trader_portfolio.png"] }
+    "day_trader": { "open": ["day_trader_trades.png", "day_trader_options_strategies.png"], "portfolio": ["day_trader_portfolio.png"] },
+    "swing_trader": { "open": ["swing_trader_trades.png", "swing_trader_options_strategies.png"], "portfolio": ["swing_trader_portfolio.png"] },
+    "long_term_trader": { "open": ["long_term_trader_trades.png", "long_term_trader_options_strategies.png"], "portfolio": ["long_term_trader_portfolio.png"] },
+    "full_portfolio": {"open": ["all_groups_trades.png", "all_groups_options_strategies.png"], "portfolio": ["all_groups_portfolio.png"] }
 }
 
 
@@ -388,7 +389,7 @@ def send_discord_message(webhook_url, message, image_path=None, avatar_path=None
 def capture_all_trade_views(driver):
     #trade_types = ["Regular Trades", "Options Trades", "Options Strategies"]
     trade_types = ["Trades", "Options Strategies"]
-    trader_groups = ["Day Trader", "Swing Trader", "Long Term Trader"]
+    trader_groups = ["Day Trader", "Swing Trader", "Long Term Trader", "All Groups"]
     
     for trade_type in trade_types:
         # Click the trade type button
@@ -451,8 +452,9 @@ def handle_login(driver):
         raise
 
 def main():
-    if not os.path.exists("screenshots"):
-        os.makedirs("screenshots")
+    if os.path.exists("screenshots"):
+        shutil.rmtree("screenshots")
+    os.makedirs("screenshots")
 
     driver = setup_driver()
     
@@ -469,9 +471,9 @@ def main():
         # Capture all combinations
         capture_all_trade_views(driver)
 
-        capture_portfolio_for_all_groups(driver)
+        #capture_portfolio_for_all_groups(driver)
 
-        #send_screenshot_to_discord(debug=False)
+        send_screenshot_to_discord(debug=False)
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
