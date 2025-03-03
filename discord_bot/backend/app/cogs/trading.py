@@ -16,6 +16,9 @@ from ..supabase_client import (
 
 logger = logging.getLogger(__name__)
 
+# Toggle to control whether size is displayed in Discord embeds
+DISPLAY_SIZE_IN_EMBEDS = False
+
 class TradeGroupEnum:
     DAY_TRADER = "day_trader"
     SWING_TRADER = "swing_trader"
@@ -123,9 +126,15 @@ class TradingCog(commands.Cog):
             utility_cog = await self.get_utility_cog()
             expiration = utility_cog.convert_to_two_digit_year(trade.get('expiration_date')) if trade.get('expiration_date') else "No Exp"
             strike = f"${trade.get('strike'):.2f}"
-            return f"### {expiration} {trade.get('symbol')} {strike} {option_type} @ {display_price} {size} risk"
+            if DISPLAY_SIZE_IN_EMBEDS:
+                return f"### {expiration} {trade.get('symbol')} {strike} {option_type} @ {display_price} {size} risk"
+            else:
+                return f"### {expiration} {trade.get('symbol')} {strike} {option_type} @ {display_price}"
         else:
-            return f"### {trade.get('symbol')} @ {display_price} {size} risk"
+            if DISPLAY_SIZE_IN_EMBEDS:
+                return f"### {trade.get('symbol')} @ {display_price} {size} risk"
+            else:
+                return f"### {trade.get('symbol')} @ {display_price}"
 
     async def create_transaction_oneliner(self, trade: Dict[str, Any], type: str, size: float, price: float) -> str:
         """Create a one-line summary of a transaction."""
@@ -145,9 +154,15 @@ class TradingCog(commands.Cog):
             utility_cog = await self.get_utility_cog()
             expiration = utility_cog.convert_to_two_digit_year(trade.get('expiration_date')) if trade.get('expiration_date') else "No Exp"
             strike = f"{trade.get('strike'):.2f}"
-            return f"### {type} {expiration} {trade.get('symbol')} {strike} {option_type} @ {price:.2f} {size} {risk_identifier}"
+            if DISPLAY_SIZE_IN_EMBEDS:
+                return f"### {type} {expiration} {trade.get('symbol')} {strike} {option_type} @ {price:.2f} {size} {risk_identifier}"
+            else:
+                return f"### {type} {expiration} {trade.get('symbol')} {strike} {option_type} @ {price:.2f}"
         else:
-            return f"### {type} {trade.get('symbol')} @ {price:.2f} {size} {risk_identifier}"
+            if DISPLAY_SIZE_IN_EMBEDS:
+                return f"### {type} {trade.get('symbol')} @ {price:.2f} {size} {risk_identifier}"
+            else:
+                return f"### {type} {trade.get('symbol')} @ {price:.2f}"
 
     @commands.slash_command(name="open", description="Open a trade from a symbol string")
     async def open_trade(
@@ -155,7 +170,7 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         trade_string: discord.Option(str, description="The trade string to parse"),
         price: discord.Option(float, description="The price of the trade"),
-        size: discord.Option(str, description="The size of the trade"),
+        size: discord.Option(str, description="The size of the trade") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         """Open a new trade."""
@@ -203,10 +218,15 @@ class TradingCog(commands.Cog):
                 embed.add_field(name="Symbol", value=parsed['symbol'], inline=True)
                 embed.add_field(name="Type", value=parsed['trade_type'], inline=True)
                 embed.add_field(name="Entry Price", value=f"${price:,.2f}", inline=True)
-                embed.add_field(name="Risk Level (1-6)", value=size, inline=True)
+                if DISPLAY_SIZE_IN_EMBEDS:
+                    embed.add_field(name="Risk Level (1-6)", value=size, inline=True)
                 embed.add_field(name="Expiration", value=parsed['expiration_date'].strftime("%m/%d/%y"), inline=True)
                 embed.add_field(name="Strike", value=f"${parsed['strike']:,.2f}", inline=True)
                 embed.add_field(name="Option Type", value="CALL" if parsed['option_type'] == "C" else "PUT", inline=True)
+                if trade_group == TradeGroupEnum.DAY_TRADER:
+                    embed.add_field(name="Disclaimer", value="This is a day trade. Set a 50% sell at 100% profit to lock in a no risk situation.", inline=True)
+                else:
+                    embed.add_field(name="Disclaimer", value="Swing Trades & Long Term Trades are less volatile, Blue Deer will mention and size up if it is a CORE Position", inline=True)
                 embed.set_footer(text=f"Trade ID: {trade_data['trade_id']}")
                 if note:
                     embed.add_field(name="Note", value=note, inline=False)
@@ -229,7 +249,7 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         symbol: discord.Option(str, description="The symbol of the security"),
         entry_price: discord.Option(float, description="The price at which the trade was opened"),
-        size: discord.Option(str, description="The size of the trade"),
+        size: discord.Option(str, description="The size of the trade") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -241,7 +261,7 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         symbol: discord.Option(str, description="The symbol of the security"),
         entry_price: discord.Option(float, description="The price at which the trade was opened"),
-        size: discord.Option(str, description="The size of the trade"),
+        size: discord.Option(str, description="The size of the trade") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -283,7 +303,8 @@ class TradingCog(commands.Cog):
                 embed.add_field(name="Symbol", value=symbol, inline=True)
                 embed.add_field(name="Type", value="BTO", inline=True)
                 embed.add_field(name="Entry Price", value=f"${entry_price:,.2f}", inline=True)
-                embed.add_field(name="Risk Level (1-6)", value=size, inline=True)
+                if DISPLAY_SIZE_IN_EMBEDS:
+                    embed.add_field(name="Risk Level (1-6)", value=size, inline=True)
                 embed.set_footer(text=f"Trade ID: {trade_data['trade_id']}")
                 
                 note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
@@ -309,7 +330,7 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         trade_id: discord.Option(str, description="The ID of the trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)),
         price: discord.Option(float, description="The price of the trade"),
-        size: discord.Option(str, description="The size to add"),
+        size: discord.Option(str, description="The size to add") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -321,8 +342,11 @@ class TradingCog(commands.Cog):
             # Create an embed with the updated trade information
             embed = discord.Embed(title="Added to Trade", color=discord.Color.blue())
             embed.description = await self.create_transaction_oneliner(trade_data, "ADD", size, price)
-            embed.add_field(name="New Total Size", value=trade_data.get('current_size', None), inline=True)
+            if DISPLAY_SIZE_IN_EMBEDS:
+                embed.add_field(name="New Total Size", value=trade_data.get('current_size', None), inline=True)
             embed.add_field(name="New Average Price", value=f"${trade_data.get('average_price', None):.2f}", inline=True)
+            if trade_data.get('is_day_trade'):
+                embed.add_field(name="Disclaimer", value="NEW AVERAGE PRICE! Update your 50% sell at 100% profit to lock in a no risk situation.", inline=True)
             embed.set_footer(text=f"Trade ID: {trade_data.get('trade_id', None)}")
             note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
 
@@ -341,7 +365,7 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         trade_id: discord.Option(str, description="The ID of the trade to trim", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)),
         price: discord.Option(float, description="The price of the trade"),
-        size: discord.Option(str, description="The size to trim"),
+        size: discord.Option(str, description="The size to trim") = "0.25",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -349,12 +373,16 @@ class TradingCog(commands.Cog):
         try:
             logging_cog = await self.get_logging_cog()
             utility_cog = await self.get_utility_cog()
+            trade_data = await get_single_trade(trade_id)
+            if float(trade_data.get("current_size", 0.01)) - float(size) <= 0:
+                size = trade_data.get("current_size", 0.01) / 2
             trade_data = await trim_trade(trade_id, price, size)
 
             # Create an embed with the updated trade information
             embed = discord.Embed(title="Trimmed Trade", color=discord.Color.yellow())
             embed.description = await self.create_transaction_oneliner(trade_data, "TRIM", size, price)
-            embed.add_field(name="Size Remaining", value=trade_data.get('current_size', None), inline=True)
+            if DISPLAY_SIZE_IN_EMBEDS:
+                embed.add_field(name="Size Remaining", value=trade_data.get('current_size', None), inline=True)
             embed.set_footer(text=f"Trade ID: {trade_data.get('trade_id', None)}")
 
             note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
@@ -390,6 +418,15 @@ class TradingCog(commands.Cog):
 
             unit_type = "contract" if trade_data.get('is_contract', False) else "share"
             unit_profit_loss = trade_data.get('unit_profit_loss', 0) * 100 if unit_type == "contract" else trade_data.get('unit_profit_loss', 0)
+
+            # Calculate percentage change
+            entry_price = trade_data.get('average_price', 0)
+            exit_price = trade_data.get('average_exit_price', price)
+            
+            if entry_price and entry_price > 0:
+                percent_change = ((exit_price - entry_price) / entry_price) * 100
+                change_sign = "+" if percent_change >= 0 else ""
+                embed.add_field(name="Percent Change", value=f"{change_sign}{percent_change:.2f}%", inline=True)
 
             embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${unit_profit_loss:.2f}", inline=True)
             embed.add_field(name="Avg Entry Price", value=f"${trade_data.get('average_price', None):.2f}", inline=True)

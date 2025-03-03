@@ -18,6 +18,9 @@ from ..supabase_client import (
 
 logger = logging.getLogger(__name__)
 
+# Toggle to control whether size is displayed in Discord embeds
+DISPLAY_SIZE_IN_EMBEDS = False
+
 async def get_open_os_trade_ids(ctx: discord.AutocompleteContext) -> list[discord.OptionChoice]:
     """Get open options strategy trades for autocomplete."""
     try:
@@ -96,9 +99,9 @@ class OptionsStrategyCog(commands.Cog):
         self,
         ctx: discord.ApplicationContext,
         strategy_name: discord.Option(str, description="The name of the strategy (e.g., 'Iron Condor', 'Call Spread')"),
-        size: discord.Option(str, description="The size of the strategy"),
         net_cost: discord.Option(float, description="The net cost of the strategy"),
         legs: discord.Option(str, description="The legs of the strategy in format: 'SPY240119C510,SPY240119P500,...'"),
+        size: discord.Option(str, description="The size of the strategy") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -152,7 +155,8 @@ class OptionsStrategyCog(commands.Cog):
                 embed.description = f"### {strategy_name}\n{self.create_trade_oneliner_os(trade_data, utility_cog)}"
                 embed.add_field(name="Symbol", value=leg_list[0]['symbol'], inline=True)
                 embed.add_field(name="Net Cost", value=f"${net_cost:,.2f}", inline=True)
-                embed.add_field(name="Size", value=size, inline=True)
+                if DISPLAY_SIZE_IN_EMBEDS:
+                    embed.add_field(name="Size", value=size, inline=True)
 
                 embed.set_footer(text=f"Strategy ID: {trade_data['strategy_id']}")
                 
@@ -181,7 +185,7 @@ class OptionsStrategyCog(commands.Cog):
         ctx: discord.ApplicationContext,
         strategy_id: discord.Option(str, description="The ID of the options strategy trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         net_cost: discord.Option(float, description="The net cost of the addition"),
-        size: discord.Option(str, description="The size to add"),
+        size: discord.Option(str, description="The size to add") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -201,8 +205,9 @@ class OptionsStrategyCog(commands.Cog):
             embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
 
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
-            embed.add_field(name="Added Size", value=utility_cog.format_size(size), inline=True)
-            embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
+            if DISPLAY_SIZE_IN_EMBEDS:
+                embed.add_field(name="Added Size", value=utility_cog.format_size(size), inline=True)
+                embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
             embed.add_field(name="New Avg Cost", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
             if note:
                 embed.add_field(name="Note", value=note, inline=False)
@@ -224,7 +229,7 @@ class OptionsStrategyCog(commands.Cog):
         ctx: discord.ApplicationContext,
         strategy_id: discord.Option(str, description="The ID of the options strategy trade to trim", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         net_cost: discord.Option(float, description="The net cost of the trim"),
-        size: discord.Option(str, description="The size to trim"),
+        size: discord.Option(str, description="The size to trim") = "0.25",
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -241,8 +246,9 @@ class OptionsStrategyCog(commands.Cog):
             embed = discord.Embed(title="Trimmed Options Strategy", color=discord.Color.yellow())
             embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
-            embed.add_field(name="Trimmed Size", value=utility_cog.format_size(size), inline=True)
-            embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
+            if DISPLAY_SIZE_IN_EMBEDS:
+                embed.add_field(name="Trimmed Size", value=utility_cog.format_size(size), inline=True)
+                embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
             embed.add_field(name="Avg Cost", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
             
             embed.set_footer(text=f"Strategy ID: {strategy_id}")
@@ -277,14 +283,24 @@ class OptionsStrategyCog(commands.Cog):
 
             # Calculate P/L
             avg_entry_cost = float(updated_trade['average_net_cost'])
-            avg_exit_cost = net_cost
+            avg_exit_cost = float(updated_trade['average_exit_cost'])
             pl_per_contract = avg_exit_cost - avg_entry_cost
+
+            # Calculate percentage change
+            if avg_entry_cost and avg_entry_cost != 0:
+                percent_change = ((avg_exit_cost - avg_entry_cost) / abs(avg_entry_cost)) * 100
+                change_sign = "+" if percent_change >= 0 else ""
+            else:
+                percent_change = 0
+                change_sign = ""
 
             # Create embed
             embed = discord.Embed(title="Exited Options Strategy", color=discord.Color.red())
             embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
             embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
-            embed.add_field(name="Exited Size", value=updated_trade['current_size'], inline=True)
+            if DISPLAY_SIZE_IN_EMBEDS:
+                embed.add_field(name="Exited Size", value=updated_trade['current_size'], inline=True)
+            embed.add_field(name="Percent Change", value=f"{change_sign}{percent_change:.2f}%", inline=True)
             embed.add_field(name="Avg Entry Cost", value=f"${avg_entry_cost:.2f}", inline=True)
             embed.add_field(name="Avg Exit Cost", value=f"${avg_exit_cost:.2f}", inline=True)
             embed.add_field(name="P/L per Contract", value=f"${pl_per_contract:.2f}", inline=True)
