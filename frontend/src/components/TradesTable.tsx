@@ -104,7 +104,7 @@ export function TradesTableComponent({
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [localDebugMode, setLocalDebugMode] = useState(debugMode)
-  const [sortField, setSortField] = useState<SortField>('created_at')
+  const [sortField, setSortField] = useState<SortField>('expiration_date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [editingTransaction, setEditingTransaction] = useState<{ id: string; trade_id: string } | null>(null)
   const [columnVisibility, setColumnVisibility] = useState({

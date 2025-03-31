@@ -24,7 +24,7 @@ export default function PortfolioPage() {
     return 'day_trader';
   });
 
-  const [isReportsVisible, setIsReportsVisible] = useState(true);
+  const [isReportsVisible, setIsReportsVisible] = useState(false);
   const [portfolio, setPortfolio] = useState<PortfolioEndpoint>({
     regular_trades: [],
     strategy_trades: []

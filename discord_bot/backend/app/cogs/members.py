@@ -23,6 +23,9 @@ class Members(commands.Cog):
         Checks if they were granted trader roles and adds BD-Unverified if needed.
         Also removes verification roles if all trader roles are removed.
         """
+
+        logging_cog = self.bot.get_cog('LoggingCog')
+        await logging_cog.log_to_channel(after.guild, f"Member {after.name} (ID: {after.id}) roles updated.\n Before: {before.roles}\n After: {after.roles}")
         # Skip if roles didn't change
         if set(before.roles) == set(after.roles):
             return
@@ -98,7 +101,7 @@ class Members(commands.Cog):
         print(f"Member joined event triggered for: {member.name} (ID: {member.id})")  # Debug print
         logger.info(f"Member joined: {member.name} (ID: {member.id})")
 
-        await self.dm_member(member)
+        #await self.dm_member(member)
         
         if member.guild.id != 1055255055474905139:  # Blue Deer Server
             return

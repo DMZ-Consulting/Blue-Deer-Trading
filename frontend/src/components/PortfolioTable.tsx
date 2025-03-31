@@ -85,19 +85,10 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
             <Button variant="ghost">Avg Price</Button>
           </TableHead>
           <TableHead className="text-center whitespace-nowrap">
-            <Button variant="ghost">Size</Button>
-          </TableHead>
-          <TableHead className="text-center whitespace-nowrap">
             <Button variant="ghost">Avg Exit</Button>
           </TableHead>
           <TableHead className="text-center whitespace-nowrap">
             <Button variant="ghost">Pct Change</Button>
-          </TableHead>
-          <TableHead className="text-center whitespace-nowrap">
-            <Button variant="ghost">Unit P/L</Button>
-          </TableHead>
-          <TableHead className="text-center whitespace-nowrap">
-            <Button variant="ghost">Realized P/L</Button>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -113,11 +104,8 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
               <TableCell className="text-center whitespace-nowrap">{formatOneliner(item.oneliner)}</TableCell>
               <TableCell className="text-center whitespace-nowrap">{tradeType}</TableCell>
               <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
-              <TableCell className="text-center whitespace-nowrap">{item.realized_size}</TableCell>
               <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_exit_price} /></TableCell>
               <TableCell className="text-center whitespace-nowrap"><HighlightedNumber value={item.pct_change} highlight={true} />%</TableCell>
-              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl / item.realized_size} highlight={true} /></TableCell>
-              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.realized_pl} highlight={true} /></TableCell>
             </TableRow>
           );
         })}

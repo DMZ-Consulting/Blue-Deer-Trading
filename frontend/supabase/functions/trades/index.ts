@@ -419,7 +419,7 @@ serve(async (req: Request) => {
 
       case 'exitTrade':
         logger.debug('Handling exitTrade action')
-        if (!trade_id || !price) {
+        if (!trade_id || price === undefined) {
           throw new Error('Missing required parameters: trade_id and price are required for exiting a trade')
         }
 
