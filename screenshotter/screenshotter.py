@@ -471,7 +471,7 @@ def main():
         # Capture all combinations
         capture_all_trade_views(driver)
 
-        #capture_portfolio_for_all_groups(driver)
+        capture_portfolio_for_all_groups(driver)
 
         send_screenshot_to_discord(debug=False)
 
