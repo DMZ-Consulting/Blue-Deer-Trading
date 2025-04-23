@@ -204,11 +204,11 @@ class OptionsStrategyCog(commands.Cog):
             embed = discord.Embed(title="Added to Options Strategy", color=discord.Color.blue())
             embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
 
-            embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
+            embed.add_field(name="Add Price", value=f"${net_cost:.2f}", inline=True)
             if DISPLAY_SIZE_IN_EMBEDS:
                 embed.add_field(name="Added Size", value=utility_cog.format_size(size), inline=True)
                 embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
-            embed.add_field(name="New Avg Cost", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
+            embed.add_field(name="New Avg Entry", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
             if note:
                 embed.add_field(name="Note", value=note, inline=False)
             embed.set_footer(text=f"Strategy ID: {strategy_id}")    
@@ -245,11 +245,11 @@ class OptionsStrategyCog(commands.Cog):
             # Create embed
             embed = discord.Embed(title="Trimmed Options Strategy", color=discord.Color.yellow())
             embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
-            embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
+            embed.add_field(name="Trim Price", value=f"${net_cost:.2f}", inline=True)
             if DISPLAY_SIZE_IN_EMBEDS:
                 embed.add_field(name="Trimmed Size", value=utility_cog.format_size(size), inline=True)
                 embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
-            embed.add_field(name="Avg Cost", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
+            embed.add_field(name="Avg Entry", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
             
             embed.set_footer(text=f"Strategy ID: {strategy_id}")
 
