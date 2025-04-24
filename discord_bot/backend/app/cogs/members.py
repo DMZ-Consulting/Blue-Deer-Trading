@@ -25,7 +25,7 @@ class Members(commands.Cog):
         """
 
         logging_cog = self.bot.get_cog('LoggingCog')
-        await logging_cog.log_to_channel(after.guild, f"Member {after.name} (ID: {after.id}) roles updated.\n Before: {before.roles}\n After: {after.roles}")
+        #await logging_cog.log_to_channel(after.guild, f"Member {after.name} (ID: {after.id}) roles updated.\n Before: {before.roles}\n After: {after.roles}")
         # Skip if roles didn't change
         if set(before.roles) == set(after.roles):
             return
