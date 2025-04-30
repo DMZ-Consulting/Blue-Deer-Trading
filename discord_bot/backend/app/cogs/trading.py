@@ -378,11 +378,24 @@ class TradingCog(commands.Cog):
                 size = trade_data.get("current_size", 0.01) / 2
             trade_data = await trim_trade(trade_id, price, size)
 
+            # Calculate percentage change
+            entry_price = trade_data.get('average_price', 0)
+            exit_price = trade_data.get('average_exit_price', price)
+            
+            if entry_price and entry_price > 0:
+                percent_change = ((exit_price - entry_price) / entry_price) * 100
+                change_sign = "+" if percent_change >= 0 else ""
+            
+                if trade_data.get("trade_type") == "STO":
+                    percent_change = -percent_change
+                    change_sign = "+" if percent_change >= 0 else ""
+
             # Create an embed with the updated trade information
             embed = discord.Embed(title="Trimmed Trade", color=discord.Color.yellow())
             embed.description = await self.create_transaction_oneliner(trade_data, "TRIM", size, price)
             if DISPLAY_SIZE_IN_EMBEDS:
                 embed.add_field(name="Size Remaining", value=trade_data.get('current_size', None), inline=True)
+            embed.add_field(name="Percent Change", value=f"{change_sign}{percent_change:.2f}%", inline=True)
             embed.set_footer(text=f"Trade ID: {trade_data.get('trade_id', None)}")
 
             note_embed = discord.Embed(title="Trader's Note", description=note, color=discord.Color.light_grey()) if note else None
@@ -426,7 +439,13 @@ class TradingCog(commands.Cog):
             if entry_price and entry_price > 0:
                 percent_change = ((exit_price - entry_price) / entry_price) * 100
                 change_sign = "+" if percent_change >= 0 else ""
+                if trade_data.get("trade_type") == "STO":
+                    percent_change = -percent_change
+                    change_sign = "+" if percent_change >= 0 else ""
+                    unit_profit_loss = -unit_profit_loss
+
                 embed.add_field(name="Percent Change", value=f"{change_sign}{percent_change:.2f}%", inline=True)
+
 
             embed.add_field(name=f"Trade P/L per {unit_type}", value=f"${unit_profit_loss:.2f}", inline=True)
             embed.add_field(name="Avg Entry Price", value=f"${trade_data.get('average_price', None):.2f}", inline=True)

@@ -154,7 +154,7 @@ class OptionsStrategyCog(commands.Cog):
                 embed = discord.Embed(title="New Options Strategy Created", color=discord.Color.green())
                 embed.description = f"### {strategy_name}\n{self.create_trade_oneliner_os(trade_data, utility_cog)}"
                 embed.add_field(name="Symbol", value=leg_list[0]['symbol'], inline=True)
-                embed.add_field(name="Net Cost", value=f"${net_cost:,.2f}", inline=True)
+                embed.add_field(name="Entry Cost", value=f"${net_cost:,.2f}", inline=True)
                 if DISPLAY_SIZE_IN_EMBEDS:
                     embed.add_field(name="Size", value=size, inline=True)
 
@@ -249,7 +249,7 @@ class OptionsStrategyCog(commands.Cog):
             if DISPLAY_SIZE_IN_EMBEDS:
                 embed.add_field(name="Trimmed Size", value=utility_cog.format_size(size), inline=True)
                 embed.add_field(name="New Size", value=utility_cog.format_size(updated_trade['current_size']), inline=True)
-            embed.add_field(name="Avg Entry", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
+            embed.add_field(name="Avg Entry Cost", value=f"${float(updated_trade['average_net_cost']):.2f}", inline=True)
             
             embed.set_footer(text=f"Strategy ID: {strategy_id}")
 
@@ -297,12 +297,12 @@ class OptionsStrategyCog(commands.Cog):
             # Create embed
             embed = discord.Embed(title="Exited Options Strategy", color=discord.Color.red())
             embed.description = f"### {updated_trade['name']}\n{self.create_trade_oneliner_os(updated_trade, utility_cog)}"
-            embed.add_field(name="Net Cost", value=f"${net_cost:.2f}", inline=True)
+            embed.add_field(name="Exit Price", value=f"${net_cost:.2f}", inline=True)
             if DISPLAY_SIZE_IN_EMBEDS:
                 embed.add_field(name="Exited Size", value=updated_trade['current_size'], inline=True)
             embed.add_field(name="Percent Change", value=f"{change_sign}{percent_change:.2f}%", inline=True)
             embed.add_field(name="Avg Entry Cost", value=f"${avg_entry_cost:.2f}", inline=True)
-            embed.add_field(name="Avg Exit Cost", value=f"${avg_exit_cost:.2f}", inline=True)
+            embed.add_field(name="Avg Exit Price", value=f"${avg_exit_cost:.2f}", inline=True)
             embed.add_field(name="P/L per Contract", value=f"${pl_per_contract:.2f}", inline=True)
             embed.set_footer(text=f"Strategy ID: {strategy_id}")
 
