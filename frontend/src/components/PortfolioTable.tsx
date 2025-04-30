@@ -90,6 +90,9 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
           <TableHead className="text-center whitespace-nowrap">
             <Button variant="ghost">Pct Change</Button>
           </TableHead>
+          <TableHead className="text-center whitespace-nowrap">
+            <Button variant="ghost">P/L per Contract</Button>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -98,14 +101,25 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
           if ('trade' in item && item.trade && typeof item.trade === 'object' && 'trade_type' in item.trade) {
             tradeType = (item.trade.trade_type as string) || 'Unknown';
           }
-
+          const getPnLPerContract = (item: PortfolioTrade) => {
+            let singleContractPrice = item.avg_entry_price * item.pct_change / 100;
+            if (tradeType === 'Strategy') {
+               return -1 * singleContractPrice * 100;
+            } else if (tradeType === 'STO') {
+              singleContractPrice = -1 * singleContractPrice;
+            }
+            // If oneliner starts with a number, multiply by 100
+            const startsWithNumber = /^\d/.test(item.oneliner);
+            return startsWithNumber ? singleContractPrice * 100 : singleContractPrice;
+          }
           return (
             <TableRow key={index} className={tradeType === 'strategy' ? 'bg-slate-50' : ''}>
               <TableCell className="text-center whitespace-nowrap">{formatOneliner(item.oneliner)}</TableCell>
               <TableCell className="text-center whitespace-nowrap">{tradeType}</TableCell>
               <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
-              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_exit_price} /></TableCell>
-              <TableCell className="text-center whitespace-nowrap"><HighlightedNumber value={item.pct_change} highlight={true} />%</TableCell>
+              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={Number(item.avg_exit_price)} /></TableCell>
+              <TableCell className="text-center whitespace-nowrap"><HighlightedNumber value={Number(item.pct_change)} highlight={true} />%</TableCell>
+              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={Number(getPnLPerContract(item))} /></TableCell>
             </TableRow>
           );
         })}
