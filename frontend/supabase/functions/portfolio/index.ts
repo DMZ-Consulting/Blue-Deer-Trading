@@ -232,8 +232,13 @@ serve(async (req: Request) => {
             console.log('Applying standard contract multiplier (100x)')
             totalRealizedPL *= 100
           }
-
-          const pctChange = ((trade.average_exit_price || 0) - trade.average_price) / trade.average_price * 100
+          let difference = 0
+          if (trade.trade_type === 'BTO') {
+            difference = (trade.average_exit_price || 0) - trade.average_price
+          } else if (trade.trade_type === 'STO') {
+            difference = trade.average_price - (trade.average_exit_price || 0)
+          }
+          const pctChange = difference / trade.average_price * 100
 
           // Reverse P/L for short trades
           if (trade.trade_type === 'STO' || trade.trade_type === 'Sell to Open') {
