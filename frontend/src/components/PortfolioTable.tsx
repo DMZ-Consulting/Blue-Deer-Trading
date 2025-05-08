@@ -102,11 +102,9 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
             tradeType = (item.trade.trade_type as string) || 'Unknown';
           }
           const getPnLPerContract = (item: PortfolioTrade) => {
-            let singleContractPrice = item.avg_entry_price * item.pct_change / 100;
+            const singleContractPrice = item.avg_entry_price * item.pct_change / 100;
             if (tradeType === 'Strategy') {
-               return -1 * singleContractPrice * 100;
-            } else if (tradeType === 'STO') {
-              singleContractPrice = -1 * singleContractPrice;
+               return singleContractPrice * 100;
             }
             // If oneliner starts with a number, multiply by 100
             const startsWithNumber = /^\d/.test(item.oneliner);
