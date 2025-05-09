@@ -117,7 +117,7 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
               <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={item.avg_entry_price} /></TableCell>
               <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={Number(item.avg_exit_price)} /></TableCell>
               <TableCell className="text-center whitespace-nowrap"><HighlightedNumber value={Number(item.pct_change)} highlight={true} />%</TableCell>
-              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={Number(getPnLPerContract(item))} /></TableCell>
+              <TableCell className="text-center whitespace-nowrap">$<HighlightedNumber value={Number(getPnLPerContract(item))} highlight={true} /></TableCell>
             </TableRow>
           );
         })}

@@ -17,6 +17,8 @@ interface PortfolioFilters {
   sortOrder?: 'asc' | 'desc'
   configName?: string
   weekFilter?: string
+  fromDate?: string
+  toDate?: string
 }
 
 interface Transaction {
@@ -112,6 +114,7 @@ serve(async (req: Request) => {
         console.log('Processing getPortfolioTrades action')
         const regularTrades = []
         const strategyTrades = []
+        
 
         // Get regular trades
         console.log('Building regular trades query with filters:', JSON.stringify(filters, null, 2))
@@ -140,31 +143,52 @@ serve(async (req: Request) => {
           day.setUTCHours(0, 0, 0, 0)
           
           // Calculate Monday (start of week)
-          const monday = new Date(day)
-          monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay())
+          const fromDate = new Date(day)
+          fromDate.setUTCDate(fromDate.getUTCDate() - fromDate.getUTCDay())
           
           // Calculate Friday (end of week)
-          const friday = new Date(monday)
-          friday.setUTCDate(friday.getUTCDate() + 4)
-          friday.setUTCHours(23, 59, 59, 999)
+          const toDate = new Date(fromDate)
+          toDate.setUTCDate(toDate.getUTCDate() + 4)
+          toDate.setUTCHours(23, 59, 59, 999)
 
           console.log('Date range:', { 
             input: filters.weekFilter,
             day: day.toISOString(),
-            monday: monday.toISOString(), 
-            friday: friday.toISOString()
+            from: fromDate.toISOString(), 
+            to: toDate.toISOString()
           })
+          // Filter trades that have TRIM or CLOSE transactions within the date range
+          tradeQuery = tradeQuery
+            .in('transactions.transaction_type', [TransactionType.TRIM, TransactionType.CLOSE])
+            .gte('transactions.created_at', fromDate.toISOString())
+            .lte('transactions.created_at', toDate.toISOString())
+
+          console.log('Query parameters:', {
+            transaction_types: [TransactionType.TRIM, TransactionType.CLOSE],
+            created_at_gte: fromDate.toISOString(),
+            created_at_lte: toDate.toISOString()
+          })
+        } else if (filters?.fromDate && filters?.toDate) {
+          console.log('Applying date range filter for regular trades:', {
+            from: filters.fromDate,
+            to: filters.toDate
+          })
+
+          const fromDate = new Date(filters.fromDate)
+          fromDate.setUTCHours(0, 0, 0, 0)
+          const toDate = new Date(filters.toDate)
+          toDate.setUTCHours(23, 59, 59, 999)
           
           // Filter trades that have TRIM or CLOSE transactions within the date range
           tradeQuery = tradeQuery
             .in('transactions.transaction_type', [TransactionType.TRIM, TransactionType.CLOSE])
-            .gte('transactions.created_at', monday.toISOString())
-            .lte('transactions.created_at', friday.toISOString())
+            .gte('transactions.created_at', fromDate.toISOString())
+            .lte('transactions.created_at', toDate.toISOString())
 
           console.log('Query parameters:', {
             transaction_types: [TransactionType.TRIM, TransactionType.CLOSE],
-            created_at_gte: monday.toISOString(),
-            created_at_lte: friday.toISOString()
+            created_at_gte: fromDate.toISOString(),
+            created_at_lte: toDate.toISOString()
           })
         }
 
@@ -302,6 +326,27 @@ serve(async (req: Request) => {
             .in('options_strategy_transactions.transaction_type', [TransactionType.TRIM, TransactionType.CLOSE])
             .gte('options_strategy_transactions.created_at', monday.toISOString())
             .lte('options_strategy_transactions.created_at', friday.toISOString())
+        } else if (filters?.fromDate && filters?.toDate) {
+          console.log('Applying date range filter for strategy trades:', {
+            from: filters.fromDate,
+            to: filters.toDate
+          })
+          const fromDate = new Date(filters.fromDate)
+          fromDate.setUTCHours(0, 0, 0, 0)
+          const toDate = new Date(filters.toDate)
+          toDate.setUTCHours(23, 59, 59, 999)
+          
+          // Filter strategies that have TRIM or CLOSE transactions within the date range
+          strategyQuery = strategyQuery
+            .in('options_strategy_transactions.transaction_type', [TransactionType.TRIM, TransactionType.CLOSE])
+            .gte('options_strategy_transactions.created_at', fromDate.toISOString())
+            .lte('options_strategy_transactions.created_at', toDate.toISOString())
+
+          console.log('Query parameters:', {
+            transaction_types: [TransactionType.TRIM, TransactionType.CLOSE], 
+            created_at_gte: fromDate.toISOString(),
+            created_at_lte: toDate.toISOString()
+          })
         }
 
         console.log('Executing strategy trades query')
@@ -553,11 +598,10 @@ function createTradeOneliner(trade: Trade): string {
     trade.expiration_date ? new Date(trade.expiration_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : null,
     trade.symbol,
     trade.is_contract && trade.strike ? `${Number.isInteger(trade.strike) ? trade.strike : trade.strike.toFixed(2)}${trade.option_type || ''}` : null,
-    trade.size,
     `@${trade.average_price.toFixed(2)}`
   ].filter(Boolean).join(' ')
 }
 
 function createStrategyOneliner(strategy: Strategy): string {
-  return `${strategy.name} ${strategy.underlying_symbol} ${strategy.size} @${strategy.net_cost}`
+  return `${strategy.name} ${strategy.underlying_symbol} @${strategy.net_cost}`
 } 

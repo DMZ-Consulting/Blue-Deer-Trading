@@ -8,6 +8,9 @@ import { PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { getPortfolio } from '@/api/api'
 import { PortfolioEndpoint } from '@/utils/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DatePickerWithRange } from '@/components/DatePickerWithRange'
+import { DateRange } from 'react-day-picker'
+import { startOfWeek, endOfWeek } from 'date-fns'
 
 const TRADE_GROUPS = [
   { value: "day_trader", label: "Day Trader" },
@@ -31,20 +34,15 @@ export default function PortfolioPage() {
   });
   const [loading, setLoading] = useState(true);
 
-  const [dateFilter, setDateFilter] = useState(() => {
-    // Try to get saved date from localStorage
-    if (typeof window !== 'undefined') {
-      const savedDate = localStorage.getItem('portfolioDateFilter');
-      if (savedDate) {
-        return savedDate;
-      }
-    }
-    // Default to current week's Monday if no saved date
+  // Replace dateFilter with date range state
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const now = new Date();
-    const monday = new Date(now);
-    monday.setUTCHours(0, 0, 0, 0);
-    monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay() + 1);
-    return monday.toISOString().split('T')[0];
+    const monday = startOfWeek(now, { weekStartsOn: 1 });
+    const sunday = endOfWeek(now, { weekStartsOn: 1 });
+    return {
+      from: monday,
+      to: sunday
+    };
   });
 
   // Save configName to localStorage when it changes
@@ -52,86 +50,36 @@ export default function PortfolioPage() {
     localStorage.setItem('portfolioConfigName', configName);
   }, [configName]);
 
-  // Save dateFilter to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem('portfolioDateFilter', dateFilter);
-  }, [dateFilter]);
-
   const toggleReportsVisibility = () => {
     setIsReportsVisible(prev => !prev)
   }
 
   useEffect(() => {
     const fetchPortfolio = async () => {
-      setLoading(true)
+      if (!dateRange?.from) return;
+      
+      setLoading(true);
       const filterOptions = {
-        weekFilter: dateFilter,
-      }
+        //weekFilter: dateRange.from.toISOString().split('T')[0],
+        fromDate: dateRange.from.toISOString().split('T')[0],
+        toDate: dateRange.to?.toISOString().split('T')[0]
+      };
+      
       try {
         const fetchedPortfolio = await getPortfolio({
           configName,
           ...filterOptions
-        })
-        setPortfolio(fetchedPortfolio)
+        });
+        setPortfolio(fetchedPortfolio);
       } catch (error) {
-        console.error('Error fetching portfolio:', error)
+        console.error('Error fetching portfolio:', error);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    fetchPortfolio()
-  }, [configName, dateFilter])
-
-  const handleDateChange = (newDate: string) => {
-    // Convert the selected date to the Monday of that week
-    const selectedDate = new Date(newDate + 'T00:00:00Z');
-    const monday = new Date(selectedDate);
-    monday.setUTCHours(0, 0, 0, 0); // Set to midnight UTC
-    monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay() + 1);
-    setDateFilter(monday.toISOString().split('T')[0]);
-  }
-
-  // Generate week options for the last 52 weeks
-  const getWeekOptions = () => {
-    const options = [];
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0); // Set to midnight UTC
-    const monday = new Date(today);
-    monday.setUTCDate(monday.getUTCDate() - monday.getUTCDay() + 1);
-
-    for (let i = 0; i < 52; i++) {
-      const weekMonday = new Date(monday);
-      weekMonday.setUTCDate(monday.getUTCDate() - (7 * i));
-      
-      const friday = new Date(weekMonday);
-      friday.setUTCDate(friday.getUTCDate() + 4);
-
-      options.push({
-        value: weekMonday.toISOString().split('T')[0],
-        label: `Week of ${friday.toLocaleDateString('en-US', { 
-          month: 'numeric', 
-          day: 'numeric',
-          year: 'numeric',
-          timeZone: 'UTC'
-        })}`
-      });
-    }
-    return options;
-  }
-
-  // Get the label for the current selected date
-  const getSelectedWeekLabel = () => {
-    const monday = new Date(dateFilter + 'T00:00:00Z');
-    const friday = new Date(monday);
-    friday.setUTCDate(friday.getUTCDate() + 4);
-    return `Week of ${friday.toLocaleDateString('en-US', { 
-      month: 'numeric', 
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'UTC'
-    })}`;
-  }
+    fetchPortfolio();
+  }, [configName, dateRange]);
 
   return (
     <main className="container mx-auto p-4 space-y-4">
@@ -156,20 +104,10 @@ export default function PortfolioPage() {
             </SelectContent>
           </Select>
 
-          <Select value={dateFilter} onValueChange={handleDateChange}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue>
-                {getSelectedWeekLabel()}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {getWeekOptions().map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <DatePickerWithRange 
+            date={dateRange}
+            onDateChange={setDateRange}
+          />
 
           <Button onClick={toggleReportsVisibility} variant="outline">
             {isReportsVisible ? <PanelRightClose className="w-4 h-4 mr-2" /> : <PanelRightOpen className="w-4 h-4 mr-2" />}
