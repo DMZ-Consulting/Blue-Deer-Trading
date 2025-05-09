@@ -101,8 +101,8 @@ class OptionsStrategyCog(commands.Cog):
         strategy_name: discord.Option(str, description="The name of the strategy (e.g., 'Iron Condor', 'Call Spread')"),
         net_cost: discord.Option(float, description="The net cost of the strategy"),
         legs: discord.Option(str, description="The legs of the strategy in format: 'SPY240119C510,SPY240119P500,...'"),
-        size: discord.Option(str, description="The size of the strategy") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size of the strategy default is 1") = "1",
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
         utility_cog = await self.get_utility_cog()
@@ -185,8 +185,8 @@ class OptionsStrategyCog(commands.Cog):
         ctx: discord.ApplicationContext,
         strategy_id: discord.Option(str, description="The ID of the options strategy trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         net_cost: discord.Option(float, description="The net cost of the addition"),
-        size: discord.Option(str, description="The size to add") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size to add default is 1") = "1",
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
         logging_cog = await self.get_logging_cog()
@@ -229,8 +229,8 @@ class OptionsStrategyCog(commands.Cog):
         ctx: discord.ApplicationContext,
         strategy_id: discord.Option(str, description="The ID of the options strategy trade to trim", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         net_cost: discord.Option(float, description="The net cost of the trim"),
-        size: discord.Option(str, description="The size to trim") = "0.25",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size to trim default is 0.25") = "0.25",
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
         logging_cog = await self.get_logging_cog()

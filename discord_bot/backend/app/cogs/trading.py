@@ -170,8 +170,8 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         trade_string: discord.Option(str, description="The trade string to parse"),
         price: discord.Option(float, description="The price of the trade"),
-        size: discord.Option(str, description="The size of the trade") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size of the trade default is 1") = "1",
     ):
         """Open a new trade."""
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
@@ -249,8 +249,8 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         symbol: discord.Option(str, description="The symbol of the security"),
         entry_price: discord.Option(float, description="The price at which the trade was opened"),
-        size: discord.Option(str, description="The size of the trade") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size of the trade") = "1",
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
         await self.common_stock_trade(ctx, TradeGroupEnum.DAY_TRADER, symbol, entry_price, size, note)
@@ -261,8 +261,8 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         symbol: discord.Option(str, description="The symbol of the security"),
         entry_price: discord.Option(float, description="The price at which the trade was opened"),
-        size: discord.Option(str, description="The size of the trade") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size of the trade") = "1",
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
         await self.common_stock_trade(ctx, TradeGroupEnum.LONG_TERM_TRADER, symbol, entry_price, size, note)
@@ -330,8 +330,8 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         trade_id: discord.Option(str, description="The ID of the trade to add to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)),
         price: discord.Option(float, description="The price of the trade"),
-        size: discord.Option(str, description="The size to add") = "1",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size to add default is 1") = "1",
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
         logging_cog = await self.get_logging_cog()
@@ -365,8 +365,8 @@ class TradingCog(commands.Cog):
         ctx: discord.ApplicationContext,
         trade_id: discord.Option(str, description="The ID of the trade to trim", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)),
         price: discord.Option(float, description="The price of the trade"),
-        size: discord.Option(str, description="The size to trim") = "0.25",
         note: discord.Option(str, description="Optional note from the trader") = None,
+        size: discord.Option(str, description="The size to trim default is 0.25") = "0.25",
     ):
         await ctx.respond("Processing...", ephemeral=True, delete_after=0)
 
