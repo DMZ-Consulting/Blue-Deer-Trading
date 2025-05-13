@@ -375,7 +375,7 @@ class TradingCog(commands.Cog):
             utility_cog = await self.get_utility_cog()
             trade_data = await get_single_trade(trade_id)
             if float(trade_data.get("current_size", 0.01)) - float(size) <= 0:
-                size = trade_data.get("current_size", 0.01) / 2
+                size = float(trade_data.get("current_size", 0.01)) / 2
             trade_data = await trim_trade(trade_id, price, size)
 
             # Calculate percentage change
