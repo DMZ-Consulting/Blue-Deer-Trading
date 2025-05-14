@@ -11,6 +11,14 @@ from app.database import get_db
 
 logger = logging.getLogger(__name__)
 
+TARGET_ROLE_ID = 1288241189618978917
+THREAD_CREATION_CHANNEL_ID = 1372359899412955156 # TODO: UPDATE THIS
+
+USERS_TO_ADD_TO_THREADS = [
+    1044367510671204523,
+    300001482194026508
+]
+
 class Members(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -31,8 +39,8 @@ class Members(commands.Cog):
             return
             
         # Skip if not in Blue Deer server
-        if after.guild.id != 1055255055474905139:  # Blue Deer Server
-            return
+        #if after.guild.id != 1055255055474905139:  # Blue Deer Server
+        #    return
             
         # Define the trader role names
         trader_role_names = ["Full Access", "Day Trader", "Swing Trader", "Long Term Trader"]
@@ -92,6 +100,73 @@ class Members(commands.Cog):
                             logger.error(f"Error removing verification roles from {after.name}: {str(e)}")
                             logger.error(traceback.format_exc())
 
+        """
+        Event listener that triggers when a member's profile is updated (including roles).
+        Creates a private thread for the user if they gain a specific role.
+        """
+        print(f"Member {after.name} (ID: {after.id}) roles updated.\n Before: {before.roles}\n After: {after.roles}")
+        # Check if the member gained the target role
+        # We check if the target role was NOT in the 'before' roles but IS in the 'after' roles
+        target_role = after.guild.get_role(TARGET_ROLE_ID)
+        if target_role is None:
+            # Log if the target role ID is invalid
+            print(f"Error: Target role with ID {TARGET_ROLE_ID} not found in guild {after.guild.name}.")
+            return # Exit the function if the role doesn't exist
+
+        # Check if the role change actually includes gaining the target role
+        gained_target_role = False
+        for role in after.roles:
+            if role.id == TARGET_ROLE_ID and role not in before.roles:
+                gained_target_role = True
+                break
+
+        if gained_target_role:
+            # User gained the target role
+
+            # Find the channel where threads should be created
+            channel = self.bot.get_channel(THREAD_CREATION_CHANNEL_ID)
+            if not channel:
+                print(f"Error: Could not find thread creation channel with ID {THREAD_CREATION_CHANNEL_ID} in guild {after.guild.name}.")
+                return # Exit the function if the channel doesn't exist
+
+            # Ensure the channel is a text channel where threads can be created
+            if not isinstance(channel, discord.TextChannel):
+                print(f"Error: Channel {channel.name} (ID: {THREAD_CREATION_CHANNEL_ID}) is not a text channel.")
+                return
+
+            # Define the thread name
+            thread_name = f"Welcome {after.display_name}!"
+
+            try:
+                # Create a private thread for the user
+                # Bot needs 'Create Private Threads' permission in the channel.
+                thread = await channel.create_thread(
+                    name=thread_name,
+                    type=discord.ChannelType.private_thread,
+                    invitable=False, # Prevent non-moderators from inviting others
+                    reason="Creating thread upon role assignment"
+                )
+
+                # Add the user to the thread
+                await thread.add_user(after)
+                for user_id in USERS_TO_ADD_TO_THREADS:
+                    user = after.guild.get_member(user_id)
+                    if user:
+                        await thread.add_user(user)
+
+                # Send a welcome message in the thread
+                await thread.send(f"Welcome to the server, {after.mention}! This is a private thread to help you get started.")
+
+                print(f"Created welcome thread for {after.name} in channel {channel.name}.")
+
+            except discord.Forbidden:
+                # If the bot lacks permissions to create the thread
+                print(f"Bot lacks permissions to create private threads in channel {channel.name} for user {after.name}.")
+            except Exception as e:
+                # Catch any other potential errors during thread creation
+                print(f"Failed to create thread for {after.name} in channel {channel.name}: {e}")
+                print(traceback.format_exc())
+
     @commands.Cog.listener()
     async def on_member_join(self, member):
         """
@@ -125,6 +200,7 @@ class Members(commands.Cog):
             except Exception as e:
                 logger.error(f"Error fetching member data: {str(e)}")
                 break
+
         '''
         db = next(get_db())
         try:
@@ -166,6 +242,183 @@ class Members(commands.Cog):
         if channel is not None:
             await channel.send(f'Welcome {member.mention}.')
         '''
+
+    @commands.slash_command(name="create_staff_threads", description="Creates 1-on-1 threads for each member with specified staff.")
+    async def create_staff_threads(
+        self,
+        ctx: discord.ApplicationContext, # Use ApplicationContext for slash commands
+        staff_mentions: discord.Option(str, "Mention staff members to include in each thread (e.g., @Staff1 @Staff2)", required=False)
+    ):
+        """
+        Slash command to create a private thread for every member in the server,
+        including the command invoker and any mentioned staff members.
+        """
+        # Ensure the command is used in a guild text channel
+        if not isinstance(ctx.channel, discord.TextChannel):
+            return await ctx.respond("This command can only be used in a server text channel.", ephemeral=True) # ephemeral=True makes the response only visible to the user
+
+        await ctx.defer(ephemeral=True) # Acknowledge the command to prevent timeout, response is ephemeral
+
+        # Parse mentioned staff members from the string input
+        staff_members_to_add = [ctx.author] # Always include the command invoker (assuming they are staff)
+        if staff_mentions:
+            # Split the string by spaces and process each potential mention
+            for mention_str in staff_mentions.split():
+                try:
+                    # Extract user ID from mention string (handles different mention formats)
+                    user_id = int(mention_str.strip('<>@!'))
+                    member = ctx.guild.get_member(user_id)
+                    if member and member not in staff_members_to_add:
+                        staff_members_to_add.append(member)
+                    elif not member:
+                        await ctx.followup.send(f"Warning: Could not find member for mention: {mention_str}", ephemeral=True)
+                except ValueError:
+                    await ctx.followup.send(f"Warning: Invalid member mention format: {mention_str}", ephemeral=True)
+
+        successful_threads = 0
+        failed_members = []
+
+        # Iterate through all members in the guild
+        # Note: This might be a long operation for very large servers.
+        for member in ctx.guild.members:
+            if member.bot or member == ctx.author: # Skip bots and the command invoker (they are added as staff)
+                continue
+
+            # Define the thread name
+            thread_name = f"Chat with {member.display_name}" # Use display_name for clarity
+
+            # List of members to add to this specific thread (the member + all specified staff)
+            members_for_this_thread = [member] + staff_members_to_add
+
+            try:
+                # Create a private thread
+                # Private threads require the server to be boosted to Level 2 or higher
+                # and the bot needs 'Create Private Threads' permission in the channel.
+                thread = await ctx.channel.create_thread(
+                    name=thread_name,
+                    type=discord.ChannelType.private_thread,
+                    invitable=False, # Prevent non-moderators from inviting others
+                    reason=f"1-on-1 staff chat initiated by {ctx.author.name}",
+                )
+
+                # Add all required members to the thread
+                for user_to_add in members_for_this_thread:
+                    try:
+                        await thread.add_user(user_to_add)
+                    except Exception as add_user_error:
+                        print(f"Could not add user {user_to_add.name} to thread {thread.name}: {add_user_error}")
+                        # Continue trying to add other users, but log the error
+
+                # Send a welcome message in the thread
+                mentions = " ".join([user.mention for user in members_for_this_thread])
+                await thread.send(f"""Hello {member.mention}\n
+This is a private thread for support and questions.\n
+Use this space to ask questions, share insights, or post daily reflections. Justin will pop in with answers at least once a week, and I'm here to help with anything in between.\n
+We're committed to reshaping the way you approach the markets so you can reach—and exceed—your goals.\n
+To kick things off, start reflecting on your trading day as soon as possible ideally right at the close so its fresh in your mind use this as a Journal be CONSISTENT!\n
+We are going to give you our time and effort all we ask if you help us help more people! All we ask if your benefiting here and seeing the value add\n
+Post your wins, share your successes in here \n
+We are going to help you achieve your goals we are already so grateful you took the leap of faith and joined our service we would be even more grateful you can help us achieve our goals""")
+
+                successful_threads += 1
+
+            except discord.Forbidden:
+                # If the bot lacks permissions for a specific member or the channel
+                failed_members.append(f"{member.name} (Forbidden)")
+                print(f"Failed to create thread for {member.name}: Bot lacks permissions.")
+                # Consider breaking here if it's a channel permission issue to avoid repeated failures
+                break # Exit the loop if permissions are the issue for the channel
+            except Exception as e:
+                # Catch any other potential errors during thread creation
+                failed_members.append(f"{member.name} ({type(e).__name__})")
+                print(f"Failed to create thread for {member.name}: {e}")
+                # Consider breaking here if errors are frequent to avoid rate limits
+                # break # Uncomment this line if you want to stop after the first failure
+            await asyncio.sleep(1)
+        
+        print(f"Successfully created {successful_threads} threads.")
+        # Send a final summary response
+        summary_message = f"Attempted to create threads for {len(ctx.guild.members) - ctx.guild.member_count + successful_threads} members.\n" # Basic member count minus bots plus successful threads
+        if successful_threads > 0:
+            summary_message += f"Successfully created {successful_threads} threads.\n"
+        if failed_members:
+            summary_message += f"Failed to create threads for the following members: {', '.join(failed_members)}\n"
+            summary_message += "Please check bot permissions and server boosting level for private threads."
+
+        await ctx.followup.send(summary_message, ephemeral=True)
+
+    @commands.slash_command(name="delete_all_threads", description="Deletes all active and archived threads in a channel.")
+    async def delete_all_threads(
+        self,
+        ctx: discord.ApplicationContext,
+        channel: discord.Option(discord.TextChannel, "The channel to delete threads from.")
+    ):
+        """
+        Slash command to delete all active and archived threads within a specified channel.
+        Requires 'Manage Threads' permission for the bot.
+        """
+        # Ensure the command is used in a guild
+        if not ctx.guild:
+            return await ctx.respond("This command can only be used in a server.", ephemeral=True)
+
+        # Ensure the bot has the necessary permissions in the target channel
+        bot_member = ctx.guild.get_member(self.bot.user.id)
+        if not bot_member or not channel.permissions_for(bot_member).manage_threads:
+            return await ctx.respond(f"I need the 'Manage Threads' permission in the channel '{channel.name}' to delete threads.", ephemeral=True)
+
+        await ctx.defer(ephemeral=True) # Acknowledge the command
+
+        deleted_count = 0
+        failed_to_delete = []
+
+        try:
+            # Fetch active threads
+            active_threads = channel.threads
+            for thread in active_threads:
+                try:
+                    await thread.delete()
+                    deleted_count += 1
+                except Exception as e:
+                    failed_to_delete.append(f"{thread.name} (Active): {e}")
+                    print(f"Failed to delete active thread {thread.name}: {e}")
+
+            # Fetch archived threads (public and private)
+            # Note: Fetching archived threads might require iterating through pages for many threads
+            async for thread in channel.archived_threads():
+                try:
+                    await thread.delete()
+                    deleted_count += 1
+                except Exception as e:
+                    failed_to_delete.append(f"{thread.name} (Archived): {e}")
+                    print(f"Failed to delete archived thread {thread.name}: {e}")
+
+            async for thread in channel.archived_threads(private=True):
+                try:
+                    await thread.delete()
+                    deleted_count += 1
+                except Exception as e:
+                    failed_to_delete.append(f"{thread.name} (Archived Private): {e}")
+                    print(f"Failed to delete archived private thread {thread.name}: {e}")
+
+
+        except discord.Forbidden:
+            await ctx.followup.send(f"I lack the permissions to fetch or delete threads in channel '{channel.name}'. Make sure I have 'Manage Threads'.", ephemeral=True)
+            return
+        except Exception as e:
+            await ctx.followup.send(f"An unexpected error occurred while trying to delete threads: {e}", ephemeral=True)
+            print(f"Unexpected error during thread deletion: {e}")
+            print(traceback.format_exc())
+            return
+
+
+        # Send a summary of the deletion process
+        summary_message = f"Attempted to delete threads in channel '{channel.name}'.\n"
+        summary_message += f"Successfully deleted {deleted_count} threads.\n"
+        if failed_to_delete:
+            summary_message += f"Failed to delete the following threads:\n" + "\n".join(failed_to_delete)
+            summary_message += "\nPlease check bot permissions and Discord's rate limits if many failed."
+
+        await ctx.followup.send(summary_message, ephemeral=True)
 
     async def dm_member(self, member):
         await member.send("""## Welcome to the Blue Deer Trading Discord server! \n
