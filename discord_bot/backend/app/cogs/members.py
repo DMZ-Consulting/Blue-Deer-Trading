@@ -302,7 +302,6 @@ We are going to help you achieve your goals we are already so grateful you took 
                 thread = await ctx.channel.create_thread(
                     name=thread_name,
                     type=discord.ChannelType.private_thread,
-                    invitable=False, # Prevent non-moderators from inviting others
                     reason=f"1-on-1 staff chat initiated by {ctx.author.name}",
                 )
 
