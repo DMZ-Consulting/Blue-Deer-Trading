@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 TARGET_ROLE_ID = 1288241189618978917
 THREAD_CREATION_CHANNEL_ID = 1372359899412955156 # TODO: UPDATE THIS
 
+NEEDED_ROLES_TO_ADD_TO_THREAD = ["Full Access", "BD-Verified"]
+
 USERS_TO_ADD_TO_THREADS = [
     1044367510671204523,
     300001482194026508
@@ -280,6 +282,8 @@ We are going to help you achieve your goals we are already so grateful you took 
                 except ValueError:
                     await ctx.followup.send(f"Warning: Invalid member mention format: {mention_str}", ephemeral=True)
 
+        print(f"Staff members to add: {staff_members_to_add}")
+
         successful_threads = 0
         failed_members = []
 
@@ -289,11 +293,25 @@ We are going to help you achieve your goals we are already so grateful you took 
             if member.bot or member == ctx.author: # Skip bots and the command invoker (they are added as staff)
                 continue
 
+            # Member must have the "Full Access" role to be added to the thread and the "BD-Verified" role to be added to the thread
+            add_member_to_thread = False
+            role_names = [role.name for role in member.roles]
+            for role in NEEDED_ROLES_TO_ADD_TO_THREAD:
+                if role not in role_names:
+                    break
+            else:
+                add_member_to_thread = True
+
+            if not add_member_to_thread:
+                print(f"Member {member.name} does not have the required roles to be added to the thread.")
+                continue
+
             # Define the thread name
             thread_name = f"Chat with {member.display_name}" # Use display_name for clarity
 
             # List of members to add to this specific thread (the member + all specified staff)
             members_for_this_thread = [member] + staff_members_to_add
+            print(f"Members for this thread: {members_for_this_thread}")
 
             try:
                 # Create a private thread
@@ -309,6 +327,7 @@ We are going to help you achieve your goals we are already so grateful you took 
                 for user_to_add in members_for_this_thread:
                     try:
                         await thread.add_user(user_to_add)
+                        await asyncio.sleep(1)
                     except Exception as add_user_error:
                         print(f"Could not add user {user_to_add.name} to thread {thread.name}: {add_user_error}")
                         # Continue trying to add other users, but log the error
@@ -349,6 +368,54 @@ We are going to help you achieve your goals we are already so grateful you took 
             summary_message += "Please check bot permissions and server boosting level for private threads."
 
         await ctx.followup.send(summary_message, ephemeral=True)
+
+    @commands.slash_command(name="create_thread_for_member", description="Creates a private thread for a specific member.")
+    async def create_thread_for_member(
+        self,
+        ctx: discord.ApplicationContext,
+        member: discord.Option(discord.Member, "The member to create a thread for.")
+    ):
+        """
+        Slash command to create a private thread for a specific member.
+        """
+        # Ensure the command is used in a guild
+        if not ctx.guild:
+            return await ctx.respond("This command can only be used in a server.", ephemeral=True)
+        
+        # Ensure the bot has the necessary permissions in the target channel
+        bot_member = ctx.guild.get_member(self.bot.user.id)
+        if not bot_member or not ctx.channel.permissions_for(bot_member).manage_threads:
+            return await ctx.respond(f"I need the 'Manage Threads' permission in the channel '{ctx.channel.name}' to delete threads.", ephemeral=True)
+        
+        await ctx.defer(ephemeral=True) # Acknowledge the command
+
+        # Define the thread name
+        thread_name = f"Chat with {member.display_name}" # Use display_name for clarity
+        successful_threads = 0
+
+        try:
+            # Create a private thread
+            thread = await ctx.channel.create_thread(
+                name=thread_name,
+                type=discord.ChannelType.private_thread,
+                reason=f"1-on-1 staff chat initiated by {ctx.author.name}",
+            )
+
+            # Add the member to the thread
+            await thread.add_user(member)
+
+            # Send a welcome message in the thread
+            await thread.send(f"""Hello {member.mention}!\n
+            Use this space to ask questions, share insights, or post daily reflections. Justin will pop in with answers at least once a week, and I (Jake) am here to help with anything in between.\n
+            """)
+
+            successful_threads += 1
+
+        except discord.Forbidden:
+            await ctx.followup.send(f"I lack the permissions to create threads in channel '{ctx.channel.name}'.", ephemeral=True)
+        except Exception as e:
+            await ctx.followup.send(f"An unexpected error occurred while trying to create a thread: {e}", ephemeral=True)
+            print(traceback.format_exc())
 
     @commands.slash_command(name="delete_all_threads", description="Deletes all active and archived threads in a channel.")
     async def delete_all_threads(
