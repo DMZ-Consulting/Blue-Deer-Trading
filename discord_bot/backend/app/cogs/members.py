@@ -143,7 +143,6 @@ class Members(commands.Cog):
                 thread = await channel.create_thread(
                     name=thread_name,
                     type=discord.ChannelType.private_thread,
-                    invitable=False, # Prevent non-moderators from inviting others
                     reason="Creating thread upon role assignment"
                 )
 
@@ -155,7 +154,13 @@ class Members(commands.Cog):
                         await thread.add_user(user)
 
                 # Send a welcome message in the thread
-                await thread.send(f"Welcome to the server, {after.mention}! This is a private thread to help you get started.")
+                await thread.send(f"""Hello {after.mention}!\n
+Use this space to ask questions, share insights, or post daily reflections. Justin will pop in with answers at least once a week, and I (Jake) am here to help with anything in between.\n
+We're committed to reshaping the way you approach the markets so you can reach—and exceed—your goals.\n
+To kick things off, start reflecting on your trading day as soon as possible ideally right at the close so its fresh in your mind use this as a Journal be CONSISTENT! The most important thing isn't the trading it's how you feel when your trading- reflect on your thinking/feelings throughout the session.\n
+We are going to give you our time and effort all we ask if you help us help more people! All we ask if your benefiting here and seeing the value add\n
+Post your wins, share your successes in here \n
+We are going to help you achieve your goals we are already so grateful you took the leap of faith and joined our service we would be even more grateful you can help us achieve our goals""")
 
                 print(f"Created welcome thread for {after.name} in channel {channel.name}.")
 
@@ -311,11 +316,10 @@ class Members(commands.Cog):
 
                 # Send a welcome message in the thread
                 mentions = " ".join([user.mention for user in members_for_this_thread])
-                await thread.send(f"""Hello {member.mention}\n
-This is a private thread for support and questions.\n
-Use this space to ask questions, share insights, or post daily reflections. Justin will pop in with answers at least once a week, and I'm here to help with anything in between.\n
+                await thread.send(f"""Hello {member.mention}!\n
+Use this space to ask questions, share insights, or post daily reflections. Justin will pop in with answers at least once a week, and I (Jake) am here to help with anything in between.\n
 We're committed to reshaping the way you approach the markets so you can reach—and exceed—your goals.\n
-To kick things off, start reflecting on your trading day as soon as possible ideally right at the close so its fresh in your mind use this as a Journal be CONSISTENT!\n
+To kick things off, start reflecting on your trading day as soon as possible ideally right at the close so its fresh in your mind use this as a Journal be CONSISTENT! The most important thing isn't the trading it's how you feel when your trading- reflect on your thinking/feelings throughout the session.\n
 We are going to give you our time and effort all we ask if you help us help more people! All we ask if your benefiting here and seeing the value add\n
 Post your wins, share your successes in here \n
 We are going to help you achieve your goals we are already so grateful you took the leap of faith and joined our service we would be even more grateful you can help us achieve our goals""")
@@ -334,7 +338,7 @@ We are going to help you achieve your goals we are already so grateful you took 
                 print(f"Failed to create thread for {member.name}: {e}")
                 # Consider breaking here if errors are frequent to avoid rate limits
                 # break # Uncomment this line if you want to stop after the first failure
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
         
         print(f"Successfully created {successful_threads} threads.")
         # Send a final summary response
