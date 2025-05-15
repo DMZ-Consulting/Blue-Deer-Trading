@@ -283,7 +283,10 @@ class OptionsStrategyCog(commands.Cog):
 
             # Calculate P/L
             avg_entry_cost = float(updated_trade.get('average_net_cost', 0))
-            avg_exit_cost = float(updated_trade.get('average_exit_cost', 0))
+            try:
+                avg_exit_cost = float(updated_trade.get('average_exit_cost', 0))
+            except:
+                avg_exit_cost = 0
             if avg_exit_cost == 0:
                 avg_exit_cost = net_cost
             pl_per_contract = avg_exit_cost - avg_entry_cost
