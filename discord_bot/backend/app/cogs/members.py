@@ -11,7 +11,10 @@ from app.database import get_db
 
 logger = logging.getLogger(__name__)
 
+# TODO: UPDATE THIS
 TARGET_ROLE_ID = 1288241189618978917
+TARGET_ROLE_ID_TEST = 1329256955092668477
+
 THREAD_CREATION_CHANNEL_ID = 1372359899412955156 # TODO: UPDATE THIS
 
 NEEDED_ROLES_TO_ADD_TO_THREAD = ["Full Access", "BD-Verified"]
@@ -111,16 +114,22 @@ class Members(commands.Cog):
         # We check if the target role was NOT in the 'before' roles but IS in the 'after' roles
         target_role = after.guild.get_role(TARGET_ROLE_ID)
         if target_role is None:
-            # Log if the target role ID is invalid
-            print(f"Error: Target role with ID {TARGET_ROLE_ID} not found in guild {after.guild.name}.")
-            return # Exit the function if the role doesn't exist
+            try:
+                target_role = after.guild.get_role(TARGET_ROLE_ID_TEST)
+            except Exception as e:
+                logger.error(f"Error: Target role with ID {TARGET_ROLE_ID} not found in guild {after.guild.name}: {e}")
+                return # Exit the function if the role doesn't exist
 
         # Check if the role change actually includes gaining the target role
         gained_target_role = False
         for role in after.roles:
-            if role.id == TARGET_ROLE_ID and role not in before.roles:
+            if role.id == TARGET_ROLE_ID or role.id == TARGET_ROLE_ID_TEST and role not in before.roles:
                 gained_target_role = True
                 break
+
+        if not gained_target_role:
+            logger.info(f"Member {after.name} (ID: {after.id}) did not gain the target role.")
+            return
 
         if gained_target_role:
             # User gained the target role
@@ -128,12 +137,12 @@ class Members(commands.Cog):
             # Find the channel where threads should be created
             channel = self.bot.get_channel(THREAD_CREATION_CHANNEL_ID)
             if not channel:
-                print(f"Error: Could not find thread creation channel with ID {THREAD_CREATION_CHANNEL_ID} in guild {after.guild.name}.")
+                logger.error(f"Error: Could not find thread creation channel with ID {THREAD_CREATION_CHANNEL_ID} in guild {after.guild.name}.")
                 return # Exit the function if the channel doesn't exist
 
             # Ensure the channel is a text channel where threads can be created
             if not isinstance(channel, discord.TextChannel):
-                print(f"Error: Channel {channel.name} (ID: {THREAD_CREATION_CHANNEL_ID}) is not a text channel.")
+                logger.error(f"Error: Channel {channel.name} (ID: {THREAD_CREATION_CHANNEL_ID}) is not a text channel.")
                 return
 
             # Define the thread name
@@ -168,7 +177,7 @@ We are going to help you achieve your goals we are already so grateful you took 
 
             except discord.Forbidden:
                 # If the bot lacks permissions to create the thread
-                print(f"Bot lacks permissions to create private threads in channel {channel.name} for user {after.name}.")
+                logger.error(f"Bot lacks permissions to create private threads in channel {channel.name} for user {after.name}.")
             except Exception as e:
                 # Catch any other potential errors during thread creation
                 print(f"Failed to create thread for {after.name} in channel {channel.name}: {e}")
@@ -294,13 +303,13 @@ We are going to help you achieve your goals we are already so grateful you took 
                 continue
 
             # Member must have the "Full Access" role to be added to the thread and the "BD-Verified" role to be added to the thread
-            add_member_to_thread = False
+            add_member_to_thread = True
             role_names = [role.name for role in member.roles]
             for role in NEEDED_ROLES_TO_ADD_TO_THREAD:
                 if role not in role_names:
+                    print(f"Member {member.name} does not have the required role {role} to be added to the thread.")
+                    add_member_to_thread = False
                     break
-            else:
-                add_member_to_thread = True
 
             if not add_member_to_thread:
                 print(f"Member {member.name} does not have the required roles to be added to the thread.")
@@ -406,10 +415,16 @@ We are going to help you achieve your goals we are already so grateful you took 
 
             # Send a welcome message in the thread
             await thread.send(f"""Hello {member.mention}!\n
-            Use this space to ask questions, share insights, or post daily reflections. Justin will pop in with answers at least once a week, and I (Jake) am here to help with anything in between.\n
-            """)
+Use this space to ask questions, share insights, or post daily reflections. Justin will pop in with answers at least once a week, and I (Jake) am here to help with anything in between.\n
+We're committed to reshaping the way you approach the markets so you can reach—and exceed—your goals.\n
+To kick things off, start reflecting on your trading day as soon as possible ideally right at the close so its fresh in your mind use this as a Journal be CONSISTENT! The most important thing isn't the trading it's how you feel when your trading- reflect on your thinking/feelings throughout the session.\n
+We are going to give you our time and effort all we ask if you help us help more people! All we ask if your benefiting here and seeing the value add\n
+Post your wins, share your successes in here \n
+We are going to help you achieve your goals we are already so grateful you took the leap of faith and joined our service we would be even more grateful you can help us achieve our goals""")
 
             successful_threads += 1
+
+            await ctx.followup.send(f"Successfully created thread for {member.name}. {thread.mention}", ephemeral=True)
 
         except discord.Forbidden:
             await ctx.followup.send(f"I lack the permissions to create threads in channel '{ctx.channel.name}'.", ephemeral=True)
