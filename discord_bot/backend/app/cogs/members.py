@@ -148,6 +148,17 @@ class Members(commands.Cog):
             # Define the thread name
             thread_name = f"Welcome {after.display_name}!"
 
+            # Check if the user already has a thread
+            existing_thread = None
+            for thread in channel.threads:
+                if after in thread.members:
+                    existing_thread = thread
+                    break
+
+            if existing_thread:
+                logger.info(f"User {after.name} (ID: {after.id}) already has a thread. Skipping thread creation.")
+                return
+
             try:
                 # Create a private thread for the user
                 # Bot needs 'Create Private Threads' permission in the channel.
