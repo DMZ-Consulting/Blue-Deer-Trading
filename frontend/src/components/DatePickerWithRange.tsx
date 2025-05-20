@@ -16,6 +16,7 @@ import {
 
 interface DatePickerWithRangeProps extends React.HTMLAttributes<HTMLDivElement> {
   date?: DateRange;
+  timeFrameString: string;
   onDateChange?: (date: DateRange | undefined) => void;
 }
 
@@ -23,6 +24,7 @@ export function DatePickerWithRange({
   className,
   date,
   onDateChange,
+  timeFrameString,
 }: DatePickerWithRangeProps) {
   return (
     <div className={cn("grid gap-2", className)}>

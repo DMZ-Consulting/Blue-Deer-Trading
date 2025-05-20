@@ -7,6 +7,7 @@ import { getMonthlyPL, MonthlyPL } from '@/api/api'
 interface ReportAreaProps {
   portfolio: PortfolioEndpoint;
   configName: string;
+  timeFrameString: string;
 }
 
 // Separate the data fetching and display logic
@@ -51,7 +52,7 @@ function MonthlyBreakdown({ configName, setTotalPL }: { configName: string; setT
   );
 }
 
-export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) {
+export function ReportAreaComponent({ portfolio, configName, timeFrameString}: ReportAreaProps) {
   const allTrades = [
     ...(portfolio.regular_trades || []),
     ...(portfolio.strategy_trades || [])
@@ -65,7 +66,7 @@ export function ReportAreaComponent({ portfolio, configName }: ReportAreaProps) 
       <h2 className="text-xl font-bold mb-4">Reports</h2>
       <div className="space-y-4">
         <div className="p-4 bg-gray-100 rounded">
-          <h3 className="font-semibold mb-2">Weekly Profit/Loss</h3>
+          <h3 className="font-semibold mb-2">Profit / Loss for {timeFrameString}</h3>
           <p className={`text-2xl font-bold ${weeklyPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
             ${weeklyPL.toFixed(2)}
           </p>
