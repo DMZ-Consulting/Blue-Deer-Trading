@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DatePickerWithRange } from '@/components/DatePickerWithRange'
 import { DateRange } from 'react-day-picker'
 import { startOfWeek, endOfWeek, addDays, format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subDays, subWeeks, subMonths, subYears, isSameDay } from 'date-fns'
+import { PortfolioStatsCards } from '@/components/PortfolioStats'
 
 const TRADE_GROUPS = [
   { value: "day_trader", label: "Day Trader" },
@@ -218,8 +219,14 @@ export default function PortfolioPage() {
         </div>
       </div>
 
+      {/* Show report area above table and stats cards when visible */}
+      {isReportsVisible && (
+        <div className="mb-6">
+          <ReportAreaComponent portfolio={portfolio} configName={configName} timeFrameString={timeFrameString} />
+        </div>
+      )}
       <div className="flex flex-col lg:flex-row gap-8">
-        <div className={`lg:${isReportsVisible ? 'w-2/3' : 'w-full'}`}>
+        <div className={`lg:${isReportsVisible ? 'w-2/3' : 'w-full'}`}> 
           {loading ? (
             <div className="space-y-4 animate-pulse">
               <h2 className="h-8 w-40 bg-gray-200 rounded mb-2" />
@@ -255,12 +262,19 @@ export default function PortfolioPage() {
               </div>
             </div>
           ) : (
-            <PortfolioTableComponent portfolio={portfolio} />
+            <>
+              <PortfolioTableComponent portfolio={portfolio} />
+              {/* Show stats cards below table on mobile, beside on desktop */}
+              <div className="block lg:hidden mt-6">
+                <PortfolioStatsCards portfolio={portfolio} />
+              </div>
+            </>
           )}
         </div>
-        {isReportsVisible && (
-          <div className="lg:w-1/3">
-            <ReportAreaComponent portfolio={portfolio} configName={configName} timeFrameString={timeFrameString} />
+        {/* On desktop, show stats cards beside table if not loading */}
+        {!loading && (
+          <div className="hidden lg:block lg:w-1/3">
+            <PortfolioStatsCards portfolio={portfolio} />
           </div>
         )}
       </div>

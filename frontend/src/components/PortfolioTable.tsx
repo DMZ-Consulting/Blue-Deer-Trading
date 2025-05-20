@@ -102,7 +102,8 @@ const TradeTable = ({ trades }: { trades: PortfolioTrade[] }) => {
             tradeType = (item.trade.trade_type as string) || 'Unknown';
           }
           const getPnLPerContract = (item: PortfolioTrade) => {
-            const singleContractPrice = item.avg_entry_price * item.pct_change / 100;
+            // Double check this is correct...
+            const singleContractPrice = Math.abs(item.avg_entry_price) * item.pct_change / 100;
             if (tradeType === 'Strategy') {
                return singleContractPrice * 100;
             }
