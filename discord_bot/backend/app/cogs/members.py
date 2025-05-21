@@ -28,6 +28,7 @@ class Members(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_member = None
+        self.thread_reminder_task = self.bot.loop.create_task(self.thread_reminder_loop())
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
@@ -119,6 +120,24 @@ class Members(commands.Cog):
             except Exception as e:
                 logger.error(f"Error: Target role with ID {TARGET_ROLE_ID} not found in guild {after.guild.name}: {e}")
                 return # Exit the function if the role doesn't exist
+
+        # Check if user already has a thread
+        existing_thread = None
+        for thread in channel.threads:
+            if after in thread.members:
+                existing_thread = thread
+                break
+
+        # Check if the user already had the target role
+        had_target_role = False
+        for role in before.roles:
+            if role.id == TARGET_ROLE_ID or role.id == TARGET_ROLE_ID_TEST:
+                had_target_role = True
+                break
+
+        if had_target_role:
+            logger.info(f"Member {after.name} (ID: {after.id}) already had the target role.")
+            return
 
         # Check if the role change actually includes gaining the target role
         gained_target_role = False
@@ -524,6 +543,55 @@ We are going to help you achieve your goals we are already so grateful you took 
         ### Please make sure to watch both instructional videos to acclimate yourself to the server. \n
         ### \- BlueDeer""")
 
+    async def thread_reminder_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                channel = self.bot.get_channel(THREAD_CREATION_CHANNEL_ID)
+                if not channel or not isinstance(channel, discord.TextChannel):
+                    logger.error(f"Could not find thread creation channel with ID {THREAD_CREATION_CHANNEL_ID} or it is not a text channel.")
+                else:
+                    now = discord.utils.utcnow()
+                    for thread in channel.threads:
+                        # Skip archived threads
+                        if thread.archived:
+                            continue
+                        # Fetch the last message in the thread
+                        last_message = None
+                        try:
+                            async for msg in thread.history(limit=1, oldest_first=False):
+                                last_message = msg
+                                break
+                        except Exception as e:
+                            logger.error(f"Error fetching last message for thread {thread.name}: {e}")
+                            continue
+                        if last_message:
+                            delta = now - last_message.created_at
+                            if delta.total_seconds() < 23 * 3600:
+                                continue  # Less than 23 hours since last message
+                        # Find the user to tag (the thread owner)
+                        thread_owner = None
+                        try:
+                            await thread.fetch_members()
+                            for member in thread.members:
+                                if not member.bot and member.id not in USERS_TO_ADD_TO_THREADS:
+                                    thread_owner = member
+                                    break
+                        except Exception as e:
+                            logger.error(f"Error fetching members for thread {thread.name}: {e}")
+                        if thread_owner:
+                            try:
+                                await thread.send(f"""Hey {thread_owner.mention}, how was your trading today? Take this time to reflect on today's session. 
+                                                  Explain how you felt in certain trades and risk (even if it seems unrelated to trading it's important to be aware) 
+                                                  You can do this on your own but if you want feedback please reply here in as much or as little detail as you would like.""")
+                                logger.info(f"Sent reminder in thread {thread.name} for user {thread_owner.name}.")
+                            except Exception as e:
+                                logger.error(f"Error sending reminder in thread {thread.name}: {e}")
+                        else:
+                            logger.warning(f"Could not determine thread owner for thread {thread.name}.")
+            except Exception as e:
+                logger.error(f"Error in thread_reminder_loop: {e}")
+            await asyncio.sleep(3600)  # Wait 1 hour before next check
 
 def setup(bot):
     print("Setting up Members cog...")  # Debug print
