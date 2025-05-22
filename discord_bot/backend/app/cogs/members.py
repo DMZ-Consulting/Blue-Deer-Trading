@@ -9,6 +9,8 @@ import os
 from app import models
 from app.database import get_db
 from dotenv import load_dotenv
+import datetime
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 
@@ -46,7 +48,7 @@ else:
     ]
 
     MESSAGE_INTERVAL = 3600
-    UPDATE_INTERVAL = 3600 * 23
+    UPDATE_INTERVAL = 3600 * 5
 
 class Members(commands.Cog):
     def __init__(self, bot):
@@ -569,54 +571,52 @@ We are going to help you achieve your goals we are already so grateful you took 
 
     async def thread_reminder_loop(self):
         await self.bot.wait_until_ready()
+        tz = ZoneInfo("America/New_York")
+        print(f"Thread reminder loop started at {datetime.datetime.now(tz)}")
         while not self.bot.is_closed():
-            try:
-                channel = self.bot.get_channel(THREAD_CREATION_CHANNEL_ID)
-                if not channel or not isinstance(channel, discord.TextChannel):
-                    logger.error(f"Could not find thread creation channel with ID {THREAD_CREATION_CHANNEL_ID} or it is not a text channel.")
-                else:
-                    now = discord.utils.utcnow()
-                    for thread in channel.threads:
-                        # Skip archived threads
-                        if thread.archived:
-                            continue
-                        # Fetch the last message in the thread
-                        last_message = None
-                        try:
-                            async for msg in thread.history(limit=1, oldest_first=False):
-                                last_message = msg
-                                break
-                        except Exception as e:
-                            logger.error(f"Error fetching last message for thread {thread.name}: {e}")
-                            continue
-                        if last_message:
-                            delta = now - last_message.created_at
-                            if delta.total_seconds() < UPDATE_INTERVAL:
-                                continue  # Less than 23 hours since last message
-                        # Find the user to tag (the thread owner)
-                        thread_owner = None
-                        try:
-                            await thread.fetch_members()
-                            for member in thread.members:
-                                if member.id not in USERS_TO_ADD_TO_THREADS and member.id not in BOT_IDS_TO_SKIP:
-                                    thread_owner = member
-                                    break
-                        except Exception as e:
-                            logger.error(f"Error fetching members for thread {thread.name}: {e}")
-                        if thread_owner:
+            now_utc = datetime.datetime.now(datetime.UTC)
+            now_est = now_utc.astimezone(tz)
+            # Calculate next 4pm (16:00) EST
+            next_run = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
+            if now_est >= next_run:
+                next_run = next_run + datetime.timedelta(days=1)
+            seconds_until_next_run = (next_run - now_est).total_seconds()
+            logger.info(f"Thread reminder sleeping for {seconds_until_next_run/3600:.2f} hours until next 4pm EST.")
+            print(f"Thread reminder sleeping for {seconds_until_next_run/3600:.2f} hours until next 4pm EST.")
+            await asyncio.sleep(seconds_until_next_run)
+            # Only run on weekdays (Mon-Fri)
+            now_utc = datetime.datetime.now(datetime.UTC)
+            now_est = now_utc.astimezone(tz)
+            if now_est.weekday() < 5:
+                try:
+                    channel = self.bot.get_channel(THREAD_CREATION_CHANNEL_ID)
+                    if not channel or not isinstance(channel, discord.TextChannel):
+                        logger.error(f"Could not find thread creation channel with ID {THREAD_CREATION_CHANNEL_ID} or it is not a text channel.")
+                    else:
+                        for thread in channel.threads:
+                            # Find the user to tag (the thread owner)
+                            thread_owner = None
                             try:
-                                thread_owner_obj = self.bot.get_user(thread_owner.id)
-                                await thread.send(f"""Hey {thread_owner_obj.mention}, how was your trading today? Take this time to reflect on today's session.\n
+                                await thread.fetch_members()
+                                for member in thread.members:
+                                    if member.id not in USERS_TO_ADD_TO_THREADS and member.id not in BOT_IDS_TO_SKIP:
+                                        thread_owner = member
+                                        break
+                            except Exception as e:
+                                logger.error(f"Error fetching members for thread {thread.name}: {e}")
+                            if thread_owner:
+                                try:
+                                    thread_owner_obj = self.bot.get_user(thread_owner.id)
+                                    await thread.send(f"""Hey {thread_owner_obj.mention}, how was your trading today? Take this time to reflect on today's session.\n
 Explain how you felt in certain trades and risk (even if it seems unrelated to trading it's important to be aware)\n
 You can do this on your own but if you want feedback please reply here in as much or as little detail as you would like.""")
-                                logger.info(f"Sent reminder in thread {thread.name} for user {thread_owner_obj.name}.")
-                            except Exception as e:
-                                logger.error(f"Error sending reminder in thread {thread.name}: {e}")
-                        else:
-                            logger.warning(f"Could not determine thread owner for thread {thread.name}.")
-            except Exception as e:
-                logger.error(f"Error in thread_reminder_loop: {e}")
-            await asyncio.sleep(MESSAGE_INTERVAL)  # Wait 1 hour before next check
+                                    logger.info(f"Sent reminder in thread {thread.name} for user {thread_owner_obj.name}.")
+                                except Exception as e:
+                                    logger.error(f"Error sending reminder in thread {thread.name}: {e}")
+                            else:
+                                logger.warning(f"Could not determine thread owner for thread {thread.name}.")
+                except Exception as e:
+                    logger.error(f"Error in thread_reminder_loop: {e}")
 
 def setup(bot):
     print("Setting up Members cog...")  # Debug print
