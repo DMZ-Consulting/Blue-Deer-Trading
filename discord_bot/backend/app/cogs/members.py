@@ -147,6 +147,11 @@ class Members(commands.Cog):
                 logger.error(f"Error: Target role with ID {TARGET_ROLE_ID} not found in guild {after.guild.name}: {e}")
                 return # Exit the function if the role doesn't exist
 
+        channel = self.bot.get_channel(THREAD_CREATION_CHANNEL_ID)
+        if not channel:
+            logger.error(f"Error: Could not find thread creation channel with ID {THREAD_CREATION_CHANNEL_ID} in guild {after.guild.name}.")
+            return # Exit the function if the channel doesn't exist
+
         # Check if user already has a thread
         existing_thread = None
         for thread in channel.threads:
