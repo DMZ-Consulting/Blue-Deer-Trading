@@ -47,8 +47,12 @@ class UtilityCog(commands.Cog):
         Format examples:
         - .SPY240119C510 (Weekly)
         - SPY240119C510 (Standard)
+        - -2*.SPXW250630P4700 (With multiplier)
         """
         try:
+            multiplier = 1  # Default multiplier
+            
+            # Handle buy/sell indicators and multipliers
             if option_string.startswith('+'):
                 buy_sell = 'BTO'
                 option_string = option_string[1:]
@@ -57,6 +61,13 @@ class UtilityCog(commands.Cog):
                 option_string = option_string[1:]
             else:
                 buy_sell = 'BTO'
+            
+            # Extract multiplier if present (e.g., "2*")
+            multiplier_match = re.match(r'^(\d+)\*(.*)$', option_string)
+            if multiplier_match:
+                multiplier = int(multiplier_match.group(1))
+                option_string = multiplier_match.group(2)
+            
             # Remove any leading dots (for weeklies)
             clean_string = option_string.strip('.')
             
@@ -101,7 +112,8 @@ class UtilityCog(commands.Cog):
                 'expiration_date': expiration_date,
                 'strike': strike,
                 'option_type': option_type,
-                'trade_type': buy_sell
+                'trade_type': buy_sell,
+                'multiplier': multiplier
             }
         except Exception as e:
             logger.error(f"Error parsing option symbol: {str(e)}")

@@ -26,6 +26,7 @@ interface Leg {
   strike: number;
   option_type: string;
   trade_type: string;
+  multiplier?: number;
 }
 
 export function OptionsStrategyTableComponent({ configName, statusFilter, dateFilter }: OptionsStrategyTableProps) {
@@ -158,6 +159,12 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
           oneliner += leg.trade_type.startsWith('BTO') ? '+' : '-';
         }
         oneliner += `${leg.strike}${leg.option_type[0]}`;
+        
+        // Add multiplier if greater than 1
+        const multiplier = leg.multiplier || 1;
+        if (multiplier > 1) {
+          oneliner += `(${multiplier}*)`;
+        }
       });
 
       return oneliner;

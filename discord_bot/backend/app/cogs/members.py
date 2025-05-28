@@ -566,6 +566,8 @@ We are going to help you achieve your goals we are already so grateful you took 
 
         await ctx.followup.send(summary_message, ephemeral=True)
 
+    
+
     async def dm_member(self, member):
         await member.send("""## Welcome to the Blue Deer Trading Discord server! \n
         ## Please watch the [Discord Instruction Video](https://drive.google.com/file/d/1fmbMA2F6gFMWPZk1VfwQQl_VNaQGqsuj/view?usp=sharing) to get started. \n
@@ -622,6 +624,108 @@ You can do this on your own but if you want feedback please reply here in as muc
                                 logger.warning(f"Could not determine thread owner for thread {thread.name}.")
                 except Exception as e:
                     logger.error(f"Error in thread_reminder_loop: {e}")
+
+    @commands.slash_command(name="message_all_threads", description="Messages all threads in a channel, tagging the owner.")
+    async def message_all_threads(
+        self,
+        ctx: discord.ApplicationContext,
+        channel: discord.Option(discord.TextChannel, "The channel containing the threads."),
+        message: discord.Option(str, "The message to send."),
+        attachment1: discord.Option(discord.Attachment, "Optional: First attachment.", required=False),
+        attachment2: discord.Option(discord.Attachment, "Optional: Second attachment.", required=False),
+        attachment3: discord.Option(discord.Attachment, "Optional: Third attachment.", required=False),
+        attachment4: discord.Option(discord.Attachment, "Optional: Fourth attachment.", required=False)
+    ):
+        """
+        Slash command to message all threads in a specified channel.
+        The message will tag the thread owner and include any provided attachments.
+        """
+        if not ctx.guild:
+            return await ctx.respond("This command can only be used in a server.", ephemeral=True)
+
+        bot_member = ctx.guild.get_member(self.bot.user.id)
+        if not bot_member or not channel.permissions_for(bot_member).send_messages_in_threads:
+            return await ctx.respond(f"I need the 'Send Messages in Threads' permission in '{channel.name}'.", ephemeral=True)
+        if not channel.permissions_for(bot_member).view_channel:
+             return await ctx.respond(f"I need the 'View Channel' permission for '{channel.name}'.", ephemeral=True)
+
+
+        await ctx.defer(ephemeral=True)
+
+        sent_count = 0
+        failed_threads = []
+        files_to_send = []
+
+        if attachment1:
+            files_to_send.append(await attachment1.to_file())
+        if attachment2:
+            files_to_send.append(await attachment2.to_file())
+        if attachment3:
+            files_to_send.append(await attachment3.to_file())
+        if attachment4:
+            files_to_send.append(await attachment4.to_file())
+
+        active_threads = channel.threads
+        # Also consider archived threads if necessary, though messaging them might be less common.
+        # For now, focusing on active threads.
+        # async for thread in channel.archived_threads(private=True, limit=None):
+        # active_threads.append(thread)
+        # async for thread in channel.archived_threads(private=False, limit=None):
+        # active_threads.append(thread)
+
+
+        for thread in active_threads:
+            if not thread.archived: # Ensure we only message active threads explicitly
+                thread_owner = None
+                try:
+                    await thread.fetch_members() 
+                    for member in thread.members:
+                        if member.id not in USERS_TO_ADD_TO_THREADS and member.id not in BOT_IDS_TO_SKIP:
+                            thread_owner = member
+                            break
+                except discord.Forbidden:
+                    logger.error(f"Lacked permissions to fetch members for thread {thread.name} ({thread.id}). Skipping.")
+                    failed_threads.append(f"{thread.name} (Permission Error)")
+                    continue
+                except Exception as e:
+                    traceback.print_exc()
+                    logger.error(f"Error fetching members for thread {thread.name} ({thread.id}): {e}")
+                    failed_threads.append(f"{thread.name} (Fetch Error)")
+                    continue
+
+                if thread_owner:
+                    try:
+                        # Reset file pointers for each send if sending BytesIO or similar
+                        files_for_this_thread = []
+                        if attachment1: files_for_this_thread.append(await attachment1.to_file()) # Re-create to ensure fresh state
+                        if attachment2: files_for_this_thread.append(await attachment2.to_file())
+                        if attachment3: files_for_this_thread.append(await attachment3.to_file())
+                        if attachment4: files_for_this_thread.append(await attachment4.to_file())
+
+                        user = await ctx.guild.fetch_member(thread_owner.id)
+                        
+                        await thread.send(f"Hello {user.mention}! {message}", files=files_for_this_thread if files_for_this_thread else None)
+                        sent_count += 1
+                        logger.info(f"Sent message to thread {thread.name} ({thread.id}) for owner {thread_owner.name}.")
+                    except discord.Forbidden:
+                        logger.error(f"Lacked permissions to send message in thread {thread.name} ({thread.id}).")
+                        failed_threads.append(f"{thread.name} (Send Permission Error)")
+                    except Exception as e:
+                        logger.error(f"Error sending message in thread {thread.name} ({thread.id}): {e}")
+                        failed_threads.append(f"{thread.name} (Send Error: {type(e).__name__})")
+                else:
+                    logger.warning(f"Could not determine thread owner for thread {thread.name} ({thread.id}). Skipping.")
+                    failed_threads.append(f"{thread.name} (No Owner Found)")
+                
+                await asyncio.sleep(1) # Small delay to avoid rate limits
+
+        summary_message = f"Finished messaging threads in '{channel.name}'."
+        summary_message += f"Successfully sent messages to {sent_count} threads.\n"
+        if failed_threads:
+            summary_message += f"Failed to send messages to the following threads: {', '.join(failed_threads)}"
+            summary_message += "\nCheck bot permissions and Discord's rate limits if many failed."
+        
+        await ctx.followup.send(summary_message, ephemeral=True)
 
 def setup(bot):
     print("Setting up Members cog...")  # Debug print

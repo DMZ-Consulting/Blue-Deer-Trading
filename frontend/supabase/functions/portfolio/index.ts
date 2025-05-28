@@ -29,6 +29,15 @@ interface Transaction {
   net_cost?: number
 }
 
+interface Leg {
+  symbol: string
+  strike: number
+  expiration_date: string
+  option_type: string
+  trade_type: string
+  multiplier?: number
+}
+
 interface Trade {
   trade_id: string
   symbol: string
@@ -64,6 +73,7 @@ interface Strategy {
   created_at: string
   closed_at?: string
   profit_loss?: number
+  legs?: string
   trade_configurations?: {
     name: string
   }
@@ -603,5 +613,39 @@ function createTradeOneliner(trade: Trade): string {
 }
 
 function createStrategyOneliner(strategy: Strategy): string {
-  return `${strategy.name} ${strategy.underlying_symbol} @${strategy.net_cost}`
+  try {
+    const legs: Leg[] = JSON.parse(strategy.legs || '[]')
+    let oneliner = `${strategy.underlying_symbol} - ${strategy.name} `
+    
+    // Add date from first leg if available
+    if (legs.length > 0 && legs[0].expiration_date) {
+      const date = new Date(legs[0].expiration_date)
+      oneliner += `(${date.toLocaleDateString('en-US', { 
+        month: '2-digit', 
+        day: '2-digit', 
+        year: '2-digit',
+        timeZone: 'UTC'
+      })}) `
+    }
+    
+    // Add each leg with multipliers
+    legs.forEach((leg: Leg, index: number) => {
+      if (index > 0) {
+        oneliner += leg.trade_type?.startsWith('BTO') ? ' + ' : ' - '
+      }
+      oneliner += `${leg.strike}${leg.option_type?.[0] || ''}`
+      
+      // Add multiplier if greater than 1
+      const multiplier = leg.multiplier || 1
+      if (multiplier > 1) {
+        oneliner += `**${multiplier}***`
+      }
+    })
+    
+    oneliner += ` @${strategy.net_cost}`
+    return oneliner
+  } catch (error) {
+    console.error('Error creating strategy oneliner:', error)
+    return `${strategy.name} ${strategy.underlying_symbol} @${strategy.net_cost}`
+  }
 } 

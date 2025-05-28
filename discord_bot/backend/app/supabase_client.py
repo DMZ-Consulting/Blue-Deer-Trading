@@ -291,7 +291,8 @@ async def create_os_trade(
                 'strike': leg['strike'],
                 'expiration_date': leg['expiration_date'].isoformat() if leg['expiration_date'] else None,
                 'option_type': leg['option_type'],
-                'trade_type': leg['trade_type']
+                'trade_type': leg['trade_type'],
+                'multiplier': leg.get('multiplier', 1)
             })
 
         response = await supabase.functions.invoke(

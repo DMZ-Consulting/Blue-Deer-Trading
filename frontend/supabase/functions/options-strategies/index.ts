@@ -372,6 +372,9 @@ serve(async (req: Request) => {
           throw exitTransactionError
         }
 
+        // Normalize exit transaction sizes for proportional calculations
+        await normalizeStrategyExitTransactionSizes(supabase, strategy_id)
+
         console.log('Successfully closed strategy:', exitStrategy)
         data = exitStrategy
         break
@@ -395,3 +398,55 @@ serve(async (req: Request) => {
     )
   }
 }) 
+
+// Helper function to normalize exit transaction sizes for proportional calculations
+async function normalizeStrategyExitTransactionSizes(supabase: any, strategy_id: string): Promise<void> {
+  console.log('Normalizing exit transaction sizes for strategy:', strategy_id)
+  
+  // Get all exit transactions (TRIM and CLOSE) for this strategy
+  const { data: exitTransactions, error: exitTransactionError } = await supabase
+    .from('options_strategy_transactions')
+    .select('id, transaction_type, size')
+    .eq('strategy_id', strategy_id)
+    .in('transaction_type', [StrategyTransactionType.TRIM, StrategyTransactionType.CLOSE])
+
+  if (exitTransactionError) throw exitTransactionError
+  
+  if (!exitTransactions || exitTransactions.length === 0) {
+    console.log('No exit transactions found to normalize')
+    return
+  }
+
+  console.log('Found exit transactions to normalize:', exitTransactions)
+
+  // Calculate total exit size
+  const totalExitSize = exitTransactions.reduce((total: number, transaction: any) => 
+    total + parseFloat(transaction.size), 0
+  )
+
+  // Calculate proportional size for each exit transaction
+  const proportionalSize = totalExitSize / exitTransactions.length
+
+  console.log('Normalizing sizes:', {
+    totalExitSize,
+    transactionCount: exitTransactions.length,
+    proportionalSize
+  })
+
+  // Update each exit transaction with the proportional size
+  for (const transaction of exitTransactions) {
+    const { error: updateError } = await supabase
+      .from('options_strategy_transactions')
+      .update({
+        size: proportionalSize.toString()
+      })
+      .eq('id', transaction.id)
+
+    if (updateError) {
+      console.error('Error updating transaction size:', updateError)
+      throw updateError
+    }
+  }
+
+  console.log('Successfully normalized exit transaction sizes')
+} 

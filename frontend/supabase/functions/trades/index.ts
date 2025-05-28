@@ -448,6 +448,9 @@ serve(async (req: Request) => {
         if (exitTransactionError) throw exitTransactionError
         logger.debug('Created CLOSE transaction')
 
+        // Normalize exit transaction sizes for proportional calculations
+        await normalizeExitTransactionSizes(supabaseClient, trade_id)
+
         // Fetch updated trade after trigger has run
         const { data: closedTrade, error: closeFetchError } = await supabaseClient
           .from('trades')
@@ -559,4 +562,56 @@ async function generateTransactionId(supabase: SupabaseClient, maxAttempts = 10)
   }
   
   throw new Error('Failed to generate unique transaction ID after maximum attempts');
+}
+
+// Helper function to normalize exit transaction sizes for proportional calculations
+async function normalizeExitTransactionSizes(supabase: SupabaseClient, trade_id: string): Promise<void> {
+  logger.debug('Normalizing exit transaction sizes for trade:', trade_id)
+  
+  // Get all exit transactions (TRIM and CLOSE) for this trade
+  const { data: exitTransactions, error: exitTransactionError } = await supabase
+    .from('transactions')
+    .select('id, transaction_type, size')
+    .eq('trade_id', trade_id)
+    .in('transaction_type', [TransactionType.TRIM, TransactionType.CLOSE])
+
+  if (exitTransactionError) throw exitTransactionError
+  
+  if (!exitTransactions || exitTransactions.length === 0) {
+    logger.debug('No exit transactions found to normalize')
+    return
+  }
+
+  logger.debug('Found exit transactions to normalize:', exitTransactions)
+
+  // Calculate total exit size
+  const totalExitSize = exitTransactions.reduce((total: number, transaction: any) => 
+    total + parseFloat(transaction.size), 0
+  )
+
+  // Calculate proportional size for each exit transaction
+  const proportionalSize = totalExitSize / exitTransactions.length
+
+  logger.debug('Normalizing sizes:', {
+    totalExitSize,
+    transactionCount: exitTransactions.length,
+    proportionalSize
+  })
+
+  // Update each exit transaction with the proportional size
+  for (const transaction of exitTransactions) {
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({
+        size: proportionalSize.toString()
+      })
+      .eq('id', transaction.id)
+
+    if (updateError) {
+      logger.error('Error updating transaction size:', updateError)
+      throw updateError
+    }
+  }
+
+  logger.debug('Successfully normalized exit transaction sizes')
 }

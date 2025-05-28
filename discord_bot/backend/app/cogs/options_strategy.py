@@ -77,11 +77,11 @@ class OptionsStrategyCog(commands.Cog):
         if not leg_string.startswith('+') and not leg_string.startswith('-'):
             leg_string = '+' + leg_string
         
-        # Split the string by + or - while keeping the signs
+        # Split the string by + or - while keeping the signs and handling multipliers
         legs = []
         current_leg = ''
         
-        for char in leg_string:
+        for i, char in enumerate(leg_string):
             if char in ['+', '-'] and current_leg:
                 legs.append(current_leg)
                 current_leg = char
@@ -100,7 +100,7 @@ class OptionsStrategyCog(commands.Cog):
         ctx: discord.ApplicationContext,
         strategy_name: discord.Option(str, description="The name of the strategy (e.g., 'Iron Condor', 'Call Spread')"),
         net_cost: discord.Option(float, description="The net cost of the strategy"),
-        legs: discord.Option(str, description="The legs of the strategy in format: 'SPY240119C510,SPY240119P500,...'"),
+        legs: discord.Option(str, description="The legs of the strategy in format: '+SPY240119C510,-2*.SPY240119P500,...' (use N* for multipliers)"),
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size of the strategy default is 1") = "1",
     ):
@@ -121,9 +121,9 @@ class OptionsStrategyCog(commands.Cog):
                 leg_list.append(parsed)
                 if not underlying_symbol:
                     underlying_symbol = parsed['symbol']
-                elif underlying_symbol != parsed['symbol']:
-                    await logging_cog.log_to_channel(ctx.guild, f"All legs must have the same underlying symbol by {ctx.user.name}")
-                    return
+                #elif underlying_symbol != parsed['symbol']:
+                #    await logging_cog.log_to_channel(ctx.guild, f"All legs must have the same underlying symbol by {ctx.user.name}")
+                #    return
 
             # Determine trade group
             trade_group = await utility_cog.determine_trade_group(
@@ -162,9 +162,13 @@ class OptionsStrategyCog(commands.Cog):
                 
                 # Add leg details
                 for i, leg in enumerate(leg_list, 1):
+                    multiplier_str = ""
+                    if leg.get('multiplier', 1) > 1:
+                        multiplier_str = f" **{leg['multiplier']}* **"
+                    
                     leg_str = (
                         f"{leg['trade_type']} {leg['symbol']} ${leg['strike']:,.2f} "
-                        f"{leg['expiration_date'].strftime('%m/%d/%y')} {leg['option_type']}"
+                        f"{leg['expiration_date'].strftime('%m/%d/%y')} {leg['option_type']}{multiplier_str}"
                     )
                     embed.add_field(name=f"Leg {i}", value=leg_str, inline=False)
 
@@ -365,7 +369,14 @@ class OptionsStrategyCog(commands.Cog):
                         legs_str += " + "
                     else:
                         legs_str += " - "
+                
+                # Add strike and option type
                 legs_str += f"{leg['strike']}{leg['option_type'][0]}"
+                
+                # Add multiplier in bold if greater than 1
+                multiplier = leg.get('multiplier', 1)
+                if multiplier > 1:
+                    legs_str += f"**{multiplier}***"
             
             if latest_expiration:
                 expiration_str = latest_expiration.strftime('%m/%d/%y')
@@ -383,8 +394,8 @@ class OptionsStrategyCog(commands.Cog):
             'strike': leg['strike'],
             'expiration_date': leg['expiration_date'].isoformat() if leg['expiration_date'] else None,
             'option_type': leg['option_type'],
-            'size': leg['size'],
-            'net_cost': leg['net_cost']
+            'trade_type': leg['trade_type'],
+            'multiplier': leg.get('multiplier', 1)
         } for leg in legs])
 
     def deserialize_legs(self, legs_json):
@@ -395,6 +406,9 @@ class OptionsStrategyCog(commands.Cog):
         for leg in legs:
             if leg['expiration_date']:
                 leg['expiration_date'] = datetime.fromisoformat(leg['expiration_date'])
+            # Ensure multiplier exists for backward compatibility
+            if 'multiplier' not in leg:
+                leg['multiplier'] = 1
         return legs
 
 
