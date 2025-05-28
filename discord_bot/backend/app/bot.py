@@ -80,7 +80,7 @@ def setup_bot():
         bot.load_extension('app.cogs.options_strategy')
         bot.load_extension('app.cogs.utility')
         bot.load_extension('app.cogs.logging')
-        bot.load_extension('app.cogs.messages')
+        #bot.load_extension('app.cogs.messages')
         print("Successfully loaded all cogs")
     except Exception as e:
         print(f"Error loading cogs: {e}")
