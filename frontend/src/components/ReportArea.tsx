@@ -8,6 +8,7 @@ interface ReportAreaProps {
   portfolio: PortfolioEndpoint;
   configName: string;
   timeFrameString: string;
+  traderTypeLabel: string;
 }
 
 // Separate the data fetching and display logic
@@ -44,7 +45,7 @@ function MonthlyBreakdown({ configName, setTotalPL }: { configName: string; setT
         <div key={item.month} className="flex justify-between items-center">
           <span className="text-sm">{item.month}</span>
           <span className={`font-semibold ${item.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            ${item.profit_loss.toFixed(2)}
+            ${item.profit_loss.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
           </span>
         </div>
       ))}
@@ -52,7 +53,7 @@ function MonthlyBreakdown({ configName, setTotalPL }: { configName: string; setT
   );
 }
 
-export function ReportAreaComponent({ portfolio, configName, timeFrameString}: ReportAreaProps) {
+export function ReportAreaComponent({ portfolio, configName, timeFrameString, traderTypeLabel }: ReportAreaProps) {
   const allTrades = [
     ...(portfolio.regular_trades || []),
     ...(portfolio.strategy_trades || [])
@@ -63,12 +64,17 @@ export function ReportAreaComponent({ portfolio, configName, timeFrameString}: R
 
   return (
     <div className="bg-white border border-gray-300 p-4 rounded shadow-sm">
-      <h2 className="text-xl font-bold mb-4">Reports</h2>
+      <h2 className="text-xl font-bold mb-4">Realized Profit/Loss</h2>
       <div className="space-y-4">
         <div className="p-4 bg-gray-100 rounded">
-          <h3 className="font-semibold mb-2">Profit / Loss for {timeFrameString}</h3>
-          <p className={`text-2xl font-bold ${weeklyPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            ${weeklyPL.toFixed(2)}
+          <div className="flex items-baseline flex-wrap mb-2">
+            <h3 className="font-semibold mr-3">{traderTypeLabel} for {timeFrameString}</h3>
+            <p className="text-sm italic text-gray-600">
+              *P/L based on one Unit, 1 Unit = 1 Option Contract
+            </p>
+          </div>
+          <p className={`text-5xl font-bold ${weeklyPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            ${weeklyPL.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
           </p>
         </div>
         
@@ -78,7 +84,7 @@ export function ReportAreaComponent({ portfolio, configName, timeFrameString}: R
             <div className="text-right">
               <div className="text-sm text-gray-600">Total P/L</div>
               <div className={`font-bold ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                ${totalPL.toFixed(2)}
+                ${totalPL.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
               </div>
             </div>
           </div>

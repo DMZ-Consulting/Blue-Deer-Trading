@@ -31,6 +31,16 @@ const PRESET_OPTIONS = [
   { label: 'Year to date', value: 'year_to_date' },
 ];
 
+const STAT_OPTIONS = [
+  { key: 'biggestWin', label: 'Biggest Win' },
+  { key: 'worstLoss', label: 'Worst Loss' },
+  { key: 'bestStock', label: 'Best Stock' },
+  { key: 'mostTradedStock', label: 'Most Traded Stock' },
+  { key: 'winRate', label: 'Win Rate' },
+  { key: 'avgSize', label: 'Avg Trade Size' },
+  { key: 'totalTrades', label: 'Total Trades' },
+];
+
 function getPresetDateRange(preset: string): DateRange {
   const now = new Date();
   switch (preset) {
@@ -104,6 +114,25 @@ export default function PortfolioPage() {
 
   // Add preset state
   const [selectedPreset, setSelectedPreset] = useState<string>('last_7_days');
+
+  // State for PortfolioStatsCards visibility
+  const [visibleStats, setVisibleStats] = useState<string[]>([]); // default to all hidden
+  const allStatsSelected = visibleStats.length === STAT_OPTIONS.length;
+  const noStatsSelected = visibleStats.length === 0;
+
+  const handleToggleStat = (key: string) => {
+    setVisibleStats(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  const handleToggleShowAllStats = () => {
+    if (allStatsSelected) {
+      setVisibleStats([]); // Hide all if all are selected
+    } else {
+      setVisibleStats(STAT_OPTIONS.map(opt => opt.key)); // Show all if none or some are selected
+    }
+  };
 
   // Update timeFrameString whenever dateRange changes
   useEffect(() => {
@@ -221,12 +250,14 @@ export default function PortfolioPage() {
 
       {/* Show report area above table and stats cards when visible */}
       {isReportsVisible && (
-        <div className="mb-6">
-          <ReportAreaComponent portfolio={portfolio} configName={configName} timeFrameString={timeFrameString} />
+        <div className={`mb-6 ${
+          noStatsSelected ? 'lg:w-full' : '' // Full width if no stats are selected
+        }`}>
+          <ReportAreaComponent portfolio={portfolio} configName={configName} timeFrameString={timeFrameString} traderTypeLabel={TRADE_GROUPS.find(group => group.value === configName)?.label || ''} />
         </div>
       )}
       <div className="flex flex-col lg:flex-row gap-8">
-        <div className={`lg:${isReportsVisible ? 'w-2/3' : 'w-full'}`}> 
+        <div className={`lg:${isReportsVisible ? (noStatsSelected ? 'w-full' : 'w-2/3') : 'w-full'}`}> 
           {loading ? (
             <div className="space-y-4 animate-pulse">
               <h2 className="h-8 w-40 bg-gray-200 rounded mb-2" />
@@ -266,15 +297,29 @@ export default function PortfolioPage() {
               <PortfolioTableComponent portfolio={portfolio} />
               {/* Show stats cards below table on mobile, beside on desktop */}
               <div className="block lg:hidden mt-6">
-                <PortfolioStatsCards portfolio={portfolio} />
+                <PortfolioStatsCards 
+                  portfolio={portfolio} 
+                  visibleStats={visibleStats}
+                  statOptions={STAT_OPTIONS}
+                  onToggleStat={handleToggleStat}
+                  onToggleShowAll={handleToggleShowAllStats}
+                  allStatsSelected={allStatsSelected}
+                />
               </div>
             </>
           )}
         </div>
         {/* On desktop, show stats cards beside table if not loading */}
         {!loading && (
-          <div className="hidden lg:block lg:w-1/3">
-            <PortfolioStatsCards portfolio={portfolio} />
+          <div className={`hidden lg:block lg:w-1/3`}>
+            <PortfolioStatsCards 
+              portfolio={portfolio} 
+              visibleStats={visibleStats}
+              statOptions={STAT_OPTIONS}
+              onToggleStat={handleToggleStat}
+              onToggleShowAll={handleToggleShowAllStats}
+              allStatsSelected={allStatsSelected}
+            />
           </div>
         )}
       </div>

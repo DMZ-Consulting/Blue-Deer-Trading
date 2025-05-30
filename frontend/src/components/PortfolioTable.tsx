@@ -15,7 +15,10 @@ const HighlightedNumber = ({ value, decimals = 2, highlight = false }: { value: 
   if (value === null || value === undefined) {
     return <span>N/A</span>;
   }
-  const formattedValue = value.toFixed(decimals);
+  const formattedValue = value.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
   if (highlight) {
     const className = value >= 0 ? "text-green-500" : "text-red-500";
     return <span className={className}>{formattedValue}</span>;
