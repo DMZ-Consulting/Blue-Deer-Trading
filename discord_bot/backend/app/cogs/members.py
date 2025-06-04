@@ -141,11 +141,8 @@ class Members(commands.Cog):
         # We check if the target role was NOT in the 'before' roles but IS in the 'after' roles
         target_role = after.guild.get_role(TARGET_ROLE_ID)
         if target_role is None:
-            try:
-                target_role = after.guild.get_role(TARGET_ROLE_ID_TEST)
-            except Exception as e:
-                logger.error(f"Error: Target role with ID {TARGET_ROLE_ID} not found in guild {after.guild.name}: {e}")
-                return # Exit the function if the role doesn't exist
+            logger.error(f"Error: Target role with ID {TARGET_ROLE_ID} not found in guild {after.guild.name}")
+            return # Exit the function if the role doesn't exist
 
         channel = self.bot.get_channel(THREAD_CREATION_CHANNEL_ID)
         if not channel:
@@ -162,7 +159,7 @@ class Members(commands.Cog):
         # Check if the user already had the target role
         had_target_role = False
         for role in before.roles:
-            if role.id == TARGET_ROLE_ID or role.id == TARGET_ROLE_ID_TEST:
+            if role.id == TARGET_ROLE_ID:
                 had_target_role = True
                 break
 
@@ -173,7 +170,7 @@ class Members(commands.Cog):
         # Check if the role change actually includes gaining the target role
         gained_target_role = False
         for role in after.roles:
-            if role.id == TARGET_ROLE_ID or role.id == TARGET_ROLE_ID_TEST and role not in before.roles:
+            if role.id == TARGET_ROLE_ID and role not in before.roles:
                 gained_target_role = True
                 break
 
@@ -706,7 +703,7 @@ You can do this on your own but if you want feedback please reply here in as muc
                         
                         await thread.send(f"Hello {user.mention}! {message}", files=files_for_this_thread if files_for_this_thread else None)
                         sent_count += 1
-                        logger.info(f"Sent message to thread {thread.name} ({thread.id}) for owner {thread_owner.name}.")
+                        logger.info(f"Sent message to thread {thread.name} ({thread.id}) for owner {user.name}.")
                     except discord.Forbidden:
                         logger.error(f"Lacked permissions to send message in thread {thread.name} ({thread.id}).")
                         failed_threads.append(f"{thread.name} (Send Permission Error)")
