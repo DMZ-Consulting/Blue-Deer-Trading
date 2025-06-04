@@ -406,7 +406,7 @@ async function normalizeStrategyExitTransactionSizes(supabase: any, strategy_id:
   // Get all exit transactions (TRIM and CLOSE) for this strategy
   const { data: exitTransactions, error: exitTransactionError } = await supabase
     .from('options_strategy_transactions')
-    .select('id, transaction_type, size')
+    .select('transaction_id, transaction_type, size')
     .eq('strategy_id', strategy_id)
     .in('transaction_type', [StrategyTransactionType.TRIM, StrategyTransactionType.CLOSE])
 
@@ -440,7 +440,7 @@ async function normalizeStrategyExitTransactionSizes(supabase: any, strategy_id:
       .update({
         size: proportionalSize.toString()
       })
-      .eq('id', transaction.id)
+      .eq('transaction_id', transaction.transaction_id)
 
     if (updateError) {
       console.error('Error updating transaction size:', updateError)

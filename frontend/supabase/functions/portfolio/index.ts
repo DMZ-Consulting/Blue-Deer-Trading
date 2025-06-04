@@ -392,7 +392,12 @@ serve(async (req: Request) => {
           console.log('Open transactions:', openTransactions)
 
           const [realizedPL, avgExitPrice] = calculateStrategyPL(strategy, openTransactions)
-          const pctChange = (avgExitPrice - strategy.average_net_cost) / strategy.average_net_cost * 100
+          let pctChange = 0
+          if (strategy.average_net_cost > 0) {
+            pctChange = (avgExitPrice - strategy.average_net_cost) / strategy.average_net_cost * 100
+          } else {
+            pctChange = -1 * (avgExitPrice - strategy.net_cost) / strategy.net_cost * 100
+          }
 
           console.log('Strategy calculations:', {
             realized_pl: realizedPL,
