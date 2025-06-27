@@ -1,0 +1,1 @@
+java -jar ThetaTerminal.jar --creds-file=creds.txt --log-directory=logs

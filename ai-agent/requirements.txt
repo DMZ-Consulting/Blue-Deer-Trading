@@ -1,0 +1,9 @@
+agno
+openai
+psycopg2
+sqlalchemy
+lancedb
+tantivy
+pylance
+google-genai
+pandas

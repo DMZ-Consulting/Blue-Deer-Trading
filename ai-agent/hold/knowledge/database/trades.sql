@@ -1,0 +1,25 @@
+CREATE TABLE public.trades (
+    trade_id character varying NOT NULL,
+    symbol character varying NOT NULL,
+    trade_type character varying NOT NULL ('BTO', 'STO'),
+    status character varying NOT NULL ('OPEN', 'CLOSED'),
+    entry_price double precision NOT NULL,
+    average_price double precision,
+    current_size character varying,
+    size character varying NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    closed_at timestamp with time zone,
+    exit_price double precision,
+    average_exit_price double precision,
+    profit_loss double precision,
+    risk_reward_ratio double precision,
+    win_loss character varying ('WIN', 'LOSS'),
+    configuration_id integer,
+    is_contract boolean DEFAULT false,
+    is_day_trade boolean DEFAULT false,
+    strike double precision,
+    expiration_date timestamp with time zone,
+    option_type character varying,
+    user_id character varying
+);
+
