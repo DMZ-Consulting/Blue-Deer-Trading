@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import re
 import traceback
 import os
@@ -143,7 +143,17 @@ class UtilityCog(commands.Cog):
                 # If both fail, return default
                 return TradeGroupEnum.SWING_TRADER
         
-        days_to_expiration = (exp_date - datetime.now().date()).days
+        # Calculate weekdays between today and expiration date
+        current_date = datetime.now().date()
+        weekdays_to_expiration = 0
+        temp_date = current_date
+        
+        while temp_date < exp_date:
+            if temp_date.weekday() < 5:  # Monday = 0, Sunday = 6, so < 5 means Monday-Friday
+                weekdays_to_expiration += 1
+            temp_date += timedelta(days=1)
+        
+        days_to_expiration = weekdays_to_expiration
         print("days_to_expiration", days_to_expiration)
         
         if days_to_expiration <= 3:
