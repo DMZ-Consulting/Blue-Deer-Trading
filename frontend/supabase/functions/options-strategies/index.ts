@@ -338,7 +338,7 @@ serve(async (req: Request) => {
 
       case 'exitStrategy':
         console.log('Exiting strategy:', { strategy_id, net_cost })
-        if (!strategy_id || !net_cost) throw new Error('strategy_id and net_cost are required')
+        if (!strategy_id || net_cost == null) throw new Error('strategy_id and net_cost are required')
         // Get current strategy and all its transactions
         const { data: exitStrategy, error: exitStrategyError } = await supabase
           .from('options_strategy_trades')
@@ -375,8 +375,22 @@ serve(async (req: Request) => {
         // Normalize exit transaction sizes for proportional calculations
         await normalizeStrategyExitTransactionSizes(supabase, strategy_id)
 
-        console.log('Successfully closed strategy:', exitStrategy)
-        data = exitStrategy
+        const { data: exitStrategy2, error: exitStrategyError2 } = await supabase
+        .from('options_strategy_trades')
+        .select(`
+          *,
+          options_strategy_transactions (*)
+        `)
+        .eq('strategy_id', strategy_id)
+        .single()
+
+        if (exitStrategyError2) {
+          console.error('Error fetching strategy to exit:', exitStrategyError2)
+          throw exitStrategyError2
+        }
+
+        console.log('Successfully closed strategy:', exitStrategy2)
+        data = exitStrategy2
         break
 
       default:

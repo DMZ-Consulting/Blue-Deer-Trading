@@ -102,7 +102,10 @@ class TradingCog(commands.Cog):
         return self.bot.get_cog('LoggingCog')
 
     async def kill_interaction(self, ctx):
-        await ctx.response.send_message("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.response.send_message("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
 
     async def create_trade_oneliner(self, trade: Dict[str, Any], price: float = 0, size: float = 0) -> str:
         """Create a one-liner summary of the trade."""
@@ -174,7 +177,11 @@ class TradingCog(commands.Cog):
         size: discord.Option(str, description="The size of the trade default is 1") = "1",
     ):
         """Open a new trade."""
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         utility_cog = await self.get_utility_cog()
         logging_cog = await self.get_logging_cog()
         try:
@@ -252,7 +259,11 @@ class TradingCog(commands.Cog):
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size of the trade") = "1",
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         await self.common_stock_trade(ctx, TradeGroupEnum.DAY_TRADER, symbol, entry_price, size, note)
 
     @commands.slash_command(name="lt", description="Buy to open a new long-term trade")
@@ -264,7 +275,11 @@ class TradingCog(commands.Cog):
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size of the trade") = "1",
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         await self.common_stock_trade(ctx, TradeGroupEnum.LONG_TERM_TRADER, symbol, entry_price, size, note)
 
     async def common_stock_trade(
@@ -333,7 +348,11 @@ class TradingCog(commands.Cog):
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size to add default is 1") = "1",
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
         try:
@@ -368,7 +387,10 @@ class TradingCog(commands.Cog):
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size to trim default is 0.25") = "0.25",
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
 
         try:
             logging_cog = await self.get_logging_cog()
@@ -418,7 +440,10 @@ class TradingCog(commands.Cog):
         price: discord.Option(float, description="The price of the trade"),
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
 
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
@@ -470,7 +495,11 @@ class TradingCog(commands.Cog):
         trade_id: discord.Option(str, description="The ID of the trade to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_trade_ids)),
         note: discord.Option(str, description="The note to add")
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
         try:

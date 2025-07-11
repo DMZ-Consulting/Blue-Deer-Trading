@@ -104,7 +104,11 @@ class OptionsStrategyCog(commands.Cog):
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size of the strategy default is 1") = "1",
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         utility_cog = await self.get_utility_cog()
         logging_cog = await self.get_logging_cog()
 
@@ -192,7 +196,11 @@ class OptionsStrategyCog(commands.Cog):
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size to add default is 1") = "1",
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
 
@@ -236,7 +244,11 @@ class OptionsStrategyCog(commands.Cog):
         note: discord.Option(str, description="Optional note from the trader") = None,
         size: discord.Option(str, description="The size to trim default is 0.25") = "0.25",
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
         try:
@@ -274,7 +286,11 @@ class OptionsStrategyCog(commands.Cog):
         net_cost: discord.Option(float, description="The net cost of the exit"),
         note: discord.Option(str, description="Optional note from the trader") = None,
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
 
@@ -331,7 +347,11 @@ class OptionsStrategyCog(commands.Cog):
         strategy_id: discord.Option(str, description="The strategy to add the note to", autocomplete=discord.utils.basic_autocomplete(get_open_os_trade_ids)),
         note: discord.Option(str, description="The note to add")
     ):
-        await ctx.respond("Processing...", ephemeral=True, delete_after=0)
+        try:
+            await ctx.respond("Processing...", ephemeral=True, delete_after=1)
+        except:
+            pass
+
         logging_cog = await self.get_logging_cog()
         utility_cog = await self.get_utility_cog()
         try:
