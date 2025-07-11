@@ -6,6 +6,8 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import traceback
 import json
+import asyncio
+import httpx
 
 # Load environment variables
 load_dotenv()
@@ -91,10 +93,14 @@ async def create_trade(
 
     logger.info(f"Calling trades edge function with action=createTrade and input={input_data}")
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "trades",
-            invoke_options={"body": {"action": "createTrade", "input": input_data}}
-        )
+            invoke_options={"body": {"action": "createTrade", "input": input_data}},
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -122,10 +128,14 @@ async def add_to_trade(trade_id: str, price: float, size: str) -> Dict[str, Any]
 
     logger.info(f"Calling trades edge function with action=addToTrade, trade_id={trade_id}, price={price}, size={size}")
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "trades",
-            invoke_options={"body": {"action": "addToTrade", "trade_id": trade_id, "price": price, "size": size}}
-        )
+            invoke_options={"body": {"action": "addToTrade", "trade_id": trade_id, "price": price, "size": size}},
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -153,10 +163,14 @@ async def trim_trade(trade_id: str, price: float, size: str) -> Dict[str, Any]:
 
     logger.info(f"Calling trades edge function with action=trimTrade, trade_id={trade_id}, price={price}, size={size}")
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "trades",
-            invoke_options={"body": {"action": "trimTrade", "trade_id": trade_id, "price": price, "size": size}}
-        )
+            invoke_options={"body": {"action": "trimTrade", "trade_id": trade_id, "price": price, "size": size}},
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -184,10 +198,14 @@ async def exit_trade(trade_id: str, price: float) -> Dict[str, Any]:
 
     logger.info(f"Calling trades edge function with action=exitTrade, trade_id={trade_id}, price={price}")
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "trades",
-            invoke_options={"body": {"action": "exitTrade", "trade_id": trade_id, "price": price}}
-        )
+            invoke_options={"body": {"action": "exitTrade", "trade_id": trade_id, "price": price}},
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -215,10 +233,14 @@ async def get_trade(trade_id: str) -> Optional[Dict[str, Any]]:
 
     logger.info(f"Calling trades edge function with action=getTrades, trade_id={trade_id}")
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "trades",
-            invoke_options={"body": {"action": "getTrades", "filters": {"trade_id": trade_id}}}
-        )
+            invoke_options={"body": {"action": "getTrades", "filters": {"trade_id": trade_id}}},
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -295,7 +317,8 @@ async def create_os_trade(
                 'multiplier': leg.get('multiplier', 1)
             })
 
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "options-strategies",
             invoke_options={
                 "body": {
@@ -310,8 +333,11 @@ async def create_os_trade(
                         "configuration_id": configuration_id
                     }
                 }
-            }
-        )
+            },
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         
         if isinstance(response, bytes):
             response_data = json.loads(response.decode('utf-8'))
@@ -333,10 +359,14 @@ async def get_open_os_trades() -> List[Dict[str, Any]]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "options-strategies",
-            invoke_options={"body": {"action": "getOSTrades", "filters": {"status": "OPEN"}}}
-        )
+            invoke_options={"body": {"action": "getOSTrades", "filters": {"status": "OPEN"}}},
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -367,7 +397,8 @@ async def add_to_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "options-strategies",
             invoke_options={
                 "body": {
@@ -377,8 +408,11 @@ async def add_to_os_trade(
                     "size": size,
                     "note": note
                 }
-            }
-        )
+            },
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -409,7 +443,8 @@ async def trim_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "options-strategies",
             invoke_options={
                 "body": {
@@ -419,8 +454,11 @@ async def trim_os_trade(
                     "size": size,
                     "note": note
                 }
-            }
-        )
+            },
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -450,7 +488,8 @@ async def exit_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "options-strategies",
             invoke_options={
                 "body": {
@@ -459,8 +498,11 @@ async def exit_os_trade(
                     "net_cost": net_cost,
                     "note": note
                 }
-            }
-        )
+            },
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -489,7 +531,8 @@ async def add_note_to_os_trade(
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "options-strategies",
             invoke_options={
                 "body": {
@@ -497,8 +540,11 @@ async def add_note_to_os_trade(
                     "strategy_id": strategy_id,
                     "note": note
                 }
-            }
-        )
+            },
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -524,15 +570,19 @@ async def reopen_trade(trade_id: str) -> Dict[str, Any]:
         raise Exception("Supabase client not initialized")
 
     try:
-        response = await supabase.functions.invoke(
+        response = await retry_async(
+            supabase.functions.invoke,
             "trades",
             invoke_options={
                 "body": {
                     "action": "reopenTrade",
                     "trade_id": trade_id
                 }
-            }
-        )
+            },
+            retries=3,
+            delay=1,
+            timeout=10
+        )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
         # Decode bytes response to JSON
@@ -591,3 +641,19 @@ async def get_trade_by_id(trade_id: str) -> Dict[str, Any]:
     if not supabase:
         raise Exception("Supabase client not initialized")
     return await supabase.table('trades').select('*').eq('trade_id', trade_id).single()
+
+async def retry_async(func, *args, retries=3, delay=1, **kwargs):
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            return await func(*args, **kwargs)
+        except (httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+            last_exc = e
+            if attempt < retries - 1:
+                await asyncio.sleep(delay)
+            else:
+                raise
+        except Exception as e:
+            # For other exceptions, you may want to log and break, or re-raise
+            raise
+    raise last_exc
