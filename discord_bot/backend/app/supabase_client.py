@@ -99,7 +99,6 @@ async def create_trade(
             invoke_options={"body": {"action": "createTrade", "input": input_data}},
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -134,7 +133,6 @@ async def add_to_trade(trade_id: str, price: float, size: str) -> Dict[str, Any]
             invoke_options={"body": {"action": "addToTrade", "trade_id": trade_id, "price": price, "size": size}},
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -169,7 +167,6 @@ async def trim_trade(trade_id: str, price: float, size: str) -> Dict[str, Any]:
             invoke_options={"body": {"action": "trimTrade", "trade_id": trade_id, "price": price, "size": size}},
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -204,7 +201,6 @@ async def exit_trade(trade_id: str, price: float) -> Dict[str, Any]:
             invoke_options={"body": {"action": "exitTrade", "trade_id": trade_id, "price": price}},
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -239,7 +235,6 @@ async def get_trade(trade_id: str) -> Optional[Dict[str, Any]]:
             invoke_options={"body": {"action": "getTrades", "filters": {"trade_id": trade_id}}},
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -336,7 +331,6 @@ async def create_os_trade(
             },
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         
         if isinstance(response, bytes):
@@ -365,7 +359,6 @@ async def get_open_os_trades() -> List[Dict[str, Any]]:
             invoke_options={"body": {"action": "getOSTrades", "filters": {"status": "OPEN"}}},
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -411,7 +404,6 @@ async def add_to_os_trade(
             },
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -457,7 +449,6 @@ async def trim_os_trade(
             },
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -501,7 +492,6 @@ async def exit_os_trade(
             },
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -543,7 +533,6 @@ async def add_note_to_os_trade(
             },
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
@@ -581,7 +570,6 @@ async def reopen_trade(trade_id: str) -> Dict[str, Any]:
             },
             retries=3,
             delay=1,
-            timeout=10
         )  # retry_async with timeout
         logger.info(f"Edge function raw response: {response}")
         
