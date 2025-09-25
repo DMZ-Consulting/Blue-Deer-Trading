@@ -336,3 +336,4 @@ export const deleteTradeById = async (trade_id: string): Promise<{ message: stri
   if (!supabase) throw new Error('Supabase client not initialized')
   return api.trades.deleteTrade(trade_id)
 }
+
