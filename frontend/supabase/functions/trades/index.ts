@@ -471,6 +471,46 @@ serve(async (req: Request) => {
         logger.debug('Final response data:', data)
         break
 
+      case 'deleteTrade':
+        logger.debug('Handling deleteTrade action')
+        if (!trade_id) {
+          throw new Error('Missing required parameter: trade_id is required for deleting a trade')
+        }
+
+        // First, delete all transactions associated with this trade
+        logger.debug('Deleting transactions for trade:', trade_id)
+        const { error: deleteTransactionsError } = await supabaseClient
+          .from('transactions')
+          .delete()
+          .eq('trade_id', trade_id)
+
+        if (deleteTransactionsError) {
+          logger.error('Error deleting transactions:', deleteTransactionsError)
+          throw deleteTransactionsError
+        }
+        logger.debug('Successfully deleted all transactions for trade:', trade_id)
+
+        // Then, delete the trade itself
+        logger.debug('Deleting trade:', trade_id)
+        const { data: deletedTrade, error: deleteTradeError } = await supabaseClient
+          .from('trades')
+          .delete()
+          .eq('trade_id', trade_id)
+          .select('trade_id, symbol, trade_type')
+          .single()
+
+        if (deleteTradeError) {
+          logger.error('Error deleting trade:', deleteTradeError)
+          throw deleteTradeError
+        }
+
+        logger.debug('Successfully deleted trade:', deletedTrade)
+        data = {
+          message: 'Trade and all associated transactions deleted successfully',
+          deletedTrade
+        }
+        break
+
       default:
         logger.error('Unknown action:', action)
         throw new Error(`Unknown action: ${action}`)

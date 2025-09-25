@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { ChevronDown, ChevronUp, ArrowUpDown, Settings2, X } from 'lucide-react'
-import { getTradesByConfiguration, deleteTransaction, updateTransaction } from '../api/api'
+import { getTradesByConfiguration, deleteTransaction, updateTransaction, deleteTradeById } from '../api/api'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -335,6 +335,21 @@ export function TradesTableComponent({
   }
 
   // Add handlers for edit and delete
+  const handleDeleteTrade = async (tradeId: string) => {
+    if (!window.confirm('Are you sure you want to delete this entire trade? This will delete all associated transactions as well.')) {
+      return;
+    }
+
+    try {
+      await deleteTradeById(tradeId);
+      // Refresh trades after deletion
+      fetchTrades();
+    } catch (error) {
+      console.error('Error deleting trade:', error);
+      alert('Failed to delete trade');
+    }
+  };
+
   const handleEditTransaction = async (transactionId: string, tradeId: string) => {
     const trade = trades.find(t => t.trade_id === tradeId);
     const transaction = trade?.transactions?.find(t => String(t.id) === transactionId);
@@ -589,17 +604,27 @@ export function TradesTableComponent({
                     )}
                   >
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleTradeExpansion(trade.trade_id)}
-                      >
-                        {expandedTrades.has(trade.trade_id) ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </Button>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleTradeExpansion(trade.trade_id)}
+                        >
+                          {expandedTrades.has(trade.trade_id) ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                          onClick={() => handleDeleteTrade(trade.trade_id)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                     {isDevelopment && localDebugMode && <TableCell>{trade.trade_id}</TableCell>}
                     {Object.entries(columnVisibility).map(([column, isVisible]) => {
