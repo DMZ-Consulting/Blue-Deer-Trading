@@ -255,6 +255,15 @@ export const api = {
       })
       if (error) throw error
       return data
+    },
+
+    deleteOptionsStrategy: async (strategy_id: string): Promise<{ message: string; deletedStrategy: DatabaseOptionsStrategyTrade }> => {
+      if (!supabase) throw new Error('Supabase client not initialized')
+      const { data, error } = await supabase.functions.invoke('options-strategies', {
+        body: { action: 'deleteOptionsStrategy', strategy_id }
+      })
+      if (error) throw error
+      return data
     }
   },
 
@@ -335,5 +344,10 @@ export async function updateTransaction(transactionId: string, data: {
 export const deleteTradeById = async (trade_id: string): Promise<{ message: string; deletedTrade: Trade }> => {
   if (!supabase) throw new Error('Supabase client not initialized')
   return api.trades.deleteTrade(trade_id)
+}
+
+export const deleteOptionsStrategyById = async (strategy_id: string): Promise<{ message: string; deletedStrategy: DatabaseOptionsStrategyTrade }> => {
+  if (!supabase) throw new Error('Supabase client not initialized')
+  return api.optionsStrategyTrades.deleteOptionsStrategy(strategy_id)
 }
 

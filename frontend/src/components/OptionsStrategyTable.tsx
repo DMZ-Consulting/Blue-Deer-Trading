@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { OptionsStrategyTrade } from '../utils/types'
-import { ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react'
-import { getOptionsStrategyTradesByConfiguration } from '../api/api'
+import { ChevronDown, ChevronUp, ArrowUpDown, X } from 'lucide-react'
+import { getOptionsStrategyTradesByConfiguration, deleteOptionsStrategyById } from '../api/api'
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -76,6 +76,26 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
       setSortOrder('asc')
     }
   }
+
+  const handleDeleteStrategy = async (strategyId: string) => {
+    if (!window.confirm('Are you sure you want to delete this entire options strategy? This will delete all associated transactions as well.')) {
+      return;
+    }
+
+    try {
+      await deleteOptionsStrategyById(strategyId);
+      // Refresh trades after deletion
+      const fetchedTrades = await getOptionsStrategyTradesByConfiguration({
+        configName,
+        status: statusFilter,
+        weekFilter: dateFilter
+      });
+      setTrades(fetchedTrades);
+    } catch (error) {
+      console.error('Error deleting strategy:', error);
+      alert('Failed to delete strategy');
+    }
+  };
 
   const sortedTrades = [...trades].sort((a, b) => {
     const aValue = a[sortField]
@@ -224,16 +244,26 @@ export function OptionsStrategyTableComponent({ configName, statusFilter, dateFi
             {sortedTrades.map((trade) => (
               <TableRow key={trade.strategy_id}>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    onClick={() => toggleExpand(trade.strategy_id)}
-                    className="h-8 w-8 p-0"
-                  >
-                    {expandedTrades.has(trade.strategy_id) ? 
-                      <ChevronUp className="h-4 w-4" /> : 
-                      <ChevronDown className="h-4 w-4" />
-                    }
-                  </Button>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => toggleExpand(trade.strategy_id)}
+                      className="h-8 w-8 p-0"
+                    >
+                      {expandedTrades.has(trade.strategy_id) ?
+                        <ChevronUp className="h-4 w-4" /> :
+                        <ChevronDown className="h-4 w-4" />
+                      }
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                      onClick={() => handleDeleteStrategy(trade.strategy_id)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-center">
                   {createTradeOneliner(trade)}

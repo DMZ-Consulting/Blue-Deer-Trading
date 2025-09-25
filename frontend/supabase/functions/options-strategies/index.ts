@@ -2,13 +2,6 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
-interface Transaction {
-  transaction_type: 'OPEN' | 'ADD' | 'TRIM' | 'CLOSE'
-  amount: number
-  size: string
-  net_cost?: number
-}
-
 enum StrategyStatus {
   OPEN = 'OPEN',
   CLOSED = 'CLOSED'
@@ -19,24 +12,6 @@ enum StrategyTransactionType {
   ADD = 'ADD',
   TRIM = 'TRIM',
   CLOSE = 'CLOSE'
-}
-
-interface Strategy {
-  id: number
-  name: string
-  underlying_symbol: string
-  status: StrategyStatus
-  net_cost: number
-  average_net_cost: number
-  size: string
-  current_size: string
-  created_at: string
-  closed_at?: string
-  profit_loss?: number
-  trade_configurations?: {
-    name: string
-  }
-  options_strategy_transactions: Transaction[]
 }
 
 interface StrategyFilters {
@@ -393,6 +368,46 @@ serve(async (req: Request) => {
         data = exitStrategy2
         break
 
+      case 'deleteOptionsStrategy':
+        console.log('Deleting options strategy:', strategy_id)
+        if (!strategy_id) {
+          throw new Error('Missing required parameter: strategy_id is required for deleting an options strategy')
+        }
+
+        // First, delete all transactions associated with this strategy
+        console.log('Deleting transactions for strategy:', strategy_id)
+        const { error: deleteTransactionsError } = await supabase
+          .from('options_strategy_transactions')
+          .delete()
+          .eq('strategy_id', strategy_id)
+
+        if (deleteTransactionsError) {
+          console.error('Error deleting strategy transactions:', deleteTransactionsError)
+          throw deleteTransactionsError
+        }
+        console.log('Successfully deleted all transactions for strategy:', strategy_id)
+
+        // Then, delete the strategy itself
+        console.log('Deleting strategy:', strategy_id)
+        const { data: deletedStrategy, error: deleteStrategyError } = await supabase
+          .from('options_strategy_trades')
+          .delete()
+          .eq('strategy_id', strategy_id)
+          .select('strategy_id, name, underlying_symbol')
+          .single()
+
+        if (deleteStrategyError) {
+          console.error('Error deleting strategy:', deleteStrategyError)
+          throw deleteStrategyError
+        }
+
+        console.log('Successfully deleted strategy:', deletedStrategy)
+        data = {
+          message: 'Options strategy and all associated transactions deleted successfully',
+          deletedStrategy
+        }
+        break
+
       default:
         console.error('Unknown action:', action)
         throw new Error(`Unknown action: ${action}`)
@@ -414,7 +429,7 @@ serve(async (req: Request) => {
 }) 
 
 // Helper function to normalize exit transaction sizes for proportional calculations
-async function normalizeStrategyExitTransactionSizes(supabase: any, strategy_id: string): Promise<void> {
+async function normalizeStrategyExitTransactionSizes(supabase: ReturnType<typeof createClient>, strategy_id: string): Promise<void> {
   console.log('Normalizing exit transaction sizes for strategy:', strategy_id)
   
   // Get all exit transactions (TRIM and CLOSE) for this strategy
@@ -434,7 +449,7 @@ async function normalizeStrategyExitTransactionSizes(supabase: any, strategy_id:
   console.log('Found exit transactions to normalize:', exitTransactions)
 
   // Calculate total exit size
-  const totalExitSize = exitTransactions.reduce((total: number, transaction: any) => 
+  const totalExitSize = exitTransactions.reduce((total: number, transaction: { transaction_id: string; size: string }) =>
     total + parseFloat(transaction.size), 0
   )
 
@@ -448,7 +463,7 @@ async function normalizeStrategyExitTransactionSizes(supabase: any, strategy_id:
   })
 
   // Update each exit transaction with the proportional size
-  for (const transaction of exitTransactions) {
+  for (const transaction of exitTransactions as { transaction_id: string; size: string }[]) {
     const { error: updateError } = await supabase
       .from('options_strategy_transactions')
       .update({
