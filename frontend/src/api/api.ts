@@ -184,7 +184,7 @@ export const api = {
       return data
     },
 
-    deleteTrade: async (trade_id: string): Promise<{ message: string; deletedTrade: any }> => {
+    deleteTrade: async (trade_id: string): Promise<{ message: string; deletedTrade: Trade }> => {
       if (!supabase) throw new Error('Supabase client not initialized')
       const { data, error } = await supabase.functions.invoke('trades', {
         body: { action: 'deleteTrade', trade_id }
@@ -332,7 +332,7 @@ export async function updateTransaction(transactionId: string, data: {
   if (error) throw error;
 }
 
-export const deleteTradeById = async (trade_id: string): Promise<{ message: string; deletedTrade: any }> => {
+export const deleteTradeById = async (trade_id: string): Promise<{ message: string; deletedTrade: Trade }> => {
   if (!supabase) throw new Error('Supabase client not initialized')
   return api.trades.deleteTrade(trade_id)
 }
